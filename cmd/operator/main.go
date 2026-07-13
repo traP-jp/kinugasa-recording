@@ -13,6 +13,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	livekitapi "github.com/comavius/kinugasa-recording/internal/livekit"
 	operator "github.com/comavius/kinugasa-recording/internal/operator"
 	"github.com/comavius/kinugasa-recording/internal/operator/httpapi"
 	storagelib "github.com/comavius/kinugasa-recording/internal/storage"
@@ -26,17 +27,23 @@ import (
 
 func main() {
 	var (
-		httpAddress      string
-		metricsAddress   string
-		healthAddress    string
-		namespace        string
-		s3Bucket         string
-		s3Endpoint       string
-		s3Region         string
-		s3UsePathStyle   bool
-		publicMediaHost  string
-		mediaNodePortMin int
-		mediaNodePortMax int
+		httpAddress         string
+		metricsAddress      string
+		healthAddress       string
+		namespace           string
+		s3Bucket            string
+		s3Endpoint          string
+		s3Region            string
+		s3UsePathStyle      bool
+		publicMediaHost     string
+		mediaNodePortMin    int
+		mediaNodePortMax    int
+		liveKitURL          string
+		liveKitAPIKey       string
+		liveKitAPISecret    string
+		liveKitRoom         string
+		fanoutImage         string
+		liveKitIngressImage string
 	)
 
 	flag.StringVar(&httpAddress, "http-bind-address", ":8080", "address for the Web UI HTTP API")
@@ -50,6 +57,12 @@ func main() {
 	flag.StringVar(&publicMediaHost, "public-media-host", os.Getenv("PUBLIC_MEDIA_HOST"), "LAN host advertised to camera clients")
 	flag.IntVar(&mediaNodePortMin, "media-node-port-min", envInt("MEDIA_NODE_PORT_MIN", 30000), "first media NodePort")
 	flag.IntVar(&mediaNodePortMax, "media-node-port-max", envInt("MEDIA_NODE_PORT_MAX", 32767), "last media NodePort")
+	flag.StringVar(&liveKitURL, "livekit-url", os.Getenv("LIVEKIT_URL"), "LiveKit server API URL")
+	flag.StringVar(&liveKitAPIKey, "livekit-api-key", os.Getenv("LIVEKIT_API_KEY"), "LiveKit API key")
+	flag.StringVar(&liveKitAPISecret, "livekit-api-secret", os.Getenv("LIVEKIT_API_SECRET"), "LiveKit API secret")
+	flag.StringVar(&liveKitRoom, "livekit-room", envOrDefault("LIVEKIT_ROOM", "kinugasa-preview"), "preview room name")
+	flag.StringVar(&fanoutImage, "video-fanout-image", envOrDefault("VIDEO_FANOUT_IMAGE", "kinugasa-recording/video-fanout:latest"), "video-fanout image")
+	flag.StringVar(&liveKitIngressImage, "livekit-ingress-image", envOrDefault("LIVEKIT_INGRESS_IMAGE", "kinugasa-recording/livekit-ingress:latest"), "livekit-ingress bridge image")
 	zapOptions := zap.Options{Development: false}
 	zapOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -62,6 +75,10 @@ func main() {
 	}
 	if publicMediaHost == "" || mediaNodePortMin < 30000 || mediaNodePortMax > 32767 || mediaNodePortMin > mediaNodePortMax {
 		logger.Error(fmt.Errorf("PUBLIC_MEDIA_HOST and a valid media NodePort range are required"), "validate configuration")
+		os.Exit(1)
+	}
+	if liveKitURL == "" || liveKitAPIKey == "" || liveKitAPISecret == "" || liveKitRoom == "" {
+		logger.Error(fmt.Errorf("LiveKit URL, API credentials, and room are required"), "validate configuration")
 		os.Exit(1)
 	}
 
@@ -82,11 +99,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	reconciler := &operator.SessionReconciler{
-		Client:   manager.GetClient(),
-		Recorder: manager.GetEventRecorder("session-controller"),
+	liveKitClient, err := livekitapi.NewClient(liveKitURL, liveKitAPIKey, liveKitAPISecret)
+	if err != nil {
+		logger.Error(err, "create LiveKit API client")
+		os.Exit(1)
+	}
+	ingressManager := &operator.LiveKitIngressManager{Client: manager.GetClient(), API: liveKitClient, Participants: liveKitClient, RoomName: liveKitRoom}
+	reconciler := &operator.SessionReconciler{Client: manager.GetClient(), Recorder: manager.GetEventRecorder("session-controller")}
+	reconciler.Workloads = &operator.CameraWorkloadReconciler{
+		Client: manager.GetClient(), Ingress: ingressManager, FanoutImage: fanoutImage,
+		LiveKitIngressImage: liveKitIngressImage, PublicMediaHost: publicMediaHost,
 	}
 	must(reconciler.SetupWithManager(manager), "register Session reconciler")
+	must(manager.Add(&operator.LiveKitRoomInitializer{API: liveKitClient, RoomName: liveKitRoom}), "register LiveKit room initializer")
 
 	awsConfiguration, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(s3Region))
 	if err != nil {

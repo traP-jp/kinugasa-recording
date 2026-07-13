@@ -191,4 +191,13 @@ session名/
 - `internal/operator/httpapi/server.go`: camera追加・削除endpointと、非同期状態・接続URL・共通error responseを公開する。
 - `cmd/operator/main.go`: `PUBLIC_MEDIA_HOST`とmedia NodePort範囲をcamera serviceへ注入する。
 
+### Camera workload・LiveKit reconcile phase
+
+- `internal/livekit/client.go`: LiveKitの公式protocol/auth packageを用い、Ingress APIとRoom APIを最小権限のservice token付きTwirp requestとして呼び出す。
+- `internal/operator/livekit_room.go`: leader上でpreview roomの存在を確認し、cluster起動時に冪等に初期化する。
+- `internal/operator/livekit_ingress.go`: camera固有のWHIP ingress、participant、video trackを冪等に作成・削除し、秘密の接続URLをowner付きSecretへ保存する。
+- `internal/operator/camera_workloads.go`: cameraごとの外部RIST/SRT NodePort Service、内部録画・RTMP Service、`video-fanout`・`livekit-ingress` Deploymentをreconcileし、camera statusへ集約する。削除時はWHIP bridgeのforeground削除完了後にLiveKit ingressと残りのworkloadを削除する。
+- `internal/operator/session_controller.go`: camera workloadの子resourceを監視し、非同期削除中はdegradedにせず再queueする。
+- `api/recording/v1alpha1/session_types.go`: camera statusに秘密情報を含まないLiveKit ingress IDを保持する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

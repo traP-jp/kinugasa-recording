@@ -92,6 +92,28 @@ func TestSessionReconcilerRequeuesDependencyFailure(t *testing.T) {
 	}
 }
 
+func TestSessionReconcilerRequeuesExpectedWorkloadTransitionWithoutDegrading(t *testing.T) {
+	t.Parallel()
+	scheme := testScheme(t)
+	session := testSession()
+	kubernetesClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&recordingv1alpha1.Session{}).WithObjects(session).Build()
+	reconciler := &SessionReconciler{Client: kubernetesClient, Workloads: &workloadStub{err: ErrWorkloadProgressing}, DependencyRetryInterval: time.Second}
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: session.Namespace, Name: session.Name}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RequeueAfter != time.Second {
+		t.Fatalf("RequeueAfter = %v", result.RequeueAfter)
+	}
+	var updated recordingv1alpha1.Session
+	if err := kubernetesClient.Get(context.Background(), types.NamespacedName{Namespace: session.Namespace, Name: session.Name}, &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status.Phase == recordingv1alpha1.SessionPhaseDegraded {
+		t.Fatal("expected transition marked Session degraded")
+	}
+}
+
 func testScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 
@@ -115,11 +137,12 @@ func testSession() *recordingv1alpha1.Session {
 
 type workloadStub struct {
 	called bool
+	err    error
 }
 
 func (stub *workloadStub) Reconcile(_ context.Context, _ *recordingv1alpha1.Session) error {
 	stub.called = true
-	return nil
+	return stub.err
 }
 
 type dependencyStub struct {

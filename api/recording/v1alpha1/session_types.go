@@ -160,7 +160,8 @@ type SessionStatus struct {
 }
 
 type CameraStatus struct {
-	Name string `json:"name"`
+	Name             string `json:"name"`
+	LiveKitIngressID string `json:"liveKitIngressId,omitempty"`
 
 	// +kubebuilder:validation:Enum=Provisioning;Waiting;Connected;Disconnected;Deleting;Removed;Error
 	Phase CameraPhase `json:"phase,omitempty"`

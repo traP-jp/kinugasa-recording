@@ -243,6 +243,8 @@ spec:
                     lastFrameAt:
                       format: date-time
                       type: string
+                    liveKitIngressId:
+                      type: string
                     name:
                       type: string
                     phase:

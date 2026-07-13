@@ -2,10 +2,13 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -61,6 +64,12 @@ func (r *SessionReconciler) Reconcile(ctx context.Context, request ctrl.Request)
 
 	if r.Workloads != nil {
 		if err := r.Workloads.Reconcile(ctx, &session); err != nil {
+			if errors.Is(err, ErrWorkloadProgressing) {
+				if patchErr := r.Status().Patch(ctx, &session, client.MergeFrom(before)); patchErr != nil {
+					return ctrl.Result{}, patchErr
+				}
+				return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
+			}
 			message := fmt.Sprintf("failed to reconcile workloads: %v", err)
 			r.setDegraded(&session, "WorkloadReconcileFailed", message)
 			r.warning(&session, "WorkloadReconcileFailed", message)
@@ -93,6 +102,9 @@ func (r *SessionReconciler) Reconcile(ctx context.Context, request ctrl.Request)
 func (r *SessionReconciler) SetupWithManager(manager ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(manager).
 		For(&recordingv1alpha1.Session{}).
+		Owns(&appsv1.Deployment{}).
+		Owns(&corev1.Service{}).
+		Owns(&corev1.Secret{}).
 		Complete(r)
 }
 
