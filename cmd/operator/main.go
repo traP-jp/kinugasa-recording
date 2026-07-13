@@ -44,6 +44,8 @@ func main() {
 		liveKitRoom         string
 		fanoutImage         string
 		liveKitIngressImage string
+		liveKitPublicURL    string
+		liveKitTokenTTL     time.Duration
 	)
 
 	flag.StringVar(&httpAddress, "http-bind-address", ":8080", "address for the Web UI HTTP API")
@@ -63,6 +65,8 @@ func main() {
 	flag.StringVar(&liveKitRoom, "livekit-room", envOrDefault("LIVEKIT_ROOM", "kinugasa-preview"), "preview room name")
 	flag.StringVar(&fanoutImage, "video-fanout-image", envOrDefault("VIDEO_FANOUT_IMAGE", "kinugasa-recording/video-fanout:latest"), "video-fanout image")
 	flag.StringVar(&liveKitIngressImage, "livekit-ingress-image", envOrDefault("LIVEKIT_INGRESS_IMAGE", "kinugasa-recording/livekit-ingress:latest"), "livekit-ingress bridge image")
+	flag.StringVar(&liveKitPublicURL, "livekit-public-url", os.Getenv("LIVEKIT_PUBLIC_URL"), "browser-reachable LiveKit WebSocket URL")
+	flag.DurationVar(&liveKitTokenTTL, "livekit-token-ttl", envDuration("LIVEKIT_TOKEN_TTL", 5*time.Minute), "preview participant token TTL")
 	zapOptions := zap.Options{Development: false}
 	zapOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -77,8 +81,12 @@ func main() {
 		logger.Error(fmt.Errorf("PUBLIC_MEDIA_HOST and a valid media NodePort range are required"), "validate configuration")
 		os.Exit(1)
 	}
-	if liveKitURL == "" || liveKitAPIKey == "" || liveKitAPISecret == "" || liveKitRoom == "" {
+	if liveKitURL == "" || liveKitPublicURL == "" || liveKitAPIKey == "" || liveKitAPISecret == "" || liveKitRoom == "" {
 		logger.Error(fmt.Errorf("LiveKit URL, API credentials, and room are required"), "validate configuration")
+		os.Exit(1)
+	}
+	if liveKitTokenTTL < time.Minute || liveKitTokenTTL > livekitapi.MaximumPreviewTokenTTL {
+		logger.Error(fmt.Errorf("LiveKit token TTL must be between 1m and %s", livekitapi.MaximumPreviewTokenTTL), "validate configuration")
 		os.Exit(1)
 	}
 
@@ -133,7 +141,8 @@ func main() {
 		Client: manager.GetClient(), Namespace: namespace, PublicMediaHost: publicMediaHost,
 		NodePortMin: int32(mediaNodePortMin), NodePortMax: int32(mediaNodePortMax),
 	}
-	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator).WithCameraService(cameraService)
+	tokenIssuer := &livekitapi.TokenIssuer{APIKey: liveKitAPIKey, APISecret: liveKitAPISecret, ServerURL: liveKitPublicURL, RoomName: liveKitRoom, TTL: liveKitTokenTTL}
+	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator).WithCameraService(cameraService).WithPreviewTokenService(tokenIssuer)
 	must(manager.Add(&httpapi.Runnable{HTTPServer: &http.Server{
 		Addr:              httpAddress,
 		Handler:           apiServer.Handler(),
@@ -173,6 +182,14 @@ func envBool(name string) bool {
 
 func envInt(name string, fallback int) int {
 	value, err := strconv.Atoi(os.Getenv(name))
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value, err := time.ParseDuration(os.Getenv(name))
 	if err != nil {
 		return fallback
 	}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	livekitapi "github.com/comavius/kinugasa-recording/internal/livekit"
 	operatorlib "github.com/comavius/kinugasa-recording/internal/operator"
 	operatorvalidation "github.com/comavius/kinugasa-recording/internal/operator/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +31,12 @@ type Server struct {
 	namespace string
 	creator   sessionCreationService
 	cameras   cameraMutationService
+	tokens    previewTokenService
+}
+
+func (s *Server) WithPreviewTokenService(service previewTokenService) *Server {
+	s.tokens = service
+	return s
 }
 
 // WithCameraService configures camera mutation endpoints.
@@ -54,8 +61,42 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/api/v1/sessions", s.sessions)
 	mux.HandleFunc("/api/v1/sessions/", s.session)
+	mux.HandleFunc("/api/v1/livekit/token", s.liveKitToken)
 
 	return requestIDMiddleware(mux)
+}
+
+func (s *Server) liveKitToken(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
+		return
+	}
+	if s.tokens == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "LiveKit token service is not configured", nil)
+		return
+	}
+	if request.Body != nil {
+		request.Body = http.MaxBytesReader(response, request.Body, maximumRequestBodySize)
+		decoder := json.NewDecoder(request.Body)
+		decoder.DisallowUnknownFields()
+		var body struct{}
+		if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must be an empty object", nil)
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must contain one JSON object", nil)
+			return
+		}
+	}
+	issued, err := s.tokens.Issue()
+	if err != nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "LiveKit token generation failed", nil)
+		return
+	}
+	writeJSON(response, http.StatusOK, previewTokenResponse{
+		ServerURL: issued.ServerURL, RoomName: issued.RoomName, ParticipantToken: issued.ParticipantToken, ExpiresAt: issued.ExpiresAt,
+	})
 }
 
 func (s *Server) health(response http.ResponseWriter, _ *http.Request) {
@@ -269,6 +310,13 @@ type cameraMutationResponse struct {
 	ConnectionURLs recordingv1alpha1.CameraEndpoints `json:"connectionUrls,omitempty"`
 }
 
+type previewTokenResponse struct {
+	ServerURL        string    `json:"serverUrl"`
+	RoomName         string    `json:"roomName"`
+	ParticipantToken string    `json:"participantToken"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+}
+
 type sessionCreationService interface {
 	Create(context.Context, string, string) (*recordingv1alpha1.Session, error)
 }
@@ -276,6 +324,10 @@ type sessionCreationService interface {
 type cameraMutationService interface {
 	Add(context.Context, string, string, string) (*operatorlib.CameraMutationResult, error)
 	Delete(context.Context, string, string, string) (*recordingv1alpha1.CameraSpec, error)
+}
+
+type previewTokenService interface {
+	Issue() (*livekitapi.PreviewToken, error)
 }
 
 type sessionsResponse struct {

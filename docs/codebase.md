@@ -200,4 +200,10 @@ session名/
 - `internal/operator/session_controller.go`: camera workloadの子resourceを監視し、非同期削除中はdegradedにせず再queueする。
 - `api/recording/v1alpha1/session_types.go`: camera statusに秘密情報を含まないLiveKit ingress IDを保持する。
 
+### LiveKit preview token phase
+
+- `internal/livekit/token.go`: requestごとに衝突しないidentityを生成し、preview roomへのjoinとsubscribeだけを許可する1分以上15分以下の短期tokenを署名する。
+- `internal/operator/httpapi/server.go`: `POST /api/v1/livekit/token`で公開LiveKit URL、room名、participant token、有効期限を返す。
+- `cmd/operator/main.go`: 公開URL、API credential、room名、token TTLを環境変数・flagからtoken issuerへ注入する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

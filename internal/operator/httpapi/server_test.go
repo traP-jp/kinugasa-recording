@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	livekitapi "github.com/comavius/kinugasa-recording/internal/livekit"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -199,6 +201,30 @@ func TestServerMapsCameraMutationConflicts(t *testing.T) {
 	}
 }
 
+func TestServerIssuesPreviewToken(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := recordingv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Date(2026, 7, 14, 1, 5, 0, 0, time.UTC)
+	server := NewServer(fake.NewClientBuilder().WithScheme(scheme).Build(), "recording").WithPreviewTokenService(&tokenServiceStub{token: &livekitapi.PreviewToken{
+		ServerURL: "wss://livekit.example", RoomName: "kinugasa-preview", ParticipantToken: "signed-token", ExpiresAt: expires,
+	}})
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/livekit/token", bytes.NewBufferString(`{}`)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var body previewTokenResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.ParticipantToken != "signed-token" || body.ExpiresAt != expires {
+		t.Fatalf("response = %#v", body)
+	}
+}
+
 type sessionCreatorStub struct {
 	name    string
 	session *recordingv1alpha1.Session
@@ -211,6 +237,13 @@ type cameraServiceStub struct {
 	deleteResult                 *recordingv1alpha1.CameraSpec
 	err                          error
 }
+
+type tokenServiceStub struct {
+	token *livekitapi.PreviewToken
+	err   error
+}
+
+func (stub *tokenServiceStub) Issue() (*livekitapi.PreviewToken, error) { return stub.token, stub.err }
 
 func (stub *cameraServiceStub) Add(_ context.Context, sessionName, cameraName, key string) (*operatorlib.CameraMutationResult, error) {
 	stub.sessionName, stub.cameraName, stub.key = sessionName, cameraName, key
