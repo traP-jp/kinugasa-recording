@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1.7
+
+ARG NODE_VERSION=24
+
+FROM node:${NODE_VERSION}-bookworm-slim AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH="${PNPM_HOME}:${PATH}"
+RUN corepack enable
+WORKDIR /src
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY web/package.json ./web/package.json
+RUN pnpm install --frozen-lockfile
+COPY web ./web
+RUN pnpm --filter @kinugasa-recording/web build
+
+FROM nginx:1.29-alpine
+COPY build/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /src/web/dist /usr/share/nginx/html
+EXPOSE 8080

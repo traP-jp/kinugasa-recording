@@ -1,6 +1,9 @@
 GO_COMPONENTS := operator video-fanout video-recorder video-uploader livekit-ingress
+IMAGE_PREFIX ?= kinugasa-recording
+IMAGE_TAG ?= latest
+MEDIA_COMPONENTS := video-fanout video-recorder livekit-ingress
 
-.PHONY: all build build-go build-web deploy fmt fmt-check generate help image-build lint test test-go test-web
+.PHONY: all build build-go build-web deploy fmt fmt-check generate help image-build k3d-create k3d-destroy k3d-import lint test test-go test-web
 
 all: fmt-check lint test build
 
@@ -43,9 +46,22 @@ generate:
 	./scripts/generate.sh
 
 image-build:
-	@echo "Container build definitions will be added in the container image phase."
-	@exit 2
+	@for component in $(GO_COMPONENTS); do \
+		target=go-runtime; \
+		case " $(MEDIA_COMPONENTS) " in *" $$component "*) target=media-runtime ;; esac; \
+		docker build --build-arg COMPONENT="$$component" --target="$$target" \
+			-t "$(IMAGE_PREFIX)/$$component:$(IMAGE_TAG)" -f build/Dockerfile . || exit; \
+	done
+	docker build -t "$(IMAGE_PREFIX)/web:$(IMAGE_TAG)" -f build/Dockerfile.web .
 
 deploy:
-	@echo "K3d deployment will be added in the Kubernetes environment phase."
-	@exit 2
+	./scripts/k3d-deploy.sh
+
+k3d-create:
+	./scripts/k3d-create.sh
+
+k3d-import:
+	./scripts/k3d-import.sh
+
+k3d-destroy:
+	./scripts/k3d-destroy.sh

@@ -12,6 +12,16 @@
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          ffmpeg = pkgs.ffmpeg-headless.bin;
+        }
+      );
+
       devShells = forAllSystems (
         system:
         let
@@ -24,8 +34,10 @@
               go_1_26
               gnumake
               golangci-lint
+              k3d
               kubernetes-code-generator
               kubernetes-controller-tools
+              kubectl
               kustomize
               nodejs_24
               pnpm

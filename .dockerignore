@@ -1,0 +1,8 @@
+.git
+.agents
+.codex
+bin
+node_modules
+result
+web/dist
+web/node_modules

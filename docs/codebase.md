@@ -232,4 +232,14 @@ session名/
 - `web/src/App.tsx`: take名、camera選択、未選択時の全選択、開始・停止、除外camera、録画中の切断、upload失敗・完了待ちとcamera別状態を表示する。
 - `web/src/App.test.tsx`: 全camera指定、利用不能cameraの除外表示、take停止の基本flowを検証する。
 
+### Container image・Kubernetes環境phase
+
+- `build/Dockerfile`: Go componentを静的buildし、映像系componentへflake固定の`ffmpeg-headless` runtime closureを組み込むmulti-stage buildを提供する。
+- `build/check-ffmpeg.sh`: container build中にRIST、SRT、RTMP、WHIP、MPEG-TS、segment、tee、libx264の存在を検査する。
+- `build/Dockerfile.web`, `build/nginx.conf`: Web UIをproduction buildし、Operator APIをreverse proxyするnginx imageを作成する。
+- `config/default`: CRD・RBACに加え、Operator、Web、Redis、LiveKit server、LiveKit公式Ingress service、S3/LiveKit設定を共通Kustomize構成として配置する。
+- `config/overlays/k3d`, `config/overlays/production`: local clusterの適用入口と、実環境固有設定を重ねる雛形を分離する。
+- `scripts/k3d-{create,import,deploy,destroy}.sh`: NodePort・LiveKit RTC portを公開したcluster作成、local image import、公開host差し替えdeploy、cluster破棄を行う。
+- `flake.nix`: containerへ取り込むFFmpegのbin outputと、k3d・kubectlを含むdeploy toolchainを固定する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
