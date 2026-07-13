@@ -3,11 +3,12 @@
 `docs/requirements.md`をSSoTとし、`docs/codebase.md`で定めた責務の境界に沿って実装する。
 現在はドキュメントのみが存在し、実装は未着手である。
 
+このファイルには未完了のタスクだけを記載する。完了したタスクはチェック済みの状態で残さず、項目自体を削除する。
+
 ## 0. 要件の確認と設計
 
 ### 人間への確認が必要な事項
 
-- [ ] `[要確認]` 1つのtake・cameraについて、録画結果を単一のMPEG-TSファイルとしてuploadするか、逐次uploadのために複数segmentへ分割してよいかを決める。video fileの定義は単一に読める一方、FR-005-1では`video file(s)`とされている。
 - [ ] `[要確認]` KPI-001の受け入れ条件として、対象Let's Note CF-SRのOS、CPU・memory構成、同時camera数、解像度、frame rate、許容するdrop率とCPU・memory使用量を決める。
 
 ### 実装前に文書化する事項
