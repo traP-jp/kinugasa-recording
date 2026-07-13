@@ -242,4 +242,9 @@ session名/
 - `scripts/k3d-{create,import,deploy,destroy}.sh`: NodePort・LiveKit RTC portを公開したcluster作成、local image import、公開host差し替えdeploy、cluster破棄を行う。
 - `flake.nix`: containerへ取り込むFFmpegのbin outputと、k3d・kubectlを含むdeploy toolchainを固定する。
 
+### Unit test拡充phase
+
+- `internal/operator/*_test.go`: Session、camera、takeの状態制約、mutation冪等性、同一reconcile反復時のresource・condition安定性、停止・cleanup順序をfake Kubernetes clientで検証する。
+- `internal/storage/uploader_test.go`: S3 object key、SHA-256による冪等upload、逐次同期、一時障害retry、digest競合、`.part`を含む厳密な完了条件を検証する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

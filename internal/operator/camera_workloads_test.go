@@ -52,6 +52,21 @@ func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T)
 	if len(session.Status.Cameras) != 1 || session.Status.Cameras[0].LiveKitIngressID != "ingress-1" || session.Status.Cameras[0].Endpoints.RIST != "rist://192.0.2.10:31000?rist_profile=main" {
 		t.Fatalf("camera status = %#v", session.Status.Cameras)
 	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if liveKit.creates != 1 {
+		t.Fatalf("idempotent reconcile created %d ingresses", liveKit.creates)
+	}
+	if err := kubernetesClient.List(context.Background(), &deployments, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubernetesClient.List(context.Background(), &services, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(deployments.Items) != 2 || len(services.Items) != 3 {
+		t.Fatalf("idempotent resources: deployments=%d services=%d", len(deployments.Items), len(services.Items))
+	}
 
 	session.Spec.Cameras[0].DesiredState = recordingv1alpha1.DesiredStateAbsent
 	err := reconciler.Reconcile(context.Background(), session)

@@ -17,11 +17,6 @@
 
 ## 9. Testと受け入れ確認
 
-### Unit test
-
-- [ ] Session、camera、takeの状態遷移とreconcileの冪等性をtestする。
-- [ ] S3 object key、逐次upload、retry、upload完了判定をtestする。
-
 ### Integration test
 
 - [ ] k3d上でSession Custom Resource、Operator、各workloadの作成・更新・削除をtestする。

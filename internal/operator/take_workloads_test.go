@@ -48,6 +48,18 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if len(claims.Items) != 1 {
 		t.Fatalf("claims = %d", len(claims.Items))
 	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubernetesClient.List(context.Background(), &jobs, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if err := kubernetesClient.List(context.Background(), &claims, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs.Items) != 2 || len(claims.Items) != 1 {
+		t.Fatalf("idempotent resources: jobs=%d claims=%d", len(jobs.Items), len(claims.Items))
+	}
 	base := takeResourceName(session.Name, "take-1", "front")
 	recorder, err := getJob(context.Background(), kubernetesClient, session.Namespace, base+"-recorder")
 	if err != nil {

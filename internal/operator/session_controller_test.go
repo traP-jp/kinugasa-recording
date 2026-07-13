@@ -51,6 +51,15 @@ func TestSessionReconcilerRecordsReadyState(t *testing.T) {
 	if len(updated.Status.Conditions) != 1 || updated.Status.Conditions[0].Status != metav1.ConditionTrue {
 		t.Fatalf("conditions = %#v, want one true condition", updated.Status.Conditions)
 	}
+	if _, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: session.Namespace, Name: session.Name}}); err != nil {
+		t.Fatalf("second Reconcile() returned %v", err)
+	}
+	if err := kubernetesClient.Get(context.Background(), types.NamespacedName{Namespace: session.Namespace, Name: session.Name}, &updated); err != nil {
+		t.Fatalf("get twice-reconciled Session: %v", err)
+	}
+	if len(updated.Status.Conditions) != 1 {
+		t.Fatalf("idempotent reconcile conditions = %#v", updated.Status.Conditions)
+	}
 }
 
 func TestSessionReconcilerRequeuesDependencyFailure(t *testing.T) {
