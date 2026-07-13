@@ -1,0 +1,12 @@
+/bin/
+/node_modules/
+/web/coverage/
+/web/dist/
+/web/node_modules/
+
+*.tsbuildinfo
+*.local
+.direnv/
+.envrc
+result
+result-*

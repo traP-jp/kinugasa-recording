@@ -1,0 +1,12 @@
+{
+  "name": "kinugasa-recording",
+  "private": true,
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "build": "pnpm --dir web build",
+    "format": "pnpm --dir web format",
+    "format:check": "pnpm --dir web format:check",
+    "lint": "pnpm --dir web lint",
+    "test": "pnpm --dir web test"
+  }
+}

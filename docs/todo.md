@@ -1,7 +1,7 @@
 # kinugasa-recording TODO
 
 `docs/requirements.md`をSSoTとし、`docs/codebase.md`で定めた責務の境界に沿って実装する。
-現在はドキュメントのみが存在し、実装は未着手である。
+設計とRepository基盤が完了し、API・Custom Resource・Operator基盤の実装に着手する段階である。
 
 このファイルには未完了のタスクだけを記載する。完了したタスクはチェック済みの状態で残さず、項目自体を削除する。
 
@@ -10,14 +10,6 @@
 ### 実装前に文書化する事項
 
 - [ ] 実装で確定したpackage・fileの配置を、各phaseの完了時に`docs/codebase.md`へ反映する。
-
-## 1. Repositoryの基盤
-
-- [ ] `api/`、`cmd/`、`internal/`、`web/`、`config/`、`build/`、`scripts/`、`test/`を作成する。
-- [ ] 単一Go moduleを初期化し、format・lint・unit test・buildを実行できるようにする。
-- [ ] pnpm workspaceとReact・TypeScript・Viteの`web/` workspaceを初期化し、format・lint・unit test・buildを実行できるようにする。
-- [ ] GoとWeb UIのbuild・test、およびimage build・k3dへのdeployに共通のentry pointを提供する`Makefile`を作成する。
-- [ ] Custom ResourceとAPI clientのcode generation手順を`scripts/`に用意する。
 
 ## 2. API・Custom Resource・Operator基盤
 

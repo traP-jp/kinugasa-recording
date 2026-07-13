@@ -37,6 +37,8 @@ kinugasa-recording/
 │   ├── codebase.md       # package・file配置と責務
 │   └── todo.md           # 未完了タスク
 ├── Makefile              # build、test、deploy等の共通entry point
+├── flake.nix             # 開発toolchainを固定するNix flake
+├── flake.lock
 ├── go.mod
 ├── package.json
 ├── pnpm-lock.yaml
@@ -130,5 +132,18 @@ session名/
 - `docs/design.md`: Session Custom Resourceのschemaと状態遷移、名称予約、Web UI向けHTTP API、RIST/SRTからLiveKit・録画への映像経路、録画fileとuploader間の契約、障害statusを管理する。
 - `docs/requirements.md`: 実装判断で変更せず、引き続き要件のSSoTとする。
 - `docs/todo.md`: 未完了項目だけを保持する。
+
+### Repository基盤phase
+
+- `flake.nix`, `flake.lock`: Go、Node.js、pnpm、make、lintおよびcode generation toolのversionを固定する。
+- `Makefile`: Go/Webのformat、lint、test、buildと、code generation、image build、deployの共通entry pointを提供する。
+- `.golangci.yml`: Go lintとformatの共通設定を保持する。
+- `cmd/<component>/main.go`: `operator`、`video-fanout`、`video-recorder`、`video-uploader`、`livekit-ingress`のentry pointとする。
+- `api/doc.go`: 公開するKubernetes APIとHTTP API定義のpackage起点とする。
+- `internal/{operator,media,storage}`: 各責務の内部package起点とする。
+- `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`: pnpm workspaceとroot commandを管理する。
+- `web/`: React、TypeScript、Vite、Vitest、ESLint、PrettierによるWeb UI workspaceとする。
+- `scripts/generate.sh`: controller-genとclient-genによるCRD、DeepCopy、Kubernetes API clientの生成入口とする。
+- `config/`, `build/`, `test/`: Kubernetes設定、container build、結合testを各READMEとともに開始する。
 
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
