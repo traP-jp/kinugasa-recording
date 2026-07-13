@@ -24,6 +24,7 @@ import (
 type CameraWorkloadReconciler struct {
 	Client                                            client.Client
 	Ingress                                           *LiveKitIngressManager
+	Activity                                          CameraMediaActivityReader
 	FanoutImage, LiveKitIngressImage, PublicMediaHost string
 }
 
@@ -63,7 +64,10 @@ func (reconciler *CameraWorkloadReconciler) ensureCamera(ctx context.Context, se
 		return err
 	}
 	if err := reconciler.ensureService(ctx, session, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-fanout", Namespace: session.Namespace}}, labels, corev1.ServiceTypeClusterIP,
-		[]corev1.ServicePort{{Name: "recording", Protocol: corev1.ProtocolUDP, Port: 12000, TargetPort: intstr.FromInt32(12000)}}); err != nil {
+		[]corev1.ServicePort{
+			{Name: "recording", Protocol: corev1.ProtocolUDP, Port: 12000, TargetPort: intstr.FromInt32(12000)},
+			{Name: "status", Protocol: corev1.ProtocolTCP, Port: 8080, TargetPort: intstr.FromInt32(8080)},
+		}); err != nil {
 		return err
 	}
 	ingressLabels := cameraLabels(session.Name, camera.Name+"-ingress")
@@ -96,6 +100,21 @@ func (reconciler *CameraWorkloadReconciler) ensureCamera(ctx context.Context, se
 		status.Phase = recordingv1alpha1.CameraPhaseWaiting
 	}
 	status.Endpoints = cameraEndpoints(reconciler.PublicMediaHost, camera)
+	if reconciler.Activity != nil {
+		activityEndpoint := fmt.Sprintf("http://%s-fanout.%s.svc:8080/status", base, session.Namespace)
+		activity, activityErr := reconciler.Activity.Read(ctx, activityEndpoint)
+		if activityErr == nil {
+			if !activity.LastFrameAt.IsZero() && (status.LastFrameAt == nil || activity.LastFrameAt.After(status.LastFrameAt.Time)) {
+				lastFrameAt := metav1.NewTime(activity.LastFrameAt)
+				status.LastFrameAt = &lastFrameAt
+			}
+			if activity.Active {
+				status.ConnectedProtocol = activity.Protocol
+			} else {
+				status.ConnectedProtocol = ""
+			}
+		}
+	}
 	return nil
 }
 
@@ -129,6 +148,7 @@ func (reconciler *CameraWorkloadReconciler) deleteCamera(ctx context.Context, se
 	status := cameraStatus(session, camera.Name)
 	status.Phase = recordingv1alpha1.CameraPhaseRemoved
 	status.LiveKitIngressID = ""
+	status.ConnectedProtocol = ""
 	return nil
 }
 

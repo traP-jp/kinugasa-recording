@@ -14,7 +14,6 @@
 ## 8. Container imageとKubernetes環境
 
 - [ ] スマートフォンから映像入力用Serviceへ、利用者のbrowserからWeb UIとLiveKitへLAN内で到達できるようにする。
-- [ ] fanoutのmedia activityをOperatorへ集約し、`connectedProtocol`と`lastFrameAt`をcamera statusへ反映する。
 
 ## 9. Testと受け入れ確認
 

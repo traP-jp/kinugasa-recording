@@ -260,6 +260,8 @@ session名/
 - `internal/media/component.go`: 個別のFFmpeg processが異常終了した場合にcomponent全体を終了せず、短いbackoff後にそのprocessだけを再起動する。
 - `internal/media/ffmpeg/fanout.go`: RIST receiver用URL、H.264 parameter setのkeyframe付加、外部listenerと内部UDP branchをFFmpeg 8の実動作に合わせて構成する。
 - `internal/operator/livekit_ingress.go`: LiveKit APIが返すWHIP base URLとstream keyを結合し、camera固有のpublish endpointをSecretへ保存する。
+- `internal/operator/fanout_activity.go`: fanoutのstatus endpointからRIST/SRT processの最新frame進捗を取得し、一定時間内の接続protocolと最終frame時刻をcamera statusへ集約する。
+- `internal/operator/camera_workloads.go`: fanout Serviceに内部status portを公開し、media activity取得成功時だけ`connectedProtocol`と`lastFrameAt`を更新する。
 - `scripts/k3d-import.sh`: k3dで複数imageのうち一部だけがimportされる事象を避けるため、component imageを1つずつimportする。
 
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

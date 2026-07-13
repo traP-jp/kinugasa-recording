@@ -100,6 +100,9 @@ run_protocol() {
 		-f mpegts $protocol_args "$output_url" >/dev/null
 
 	wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Connected
+	wait_for_value "krsession/$session" '{.status.cameras[0].connectedProtocol}' "$protocol"
+	last_frame_at="$(kubectl -n "$namespace" get "krsession/$session" -o 'jsonpath={.status.cameras[0].lastFrameAt}')"
+	test -n "$last_frame_at"
 	service="$(kubectl -n "$namespace" get service -l "$selector" -o 'jsonpath={.items[?(@.spec.ports[0].name=="recording")].metadata.name}')"
 	test -n "$service"
 	kubectl -n "$namespace" run "$probe" --image=kinugasa-recording/video-fanout:latest --image-pull-policy=IfNotPresent --restart=Never --command -- \

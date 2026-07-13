@@ -7,4 +7,5 @@ workloadとLiveKit ingressが作成・削除される一連のreconcileを検証
 `make k3d-create image-build k3d-import deploy`を実行する。
 
 `test/integration/media-fanout.sh`はRIST main profileとSRTでH.264 test streamを
-NodePortへ送り、LiveKit接続状態と内部recording SRT branchの両方を検証する。
+cluster内のcamera入力Serviceへ送り、LiveKit接続状態、`connectedProtocol`と
+`lastFrameAt`、内部recording SRT branchを検証する。

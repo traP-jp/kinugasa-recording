@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -12,6 +13,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+type cameraMediaActivityStub struct {
+	activity CameraMediaActivity
+	err      error
+}
+
+func (stub cameraMediaActivityStub) Read(context.Context, string) (CameraMediaActivity, error) {
+	return stub.activity, stub.err
+}
 
 func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T) {
 	t.Parallel()
@@ -30,7 +40,11 @@ func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T)
 	kubernetesClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(session).Build()
 	liveKit := &liveKitIngressStub{}
 	manager := &LiveKitIngressManager{Client: kubernetesClient, API: liveKit, Participants: liveKit, RoomName: "kinugasa-preview"}
-	reconciler := &CameraWorkloadReconciler{Client: kubernetesClient, Ingress: manager, FanoutImage: "fanout:test", LiveKitIngressImage: "ingress:test", PublicMediaHost: "192.0.2.10"}
+	frameAt := time.Date(2026, 7, 14, 1, 2, 3, 0, time.UTC)
+	reconciler := &CameraWorkloadReconciler{
+		Client: kubernetesClient, Ingress: manager, FanoutImage: "fanout:test", LiveKitIngressImage: "ingress:test", PublicMediaHost: "192.0.2.10",
+		Activity: cameraMediaActivityStub{activity: CameraMediaActivity{Protocol: "srt", LastFrameAt: frameAt, Active: true}},
+	}
 
 	if err := reconciler.Reconcile(context.Background(), session); err != nil {
 		t.Fatal(err)
@@ -51,6 +65,9 @@ func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T)
 	}
 	if len(session.Status.Cameras) != 1 || session.Status.Cameras[0].LiveKitIngressID != "ingress-1" || session.Status.Cameras[0].Endpoints.RIST != "rist://192.0.2.10:31000" {
 		t.Fatalf("camera status = %#v", session.Status.Cameras)
+	}
+	if session.Status.Cameras[0].ConnectedProtocol != "srt" || session.Status.Cameras[0].LastFrameAt == nil || !session.Status.Cameras[0].LastFrameAt.Time.Equal(frameAt) {
+		t.Fatalf("camera media activity = %#v", session.Status.Cameras[0])
 	}
 	if err := reconciler.Reconcile(context.Background(), session); err != nil {
 		t.Fatal(err)

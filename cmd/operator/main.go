@@ -133,6 +133,7 @@ func main() {
 	cameraWorkloads := &operator.CameraWorkloadReconciler{
 		Client: manager.GetClient(), Ingress: ingressManager, FanoutImage: fanoutImage,
 		LiveKitIngressImage: liveKitIngressImage, PublicMediaHost: publicMediaHost,
+		Activity: &operator.HTTPFanoutActivityReader{Client: &http.Client{Timeout: 2 * time.Second}},
 	}
 	takeWorkloads := &operator.TakeWorkloadReconciler{
 		Client: manager.GetClient(), RecorderImage: recorderImage, UploaderImage: uploaderImage,
