@@ -134,10 +134,92 @@ func TestServerReportsReservedSessionName(t *testing.T) {
 	}
 }
 
+func TestServerAddsAndDeletesCamera(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := recordingv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	cameras := &cameraServiceStub{addResult: &operatorlib.CameraMutationResult{
+		Camera:         recordingv1alpha1.CameraSpec{Name: "front"},
+		ConnectionURLs: recordingv1alpha1.CameraEndpoints{RIST: "rist://host:31000?rist_profile=main", SRT: "srt://host:31001?mode=caller&transtype=live"},
+	}}
+	server := NewServer(fake.NewClientBuilder().WithScheme(scheme).Build(), "recording").WithCameraService(cameras)
+	addResponse := httptest.NewRecorder()
+	addRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/Session-1/cameras", bytes.NewBufferString(`{"name":"front"}`))
+	addRequest.Header.Set("Idempotency-Key", "add-front")
+	server.Handler().ServeHTTP(addResponse, addRequest)
+	if addResponse.Code != http.StatusAccepted {
+		t.Fatalf("add status = %d: %s", addResponse.Code, addResponse.Body.String())
+	}
+	var added cameraMutationResponse
+	if err := json.NewDecoder(addResponse.Body).Decode(&added); err != nil {
+		t.Fatal(err)
+	}
+	if added.Camera.Phase != recordingv1alpha1.CameraPhaseProvisioning || added.ConnectionURLs.RIST == "" {
+		t.Fatalf("added = %#v", added)
+	}
+	if cameras.sessionName != "Session-1" || cameras.cameraName != "front" || cameras.key != "add-front" {
+		t.Fatalf("add arguments = %#v", cameras)
+	}
+
+	cameras.deleteResult = &recordingv1alpha1.CameraSpec{Name: "front", DesiredState: recordingv1alpha1.DesiredStateAbsent}
+	deleteResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(deleteResponse, httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/Session-1/cameras/front", nil))
+	if deleteResponse.Code != http.StatusAccepted {
+		t.Fatalf("delete status = %d: %s", deleteResponse.Code, deleteResponse.Body.String())
+	}
+	var deleted cameraMutationResponse
+	if err := json.NewDecoder(deleteResponse.Body).Decode(&deleted); err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Camera.Phase != recordingv1alpha1.CameraPhaseDeleting {
+		t.Fatalf("deleted = %#v", deleted)
+	}
+}
+
+func TestServerMapsCameraMutationConflicts(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := recordingv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(fake.NewClientBuilder().WithScheme(scheme).Build(), "recording").WithCameraService(&cameraServiceStub{err: operatorlib.ErrTakeRecording})
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/Session-1/cameras", bytes.NewBufferString(`{"name":"front"}`)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	var body errorResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "TAKE_RECORDING" {
+		t.Fatalf("error = %#v", body.Error)
+	}
+}
+
 type sessionCreatorStub struct {
 	name    string
 	session *recordingv1alpha1.Session
 	err     error
+}
+
+type cameraServiceStub struct {
+	sessionName, cameraName, key string
+	addResult                    *operatorlib.CameraMutationResult
+	deleteResult                 *recordingv1alpha1.CameraSpec
+	err                          error
+}
+
+func (stub *cameraServiceStub) Add(_ context.Context, sessionName, cameraName, key string) (*operatorlib.CameraMutationResult, error) {
+	stub.sessionName, stub.cameraName, stub.key = sessionName, cameraName, key
+	return stub.addResult, stub.err
+}
+
+func (stub *cameraServiceStub) Delete(_ context.Context, sessionName, cameraName, key string) (*recordingv1alpha1.CameraSpec, error) {
+	stub.sessionName, stub.cameraName, stub.key = sessionName, cameraName, key
+	return stub.deleteResult, stub.err
 }
 
 func (stub *sessionCreatorStub) Create(_ context.Context, name, _ string) (*recordingv1alpha1.Session, error) {

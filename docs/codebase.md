@@ -185,4 +185,10 @@ session名/
 - `internal/storage/uploader.go`: `ready/`の逐次検出、SHA-256 metadataによるS3 objectの冪等性確認、条件付きupload、指数backoff、local state、全fileのupload完了判定を実装する。
 - `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderを起動する。
 
+### Camera mutation API phase
+
+- `internal/operator/camera_service.go`: camera名と状態の検証、使用履歴の保持、cluster全体でのNodePort予約、Session CRの競合再試行、mutationの冪等性、公開接続URL生成を実装する。
+- `internal/operator/httpapi/server.go`: camera追加・削除endpointと、非同期状態・接続URL・共通error responseを公開する。
+- `cmd/operator/main.go`: `PUBLIC_MEDIA_HOST`とmedia NodePort範囲をcamera serviceへ注入する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

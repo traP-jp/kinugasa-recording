@@ -26,14 +26,17 @@ import (
 
 func main() {
 	var (
-		httpAddress    string
-		metricsAddress string
-		healthAddress  string
-		namespace      string
-		s3Bucket       string
-		s3Endpoint     string
-		s3Region       string
-		s3UsePathStyle bool
+		httpAddress      string
+		metricsAddress   string
+		healthAddress    string
+		namespace        string
+		s3Bucket         string
+		s3Endpoint       string
+		s3Region         string
+		s3UsePathStyle   bool
+		publicMediaHost  string
+		mediaNodePortMin int
+		mediaNodePortMax int
 	)
 
 	flag.StringVar(&httpAddress, "http-bind-address", ":8080", "address for the Web UI HTTP API")
@@ -44,6 +47,9 @@ func main() {
 	flag.StringVar(&s3Endpoint, "s3-endpoint", os.Getenv("S3_ENDPOINT"), "optional S3-compatible endpoint")
 	flag.StringVar(&s3Region, "s3-region", envOrDefault("S3_REGION", "us-east-1"), "S3 region")
 	flag.BoolVar(&s3UsePathStyle, "s3-use-path-style", envBool("S3_USE_PATH_STYLE"), "use path-style S3 URLs")
+	flag.StringVar(&publicMediaHost, "public-media-host", os.Getenv("PUBLIC_MEDIA_HOST"), "LAN host advertised to camera clients")
+	flag.IntVar(&mediaNodePortMin, "media-node-port-min", envInt("MEDIA_NODE_PORT_MIN", 30000), "first media NodePort")
+	flag.IntVar(&mediaNodePortMax, "media-node-port-max", envInt("MEDIA_NODE_PORT_MAX", 32767), "last media NodePort")
 	zapOptions := zap.Options{Development: false}
 	zapOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -52,6 +58,10 @@ func main() {
 	logger := ctrl.Log.WithName("setup")
 	if s3Bucket == "" {
 		logger.Error(fmt.Errorf("S3 bucket is required"), "validate configuration")
+		os.Exit(1)
+	}
+	if publicMediaHost == "" || mediaNodePortMin < 30000 || mediaNodePortMax > 32767 || mediaNodePortMin > mediaNodePortMax {
+		logger.Error(fmt.Errorf("PUBLIC_MEDIA_HOST and a valid media NodePort range are required"), "validate configuration")
 		os.Exit(1)
 	}
 
@@ -94,7 +104,11 @@ func main() {
 		Registry:  storagelib.NewS3SessionRegistry(s3Client, s3Bucket),
 		Namespace: namespace,
 	}
-	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator)
+	cameraService := &operator.CameraService{
+		Client: manager.GetClient(), Namespace: namespace, PublicMediaHost: publicMediaHost,
+		NodePortMin: int32(mediaNodePortMin), NodePortMax: int32(mediaNodePortMax),
+	}
+	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator).WithCameraService(cameraService)
 	must(manager.Add(&httpapi.Runnable{HTTPServer: &http.Server{
 		Addr:              httpAddress,
 		Handler:           apiServer.Handler(),
@@ -130,4 +144,12 @@ func envOrDefault(name, fallback string) string {
 func envBool(name string) bool {
 	value, err := strconv.ParseBool(os.Getenv(name))
 	return err == nil && value
+}
+
+func envInt(name string, fallback int) int {
+	value, err := strconv.Atoi(os.Getenv(name))
+	if err != nil {
+		return fallback
+	}
+	return value
 }

@@ -29,6 +29,13 @@ type Server struct {
 	reader    client.Reader
 	namespace string
 	creator   sessionCreationService
+	cameras   cameraMutationService
+}
+
+// WithCameraService configures camera mutation endpoints.
+func (s *Server) WithCameraService(service cameraMutationService) *Server {
+	s.cameras = service
+	return s
 }
 
 // NewServer constructs the HTTP API using a Kubernetes cache-backed reader.
@@ -123,16 +130,36 @@ func (s *Server) createSession(response http.ResponseWriter, request *http.Reque
 }
 
 func (s *Server) session(response http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
-		writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
-		return
-	}
-
-	name := strings.TrimPrefix(request.URL.Path, "/api/v1/sessions/")
-	if strings.Contains(name, "/") || operatorvalidation.Name(name) != nil {
+	path := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/v1/sessions/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 || operatorvalidation.Name(parts[0]) != nil {
 		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid session name", map[string]string{"field": "sessionName"})
 		return
 	}
+	if len(parts) == 1 {
+		if request.Method != http.MethodGet {
+			writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
+			return
+		}
+		s.getSession(response, request, parts[0])
+		return
+	}
+	if parts[1] != "cameras" || len(parts) > 3 {
+		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "endpoint was not found", nil)
+		return
+	}
+	if len(parts) == 2 && request.Method == http.MethodPost {
+		s.addCamera(response, request, parts[0])
+		return
+	}
+	if len(parts) == 3 && request.Method == http.MethodDelete {
+		s.deleteCamera(response, request, parts[0], parts[2])
+		return
+	}
+	writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
+}
+
+func (s *Server) getSession(response http.ResponseWriter, request *http.Request, name string) {
 
 	var sessions recordingv1alpha1.SessionList
 	options := []client.ListOption{}
@@ -154,6 +181,72 @@ func (s *Server) session(response http.ResponseWriter, request *http.Request) {
 	writeError(response, request, http.StatusNotFound, "NOT_FOUND", "session was not found", map[string]string{"sessionName": name})
 }
 
+func (s *Server) addCamera(response http.ResponseWriter, request *http.Request, sessionName string) {
+	if s.cameras == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "camera mutation is not configured", nil)
+		return
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestBodySize)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var body cameraMutationRequest
+	if err := decoder.Decode(&body); err != nil {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must be a valid camera creation object", nil)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must contain one JSON object", nil)
+		return
+	}
+	result, err := s.cameras.Add(request.Context(), sessionName, body.Name, request.Header.Get("Idempotency-Key"))
+	if err != nil {
+		s.writeCameraError(response, request, err, body.Name)
+		return
+	}
+	writeJSON(response, http.StatusAccepted, cameraMutationResponse{
+		Camera:         cameraSummary{Name: result.Camera.Name, Phase: recordingv1alpha1.CameraPhaseProvisioning},
+		ConnectionURLs: result.ConnectionURLs,
+	})
+}
+
+func (s *Server) deleteCamera(response http.ResponseWriter, request *http.Request, sessionName, cameraName string) {
+	if operatorvalidation.Name(cameraName) != nil {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid camera name", map[string]string{"field": "cameraName"})
+		return
+	}
+	if s.cameras == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "camera mutation is not configured", nil)
+		return
+	}
+	camera, err := s.cameras.Delete(request.Context(), sessionName, cameraName, request.Header.Get("Idempotency-Key"))
+	if err != nil {
+		s.writeCameraError(response, request, err, cameraName)
+		return
+	}
+	writeJSON(response, http.StatusAccepted, cameraMutationResponse{Camera: cameraSummary{Name: camera.Name, Phase: recordingv1alpha1.CameraPhaseDeleting}})
+}
+
+func (s *Server) writeCameraError(response http.ResponseWriter, request *http.Request, err error, cameraName string) {
+	switch {
+	case errors.Is(err, operatorlib.ErrInvalidName):
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid camera or session name", nil)
+	case errors.Is(err, operatorlib.ErrSessionNotFound), errors.Is(err, operatorlib.ErrCameraNotFound):
+		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "session or camera was not found", nil)
+	case errors.Is(err, operatorlib.ErrCameraNameReserved):
+		writeError(response, request, http.StatusConflict, "NAME_RESERVED", "camera name has already been used", map[string]string{"field": "name", "value": cameraName})
+	case errors.Is(err, operatorlib.ErrTakeRecording):
+		writeError(response, request, http.StatusConflict, "TAKE_RECORDING", "camera mutation is disabled while a take is recording", nil)
+	case errors.Is(err, operatorlib.ErrIdempotencyConflict):
+		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", "idempotency key was already used for another request", nil)
+	case errors.Is(err, operatorlib.ErrMediaPortsExhausted):
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "media node ports are exhausted", nil)
+	case errors.Is(err, operatorlib.ErrDependencyUnavailable):
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "camera mutation dependency is unavailable", nil)
+	default:
+		writeError(response, request, http.StatusInternalServerError, "INTERNAL", "camera mutation failed", nil)
+	}
+}
+
 type sessionResource struct {
 	Name   string                          `json:"name"`
 	Spec   recordingv1alpha1.SessionSpec   `json:"spec"`
@@ -164,8 +257,25 @@ type createSessionRequest struct {
 	Name string `json:"name"`
 }
 
+type cameraMutationRequest struct {
+	Name string `json:"name"`
+}
+type cameraSummary struct {
+	Name  string                        `json:"name"`
+	Phase recordingv1alpha1.CameraPhase `json:"phase"`
+}
+type cameraMutationResponse struct {
+	Camera         cameraSummary                     `json:"camera"`
+	ConnectionURLs recordingv1alpha1.CameraEndpoints `json:"connectionUrls,omitempty"`
+}
+
 type sessionCreationService interface {
 	Create(context.Context, string, string) (*recordingv1alpha1.Session, error)
+}
+
+type cameraMutationService interface {
+	Add(context.Context, string, string, string) (*operatorlib.CameraMutationResult, error)
+	Delete(context.Context, string, string, string) (*recordingv1alpha1.CameraSpec, error)
 }
 
 type sessionsResponse struct {
