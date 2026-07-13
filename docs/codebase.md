@@ -167,4 +167,14 @@ session名/
 - `web/src/api.ts`: Web UIからOperator APIへSession作成を要求するclientを配置する。
 - `web/src/App.tsx`: Session名入力、client-side validation、重複警告、作成後のSession画面への遷移を実装する。
 
+### 映像fanout・LiveKit中継phase
+
+- `internal/media/process.go`: child processの起動、FFmpeg progress取得、SIGINTによる正常停止、timeout時のkill、異常終了状態を実装する。
+- `internal/media/component.go`: 複数processのlifecycleと`/healthz`・`/status` HTTP endpointを管理する。
+- `internal/media/environment.go`: 映像component共通の環境変数読み取り・型変換を実装する。
+- `internal/media/ffmpeg/fanout.go`: RIST main profileまたはSRT listenerからH.264を受信し、再encodeせずRTMP preview系とSRT録画系へ分岐するcommandを生成する。
+- `internal/media/ffmpeg/ingress.go`: RTMP listenerからLiveKitのWHIP endpointへ転送するcommandを生成する。WHIP非互換入力ではpreview系だけをbaseline H.264へ変換できる。
+- `cmd/video-fanout/main.go`, `cmd/livekit-ingress/main.go`: 環境変数からcommandを構築し、signalとstatus serverを含むcomponentを起動する。
+- `flake.nix`: 開発・test用FFmpegを追加し、RIST、SRT、RTMP、WHIP、MPEG-TS、libx264が有効な実バイナリを固定する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

@@ -20,6 +20,7 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              ffmpeg-full
               go_1_26
               gnumake
               golangci-lint
