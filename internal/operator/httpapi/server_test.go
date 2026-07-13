@@ -225,6 +225,38 @@ func TestServerIssuesPreviewToken(t *testing.T) {
 	}
 }
 
+func TestServerStartsAndStopsTake(t *testing.T) {
+	t.Parallel()
+	scheme := runtime.NewScheme()
+	if err := recordingv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	takes := &takeServiceStub{startResult: &operatorlib.TakeMutationResult{
+		Take:            recordingv1alpha1.TakeSpec{Name: "take-1", CameraNames: []string{"front"}},
+		ExcludedCameras: []operatorlib.ExcludedCamera{{Name: "side", Reason: "CAMERA_DISCONNECTED"}},
+	}}
+	server := NewServer(fake.NewClientBuilder().WithScheme(scheme).Build(), "recording").WithTakeService(takes)
+	startResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(startResponse, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/Session-1/takes", bytes.NewBufferString(`{"name":"take-1","cameraNames":["front","side"]}`)))
+	if startResponse.Code != http.StatusAccepted {
+		t.Fatalf("start status = %d: %s", startResponse.Code, startResponse.Body.String())
+	}
+	var started takeMutationResponse
+	if err := json.NewDecoder(startResponse.Body).Decode(&started); err != nil {
+		t.Fatal(err)
+	}
+	if started.Take.Phase != recordingv1alpha1.TakePhasePending || len(started.ExcludedCameras) != 1 {
+		t.Fatalf("started = %#v", started)
+	}
+
+	takes.stopResult = &recordingv1alpha1.TakeSpec{Name: "take-1", CameraNames: []string{"front"}}
+	stopResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(stopResponse, httptest.NewRequest(http.MethodPost, "/api/v1/sessions/Session-1/takes/take-1/stop", bytes.NewBufferString(`{}`)))
+	if stopResponse.Code != http.StatusAccepted {
+		t.Fatalf("stop status = %d: %s", stopResponse.Code, stopResponse.Body.String())
+	}
+}
+
 type sessionCreatorStub struct {
 	name    string
 	session *recordingv1alpha1.Session
@@ -241,6 +273,19 @@ type cameraServiceStub struct {
 type tokenServiceStub struct {
 	token *livekitapi.PreviewToken
 	err   error
+}
+
+type takeServiceStub struct {
+	startResult *operatorlib.TakeMutationResult
+	stopResult  *recordingv1alpha1.TakeSpec
+	err         error
+}
+
+func (stub *takeServiceStub) Start(context.Context, string, string, []string, string) (*operatorlib.TakeMutationResult, error) {
+	return stub.startResult, stub.err
+}
+func (stub *takeServiceStub) Stop(context.Context, string, string, string) (*recordingv1alpha1.TakeSpec, error) {
+	return stub.stopResult, stub.err
 }
 
 func (stub *tokenServiceStub) Issue() (*livekitapi.PreviewToken, error) { return stub.token, stub.err }

@@ -213,4 +213,10 @@ session名/
 - `web/src/Preview.tsx`: subscribe-only tokenでLiveKit roomへ接続し、camera名と一致するvideo trackを表示して切断を警告する。
 - `web/src/App.test.tsx`: camera追加、両protocolのQR、切断警告、削除操作を含む主要UI flowを検証する。
 
+### Take mutation API phase
+
+- `internal/operator/take_service.go`: take名の履歴と形式、同時録画の禁止、camera選択と未指定時の全選択、接続状態による除外、CR競合再試行、除外結果を含む冪等な開始・停止を実装する。
+- `internal/operator/httpapi/server.go`: take開始・停止endpoint、採用camera、除外cameraと安定した理由codeを公開する。
+- `cmd/operator/main.go`: Kubernetes clientを持つtake serviceをHTTP APIへ注入する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

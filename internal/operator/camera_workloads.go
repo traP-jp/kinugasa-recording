@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	livekit "github.com/livekit/protocol/livekit"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,7 +85,16 @@ func (reconciler *CameraWorkloadReconciler) ensureCamera(ctx context.Context, se
 	}
 	status := cameraStatus(session, camera.Name)
 	status.LiveKitIngressID = info.IngressId
-	status.Phase = recordingv1alpha1.CameraPhaseWaiting
+	switch {
+	case info.State != nil && info.State.Status == livekit.IngressState_ENDPOINT_PUBLISHING:
+		status.Phase = recordingv1alpha1.CameraPhaseConnected
+	case info.State != nil && info.State.Status == livekit.IngressState_ENDPOINT_ERROR:
+		status.Phase = recordingv1alpha1.CameraPhaseError
+	case status.Phase == recordingv1alpha1.CameraPhaseConnected || status.Phase == recordingv1alpha1.CameraPhaseDisconnected:
+		status.Phase = recordingv1alpha1.CameraPhaseDisconnected
+	default:
+		status.Phase = recordingv1alpha1.CameraPhaseWaiting
+	}
 	status.Endpoints = cameraEndpoints(reconciler.PublicMediaHost, camera)
 	return nil
 }

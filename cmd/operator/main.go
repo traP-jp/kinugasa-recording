@@ -142,7 +142,9 @@ func main() {
 		NodePortMin: int32(mediaNodePortMin), NodePortMax: int32(mediaNodePortMax),
 	}
 	tokenIssuer := &livekitapi.TokenIssuer{APIKey: liveKitAPIKey, APISecret: liveKitAPISecret, ServerURL: liveKitPublicURL, RoomName: liveKitRoom, TTL: liveKitTokenTTL}
-	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator).WithCameraService(cameraService).WithPreviewTokenService(tokenIssuer)
+	takeService := &operator.TakeService{Client: manager.GetClient(), Namespace: namespace}
+	apiServer := httpapi.NewServer(manager.GetCache(), namespace, sessionCreator).
+		WithCameraService(cameraService).WithTakeService(takeService).WithPreviewTokenService(tokenIssuer)
 	must(manager.Add(&httpapi.Runnable{HTTPServer: &http.Server{
 		Addr:              httpAddress,
 		Handler:           apiServer.Handler(),

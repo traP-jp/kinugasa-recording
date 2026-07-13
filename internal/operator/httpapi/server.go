@@ -32,6 +32,12 @@ type Server struct {
 	creator   sessionCreationService
 	cameras   cameraMutationService
 	tokens    previewTokenService
+	takes     takeMutationService
+}
+
+func (s *Server) WithTakeService(service takeMutationService) *Server {
+	s.takes = service
+	return s
 }
 
 func (s *Server) WithPreviewTokenService(service previewTokenService) *Server {
@@ -185,6 +191,18 @@ func (s *Server) session(response http.ResponseWriter, request *http.Request) {
 		s.getSession(response, request, parts[0])
 		return
 	}
+	if parts[1] == "takes" {
+		if len(parts) == 2 && request.Method == http.MethodPost {
+			s.startTake(response, request, parts[0])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "stop" && request.Method == http.MethodPost {
+			s.stopTake(response, request, parts[0], parts[2])
+			return
+		}
+		writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
+		return
+	}
 	if parts[1] != "cameras" || len(parts) > 3 {
 		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "endpoint was not found", nil)
 		return
@@ -198,6 +216,73 @@ func (s *Server) session(response http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
+}
+
+func (s *Server) startTake(response http.ResponseWriter, request *http.Request, sessionName string) {
+	if s.takes == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "take mutation is not configured", nil)
+		return
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestBodySize)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var body takeMutationRequest
+	if err := decoder.Decode(&body); err != nil {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must be a valid take creation object", nil)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must contain one JSON object", nil)
+		return
+	}
+	result, err := s.takes.Start(request.Context(), sessionName, body.Name, body.CameraNames, request.Header.Get("Idempotency-Key"))
+	if err != nil {
+		s.writeTakeError(response, request, err, body.Name)
+		return
+	}
+	excluded := make([]excludedCameraResponse, len(result.ExcludedCameras))
+	for index, camera := range result.ExcludedCameras {
+		excluded[index] = excludedCameraResponse{Name: camera.Name, Reason: camera.Reason}
+	}
+	writeJSON(response, http.StatusAccepted, takeMutationResponse{Take: takeSummary{Name: result.Take.Name, Phase: recordingv1alpha1.TakePhasePending, CameraNames: result.Take.CameraNames}, ExcludedCameras: excluded})
+}
+
+func (s *Server) stopTake(response http.ResponseWriter, request *http.Request, sessionName, takeName string) {
+	if operatorvalidation.Name(takeName) != nil {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid take name", nil)
+		return
+	}
+	if s.takes == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "take mutation is not configured", nil)
+		return
+	}
+	take, err := s.takes.Stop(request.Context(), sessionName, takeName, request.Header.Get("Idempotency-Key"))
+	if err != nil {
+		s.writeTakeError(response, request, err, takeName)
+		return
+	}
+	writeJSON(response, http.StatusAccepted, takeMutationResponse{Take: takeSummary{Name: take.Name, Phase: recordingv1alpha1.TakePhaseStopping, CameraNames: take.CameraNames}})
+}
+
+func (s *Server) writeTakeError(response http.ResponseWriter, request *http.Request, err error, takeName string) {
+	switch {
+	case errors.Is(err, operatorlib.ErrInvalidName):
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid take, camera, or session name", nil)
+	case errors.Is(err, operatorlib.ErrSessionNotFound), errors.Is(err, operatorlib.ErrTakeNotFound):
+		writeError(response, request, http.StatusNotFound, "NOT_FOUND", "session or take was not found", nil)
+	case errors.Is(err, operatorlib.ErrTakeNameReserved):
+		writeError(response, request, http.StatusConflict, "NAME_RESERVED", "take name has already been used", map[string]string{"field": "name", "value": takeName})
+	case errors.Is(err, operatorlib.ErrTakeRecording):
+		writeError(response, request, http.StatusConflict, "TAKE_RECORDING", "another take is recording", nil)
+	case errors.Is(err, operatorlib.ErrNoAvailableCamera):
+		writeError(response, request, http.StatusConflict, "NO_AVAILABLE_CAMERA", "no requested camera is connected", nil)
+	case errors.Is(err, operatorlib.ErrIdempotencyConflict):
+		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", "idempotency key was already used for another request", nil)
+	case errors.Is(err, operatorlib.ErrDependencyUnavailable):
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "take mutation dependency is unavailable", nil)
+	default:
+		writeError(response, request, http.StatusInternalServerError, "INTERNAL", "take mutation failed", nil)
+	}
 }
 
 func (s *Server) getSession(response http.ResponseWriter, request *http.Request, name string) {
@@ -301,6 +386,23 @@ type createSessionRequest struct {
 type cameraMutationRequest struct {
 	Name string `json:"name"`
 }
+type takeMutationRequest struct {
+	Name        string   `json:"name"`
+	CameraNames []string `json:"cameraNames,omitempty"`
+}
+type takeSummary struct {
+	Name        string                      `json:"name"`
+	Phase       recordingv1alpha1.TakePhase `json:"phase"`
+	CameraNames []string                    `json:"cameraNames"`
+}
+type excludedCameraResponse struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+type takeMutationResponse struct {
+	Take            takeSummary              `json:"take"`
+	ExcludedCameras []excludedCameraResponse `json:"excludedCameras,omitempty"`
+}
 type cameraSummary struct {
 	Name  string                        `json:"name"`
 	Phase recordingv1alpha1.CameraPhase `json:"phase"`
@@ -328,6 +430,11 @@ type cameraMutationService interface {
 
 type previewTokenService interface {
 	Issue() (*livekitapi.PreviewToken, error)
+}
+
+type takeMutationService interface {
+	Start(context.Context, string, string, []string, string) (*operatorlib.TakeMutationResult, error)
+	Stop(context.Context, string, string, string) (*recordingv1alpha1.TakeSpec, error)
 }
 
 type sessionsResponse struct {
