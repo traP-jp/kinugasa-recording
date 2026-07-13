@@ -7,10 +7,6 @@
 
 ## 0. 要件の確認と設計
 
-### 人間への確認が必要な事項
-
-- [ ] `[要確認]` KPI-001の受け入れ条件として、対象Let's Note CF-SRのOS、CPU・memory構成、同時camera数、解像度、frame rate、許容するdrop率とCPU・memory使用量を決める。
-
 ### 実装前に文書化する事項
 
 - [ ] Session Custom Resourceの`spec`・`status`、camera/takeの状態遷移、使用済み名称の保持方法を設計し、`docs/`に記録する。（FR-001-1、FR-002-1、FR-004-1、FR-006-1）
@@ -144,7 +140,7 @@
 - [ ] session、camera、takeの不正名・重複名・使用済み名をWeb UIから指定し、拒否と警告をtestする。（KPI-005-3）
 - [ ] QRコードの内容が選択したprotocolの到達可能な接続先URLと一致することをtestする。（KPI-006）
 - [ ] 録画停止後、すべてのuploadが完了してS3から取得できることをtestする。（UC-005）
-- [ ] 確定した受け入れ条件に基づきLet's Note CF-SRで負荷・安定性を確認する。（KPI-001）
+- [ ] Let's Note CF-SR上でsession作成、複数cameraのpreview、take録画、逐次uploadの基本フローが動作することを確認する。（KPI-001）
 
 ## 10. 運用文書と完了条件
 
@@ -153,3 +149,8 @@
 - [ ] 障害時の確認箇所、録画・uploadの再試行または復旧方法を文書化する。
 - [ ] 実際の配置と責務に合わせて`docs/codebase.md`を最終更新する。
 - [ ] KPI-001からKPI-006、FR-001からFR-006、UC-001からUC-006の対応状況を確認し、すべての受け入れtestが成功したら初期実装を完了とする。
+
+## 11. 実運用後の性能検討
+
+- [ ] Let's Note CF-SRでの実運用時に、機種・OS、同時camera数、解像度、frame rate、運用時間と、CPU・memory使用量、frame drop、処理異常を記録する。
+- [ ] 実運用時の計測結果に基づいて必要な性能と受け入れ条件を検討し、`docs/requirements.md`へ反映する。（KPI-001）
