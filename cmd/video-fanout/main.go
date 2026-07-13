@@ -21,7 +21,11 @@ func main() {
 
 func run() error {
 	environment := media.Environment{}
-	inputPort, err := environment.Int("INPUT_PORT", 10000)
+	ristPort, err := environment.Int("RIST_PORT", 10000)
+	if err != nil {
+		return err
+	}
+	srtPort, err := environment.Int("SRT_PORT", 10001)
 	if err != nil {
 		return err
 	}
@@ -35,8 +39,8 @@ func run() error {
 	}
 	commands, err := mediaffmpeg.FanoutCommands(mediaffmpeg.FanoutConfig{
 		FFmpegPath:          environment.String("FFMPEG_PATH", "ffmpeg"),
-		Protocol:            mediaffmpeg.InputProtocol(environment.String("INPUT_PROTOCOL", "srt")),
-		ListenPort:          inputPort,
+		RISTListenPort:      ristPort,
+		SRTListenPort:       srtPort,
 		RecordingListenPort: recordingPort,
 		PreviewRTMPURL:      previewURL,
 	})

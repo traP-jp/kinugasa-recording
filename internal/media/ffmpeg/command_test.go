@@ -8,29 +8,21 @@ import (
 
 func TestFanoutCommandsSupportRISTAndSRT(t *testing.T) {
 	t.Parallel()
-
-	for _, protocol := range []InputProtocol{InputProtocolRIST, InputProtocolSRT} {
-		protocol := protocol
-		t.Run(string(protocol), func(t *testing.T) {
-			t.Parallel()
-
-			commands, err := FanoutCommands(FanoutConfig{
-				Protocol:            protocol,
-				ListenPort:          31000,
-				RecordingListenPort: 12000,
-				PreviewRTMPURL:      "rtmp://ingress/live/front",
-			})
-			if err != nil {
-				t.Fatalf("FanoutCommands() returned %v", err)
-			}
-			ingest := strings.Join(commands["ingest"].Args, " ")
-			if !strings.Contains(ingest, string(protocol)+"://0.0.0.0:31000") {
-				t.Fatalf("ingest command does not contain %s listener: %s", protocol, ingest)
-			}
-			if !strings.Contains(ingest, "-c:v copy") || !strings.Contains(ingest, "-f tee") {
-				t.Fatalf("ingest command does not stream-copy to tee: %s", ingest)
-			}
-		})
+	commands, err := FanoutCommands(FanoutConfig{
+		RISTListenPort: 31000, SRTListenPort: 31001,
+		RecordingListenPort: 12000, PreviewRTMPURL: "rtmp://ingress/live/front",
+	})
+	if err != nil {
+		t.Fatalf("FanoutCommands() returned %v", err)
+	}
+	for name, expected := range map[string]string{"ingest-rist": "rist://0.0.0.0:31000", "ingest-srt": "srt://0.0.0.0:31001"} {
+		ingest := strings.Join(commands[name].Args, " ")
+		if !strings.Contains(ingest, expected) {
+			t.Errorf("%s does not contain %s: %s", name, expected, ingest)
+		}
+		if !strings.Contains(ingest, "-c:v copy") || !strings.Contains(ingest, "-f tee") {
+			t.Errorf("%s does not stream-copy to tee: %s", name, ingest)
+		}
 	}
 }
 

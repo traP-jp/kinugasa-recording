@@ -8,18 +8,11 @@ import (
 	"github.com/comavius/kinugasa-recording/internal/media"
 )
 
-type InputProtocol string
-
-const (
-	InputProtocolRIST InputProtocol = "rist"
-	InputProtocolSRT  InputProtocol = "srt"
-)
-
 // FanoutConfig configures one camera's fanout process group.
 type FanoutConfig struct {
 	FFmpegPath            string
-	Protocol              InputProtocol
-	ListenPort            int
+	RISTListenPort        int
+	SRTListenPort         int
 	RecordingListenPort   int
 	PreviewRTMPURL        string
 	PreviewLoopbackPort   int
@@ -31,8 +24,11 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 	if config.FFmpegPath == "" {
 		config.FFmpegPath = "ffmpeg"
 	}
-	if config.ListenPort < 1 || config.ListenPort > 65535 {
-		return nil, fmt.Errorf("invalid input listen port %d", config.ListenPort)
+	if config.RISTListenPort < 1 || config.RISTListenPort > 65535 {
+		return nil, fmt.Errorf("invalid RIST listen port %d", config.RISTListenPort)
+	}
+	if config.SRTListenPort < 1 || config.SRTListenPort > 65535 {
+		return nil, fmt.Errorf("invalid SRT listen port %d", config.SRTListenPort)
 	}
 	if config.RecordingListenPort < 1 || config.RecordingListenPort > 65535 {
 		return nil, fmt.Errorf("invalid recording listen port %d", config.RecordingListenPort)
@@ -47,28 +43,15 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 		return nil, fmt.Errorf("preview RTMP URL is required")
 	}
 
-	var inputURL string
-	switch config.Protocol {
-	case InputProtocolRIST:
-		inputURL = fmt.Sprintf("rist://0.0.0.0:%d?rist_profile=main", config.ListenPort)
-	case InputProtocolSRT:
-		inputURL = fmt.Sprintf("srt://0.0.0.0:%d?mode=listener&transtype=live", config.ListenPort)
-	default:
-		return nil, fmt.Errorf("unsupported input protocol %q", config.Protocol)
-	}
-
 	previewUDP := fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", config.PreviewLoopbackPort)
 	recordingUDP := fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", config.RecordingLoopbackPort)
 	common := []string{"-nostdin", "-hide_banner", "-loglevel", "warning", "-progress", "pipe:1", "-nostats"}
-	ingestArgs := append([]string{}, common...)
-	ingestArgs = append(ingestArgs,
-		"-fflags", "+genpts",
-		"-i", inputURL,
-		"-map", "0:v:0",
-		"-c:v", "copy",
-		"-f", "tee",
-		fmt.Sprintf("[f=mpegts:onfail=ignore]%s|[f=mpegts:onfail=ignore]%s", previewUDP, recordingUDP),
-	)
+	newIngest := func(inputURL string) media.Command {
+		args := append([]string{}, common...)
+		args = append(args, "-fflags", "+genpts", "-i", inputURL, "-map", "0:v:0", "-c:v", "copy", "-f", "tee",
+			fmt.Sprintf("[f=mpegts:onfail=ignore]%s|[f=mpegts:onfail=ignore]%s", previewUDP, recordingUDP))
+		return media.Command{Path: config.FFmpegPath, Args: args}
+	}
 	previewArgs := append([]string{}, common...)
 	previewArgs = append(previewArgs,
 		"-i", fmt.Sprintf("udp://127.0.0.1:%d?fifo_size=65536&overrun_nonfatal=1", config.PreviewLoopbackPort),
@@ -87,8 +70,9 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 	)
 
 	return map[string]media.Command{
-		"ingest":    {Path: config.FFmpegPath, Args: ingestArgs},
-		"preview":   {Path: config.FFmpegPath, Args: previewArgs},
-		"recording": {Path: config.FFmpegPath, Args: recordingArgs},
+		"ingest-rist": newIngest(fmt.Sprintf("rist://0.0.0.0:%d?rist_profile=main", config.RISTListenPort)),
+		"ingest-srt":  newIngest(fmt.Sprintf("srt://0.0.0.0:%d?mode=listener&transtype=live", config.SRTListenPort)),
+		"preview":     {Path: config.FFmpegPath, Args: previewArgs},
+		"recording":   {Path: config.FFmpegPath, Args: recordingArgs},
 	}, nil
 }
