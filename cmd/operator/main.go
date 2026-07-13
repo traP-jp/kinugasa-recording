@@ -17,6 +17,7 @@ import (
 	operator "github.com/comavius/kinugasa-recording/internal/operator"
 	"github.com/comavius/kinugasa-recording/internal/operator/httpapi"
 	storagelib "github.com/comavius/kinugasa-recording/internal/storage"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -46,6 +47,11 @@ func main() {
 		liveKitIngressImage string
 		liveKitPublicURL    string
 		liveKitTokenTTL     time.Duration
+		recorderImage       string
+		uploaderImage       string
+		s3ConfigMapName     string
+		s3SecretName        string
+		recordingVolumeSize string
 	)
 
 	flag.StringVar(&httpAddress, "http-bind-address", ":8080", "address for the Web UI HTTP API")
@@ -67,6 +73,11 @@ func main() {
 	flag.StringVar(&liveKitIngressImage, "livekit-ingress-image", envOrDefault("LIVEKIT_INGRESS_IMAGE", "kinugasa-recording/livekit-ingress:latest"), "livekit-ingress bridge image")
 	flag.StringVar(&liveKitPublicURL, "livekit-public-url", os.Getenv("LIVEKIT_PUBLIC_URL"), "browser-reachable LiveKit WebSocket URL")
 	flag.DurationVar(&liveKitTokenTTL, "livekit-token-ttl", envDuration("LIVEKIT_TOKEN_TTL", 5*time.Minute), "preview participant token TTL")
+	flag.StringVar(&recorderImage, "video-recorder-image", envOrDefault("VIDEO_RECORDER_IMAGE", "kinugasa-recording/video-recorder:latest"), "video-recorder image")
+	flag.StringVar(&uploaderImage, "video-uploader-image", envOrDefault("VIDEO_UPLOADER_IMAGE", "kinugasa-recording/video-uploader:latest"), "video-uploader image")
+	flag.StringVar(&s3ConfigMapName, "s3-config-map", envOrDefault("S3_CONFIG_MAP_NAME", "kinugasa-recording-s3"), "S3 uploader ConfigMap name")
+	flag.StringVar(&s3SecretName, "s3-secret", envOrDefault("S3_SECRET_NAME", "kinugasa-recording-s3"), "S3 uploader Secret name")
+	flag.StringVar(&recordingVolumeSize, "recording-volume-size", envOrDefault("RECORDING_VOLUME_SIZE", "20Gi"), "per-camera recording PVC size")
 	zapOptions := zap.Options{Development: false}
 	zapOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -113,11 +124,21 @@ func main() {
 		os.Exit(1)
 	}
 	ingressManager := &operator.LiveKitIngressManager{Client: manager.GetClient(), API: liveKitClient, Participants: liveKitClient, RoomName: liveKitRoom}
+	volumeSize, err := resource.ParseQuantity(recordingVolumeSize)
+	if err != nil {
+		logger.Error(err, "parse recording volume size")
+		os.Exit(1)
+	}
 	reconciler := &operator.SessionReconciler{Client: manager.GetClient(), Recorder: manager.GetEventRecorder("session-controller")}
-	reconciler.Workloads = &operator.CameraWorkloadReconciler{
+	cameraWorkloads := &operator.CameraWorkloadReconciler{
 		Client: manager.GetClient(), Ingress: ingressManager, FanoutImage: fanoutImage,
 		LiveKitIngressImage: liveKitIngressImage, PublicMediaHost: publicMediaHost,
 	}
+	takeWorkloads := &operator.TakeWorkloadReconciler{
+		Client: manager.GetClient(), RecorderImage: recorderImage, UploaderImage: uploaderImage,
+		S3ConfigMapName: s3ConfigMapName, S3SecretName: s3SecretName, VolumeSize: volumeSize,
+	}
+	reconciler.Workloads = &operator.SessionWorkloadReconciler{Cameras: cameraWorkloads, Takes: takeWorkloads}
 	must(reconciler.SetupWithManager(manager), "register Session reconciler")
 	must(manager.Add(&operator.LiveKitRoomInitializer{API: liveKitClient, RoomName: liveKitRoom}), "register LiveKit room initializer")
 

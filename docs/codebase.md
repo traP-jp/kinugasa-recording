@@ -219,4 +219,11 @@ session名/
 - `internal/operator/httpapi/server.go`: take開始・停止endpoint、採用camera、除外cameraと安定した理由codeを公開する。
 - `cmd/operator/main.go`: Kubernetes clientを持つtake serviceをHTTP APIへ注入する。
 
+### Take workload lifecycle phase
+
+- `internal/operator/session_workloads.go`: cameraとtakeのreconcilerをSession reconcile内で順に実行する。
+- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Job成功後にJobとPVCをcleanupしてtakeを完了する。
+- `internal/operator/session_controller.go`: JobとPVCをowner resourceとして監視する。
+- `cmd/operator/main.go`: recorder/uploader image、S3 ConfigMap・Secret名、PVC容量をtake workload reconcilerへ注入する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
