@@ -28,6 +28,10 @@ button {
   font: inherit;
 }
 
+code {
+  overflow-wrap: anywhere;
+}
+
 button {
   border-color: #145a8d;
   color: #fff;
@@ -50,4 +54,55 @@ button:disabled {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.camera-list,
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+  margin-block: 1rem 2rem;
+}
+
+.camera-card,
+.preview-card {
+  padding: 1rem;
+  border: 1px solid #d5d8dc;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.connection-grid {
+  display: grid;
+  gap: 1rem;
+  margin-block: 1rem;
+}
+
+.connection-grid > div {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+}
+
+.danger {
+  border-color: #922b21;
+  background: #922b21;
+}
+
+.preview-card video,
+.video-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.35rem;
+  background: #17202a;
+}
+
+.video-placeholder {
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.warning {
+  color: #a93226;
 }

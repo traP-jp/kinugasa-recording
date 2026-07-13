@@ -206,4 +206,11 @@ session名/
 - `internal/operator/httpapi/server.go`: `POST /api/v1/livekit/token`で公開LiveKit URL、room名、participant token、有効期限を返す。
 - `cmd/operator/main.go`: 公開URL、API credential、room名、token TTLを環境変数・flagからtoken issuerへ注入する。
 
+### Camera・preview Web UI phase
+
+- `web/src/api.ts`: Session状態取得、camera追加・削除、preview token取得の型付きHTTP clientを提供する。
+- `web/src/App.tsx`: camera名称validation、追加・削除、録画中の操作無効化、状態・警告、RIST/SRT接続URLとQR codeを表示する。
+- `web/src/Preview.tsx`: subscribe-only tokenでLiveKit roomへ接続し、camera名と一致するvideo trackを表示して切断を警告する。
+- `web/src/App.test.tsx`: camera追加、両protocolのQR、切断警告、削除操作を含む主要UI flowを検証する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
