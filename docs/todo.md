@@ -9,12 +9,6 @@
 
 ### 実装前に文書化する事項
 
-- [ ] Session Custom Resourceの`spec`・`status`、camera/takeの状態遷移、使用済み名称の保持方法を設計し、`docs/`に記録する。（FR-001-1、FR-002-1、FR-004-1、FR-006-1）
-- [ ] OperatorのHTTP APIについて、session作成、camera追加・削除、take開始・停止、状態取得、LiveKit参加token取得のrequest・responseとerror形式を設計し、`api/`または`docs/`に記録する。
-- [ ] 英数字とハイフンのみを許可する名称validationと、session・camera・takeそれぞれの一意性および使用済み名称を再利用させない判定方法を設計する。（KPI-005-3、UC-001、UC-002、UC-006）
-- [ ] RIST/SRTのlisten URL、port割り当て、fan-out後の転送方式、RTMPからWHIPへの中継、およびスマートフォンから到達可能なURLの生成方法を設計する。（KPI-004、KPI-006）
-- [ ] 録画ファイルの命名・確定条件、shared volume上の受け渡し、逐次upload、retry、停止時のupload完了判定を設計する。（FR-002-3、FR-002-4、FR-005）
-- [ ] camera切断、録画process異常、upload失敗・未完了を検知し、Custom ResourceからWeb UIまで伝えるstatus・eventの形式を設計する。（UC-002、UC-003）
 - [ ] 実装で確定したpackage・fileの配置を、各phaseの完了時に`docs/codebase.md`へ反映する。
 
 ## 1. Repositoryの基盤

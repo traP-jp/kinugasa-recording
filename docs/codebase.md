@@ -32,6 +32,10 @@ kinugasa-recording/
 ├── scripts/              # k3dの操作やcode generation等のscript
 ├── test/                 # 複数コンポーネントにまたがるtest
 ├── docs/                 # 要件や設計のdocument
+│   ├── requirements.md   # 人間が管理する要件のSSoT
+│   ├── design.md         # CR、HTTP API、映像経路、録画・uploadの初期設計
+│   ├── codebase.md       # package・file配置と責務
+│   └── todo.md           # 未完了タスク
 ├── Makefile              # build、test、deploy等の共通entry point
 ├── go.mod
 ├── package.json
@@ -118,3 +122,13 @@ session名/
 ```
 
 認証情報はKubernetes Secret、endpointやbucket等の設定はConfigMapまたは環境変数を通して各コンポーネントへ渡す。
+
+## 7. 確定したfile配置
+
+### 設計phase
+
+- `docs/design.md`: Session Custom Resourceのschemaと状態遷移、名称予約、Web UI向けHTTP API、RIST/SRTからLiveKit・録画への映像経路、録画fileとuploader間の契約、障害statusを管理する。
+- `docs/requirements.md`: 実装判断で変更せず、引き続き要件のSSoTとする。
+- `docs/todo.md`: 未完了項目だけを保持する。
+
+以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
