@@ -49,7 +49,7 @@ func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T)
 	if len(services.Items) != 3 {
 		t.Fatalf("services = %d", len(services.Items))
 	}
-	if len(session.Status.Cameras) != 1 || session.Status.Cameras[0].LiveKitIngressID != "ingress-1" || session.Status.Cameras[0].Endpoints.RIST != "rist://192.0.2.10:31000?rist_profile=main" {
+	if len(session.Status.Cameras) != 1 || session.Status.Cameras[0].LiveKitIngressID != "ingress-1" || session.Status.Cameras[0].Endpoints.RIST != "rist://192.0.2.10:31000" {
 		t.Fatalf("camera status = %#v", session.Status.Cameras)
 	}
 	if err := reconciler.Reconcile(context.Background(), session); err != nil {

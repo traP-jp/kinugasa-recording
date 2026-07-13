@@ -96,7 +96,9 @@ func (r *SessionReconciler) Reconcile(ctx context.Context, request ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	// Camera media activity and LiveKit ingress state change outside Kubernetes,
+	// so successful Sessions must also be polled periodically.
+	return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 }
 
 // SetupWithManager registers the Session controller.

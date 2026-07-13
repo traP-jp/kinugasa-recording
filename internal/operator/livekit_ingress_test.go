@@ -24,7 +24,7 @@ func (stub *liveKitIngressStub) ListParticipants(context.Context, *livekit.ListP
 
 func (stub *liveKitIngressStub) CreateIngress(_ context.Context, request *livekit.CreateIngressRequest) (*livekit.IngressInfo, error) {
 	stub.creates++
-	info := &livekit.IngressInfo{IngressId: "ingress-1", Name: request.Name, Url: "http://livekit-ingress:8080/whip/key", RoomName: request.RoomName, ParticipantIdentity: request.ParticipantIdentity}
+	info := &livekit.IngressInfo{IngressId: "ingress-1", Name: request.Name, Url: "http://livekit-ingress:8080/whip", StreamKey: "key/with space", RoomName: request.RoomName, ParticipantIdentity: request.ParticipantIdentity}
 	stub.items = append(stub.items, info)
 	return info, nil
 }
@@ -74,7 +74,7 @@ func TestLiveKitIngressManagerEnsuresAndDeletesCameraIngress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if secret.StringData[whipURLSecretKey] != info.Url {
+	if secret.StringData[whipURLSecretKey] != "http://livekit-ingress:8080/whip/key%2Fwith%20space" {
 		t.Fatalf("secret = %#v", secret.StringData)
 	}
 	if secret.Labels["recording.kinugasa.tra.pt/session"] != session.Name {

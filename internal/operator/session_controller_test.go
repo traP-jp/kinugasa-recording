@@ -27,12 +27,15 @@ func TestSessionReconcilerRecordsReadyState(t *testing.T) {
 		Build()
 	reconciler := &SessionReconciler{Client: kubernetesClient, Workloads: workloads}
 
-	_, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
+	result, err := reconciler.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
 		Namespace: session.Namespace,
 		Name:      session.Name,
 	}})
 	if err != nil {
 		t.Fatalf("Reconcile() returned %v", err)
+	}
+	if result.RequeueAfter != defaultDependencyRetryInterval {
+		t.Fatalf("RequeueAfter = %v, want %v", result.RequeueAfter, defaultDependencyRetryInterval)
 	}
 	if !workloads.called {
 		t.Fatal("Reconcile() did not invoke the workload reconciler")

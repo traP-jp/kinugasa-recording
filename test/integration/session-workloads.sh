@@ -6,7 +6,7 @@ session="session-integration"
 selector="recording.kinugasa.tra.pt/session=$session"
 
 cleanup() {
-	kubectl -n "$namespace" delete session "$session" --ignore-not-found --wait=false >/dev/null
+	kubectl -n "$namespace" delete krsession "$session" --ignore-not-found --wait=false >/dev/null
 }
 trap cleanup EXIT
 
@@ -46,10 +46,10 @@ wait_for_count deployment 2
 wait_for_count service 3
 wait_for_count secret 1
 kubectl -n "$namespace" wait deployment -l "$selector" --for=condition=Available --timeout=120s >/dev/null
-wait_for_value "session/$session" '{.status.cameras[0].phase}' Waiting
+wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Waiting
 
-kubectl -n "$namespace" patch "session/$session" --type=merge --patch '{"spec":{"cameras":[{"name":"front","desiredState":"Absent","ingress":{"ristNodePort":31000,"srtNodePort":31001}}]}}' >/dev/null
-wait_for_value "session/$session" '{.status.cameras[0].phase}' Removed
+kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch '{"spec":{"cameras":[{"name":"front","desiredState":"Absent","ingress":{"ristNodePort":31000,"srtNodePort":31001}}]}}' >/dev/null
+wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Removed
 wait_for_count deployment 0
 wait_for_count service 0
 wait_for_count secret 0

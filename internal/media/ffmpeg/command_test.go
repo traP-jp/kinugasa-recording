@@ -15,17 +15,17 @@ func TestFanoutCommandsSupportRISTAndSRT(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FanoutCommands() returned %v", err)
 	}
-	for name, expected := range map[string]string{"ingest-rist": "rist://0.0.0.0:31000", "ingest-srt": "srt://0.0.0.0:31001"} {
+	for name, expected := range map[string]string{"ingest-rist": "rist://@0.0.0.0:31000", "ingest-srt": "srt://0.0.0.0:31001"} {
 		ingest := strings.Join(commands[name].Args, " ")
 		if !strings.Contains(ingest, expected) {
 			t.Errorf("%s does not contain %s: %s", name, expected, ingest)
 		}
-		if !strings.Contains(ingest, "-c:v copy") || !strings.Contains(ingest, "-f tee") {
+		if !strings.Contains(ingest, "-c:v copy") || !strings.Contains(ingest, "-bsf:v dump_extra=freq=keyframe") || !strings.Contains(ingest, "-f tee") {
 			t.Errorf("%s does not stream-copy to tee: %s", name, ingest)
 		}
 	}
 	rist := strings.Join(commands["ingest-rist"].Args, " ")
-	if !strings.Contains(rist, "rist_profile=1") {
+	if !strings.Contains(rist, "-rist_profile 1") {
 		t.Fatalf("RIST listener does not select main profile: %s", rist)
 	}
 	preview := strings.Join(commands["preview"].Args, " ")

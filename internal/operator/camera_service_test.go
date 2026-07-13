@@ -31,7 +31,7 @@ func TestCameraServiceAddsCameraWithClusterUniquePorts(t *testing.T) {
 	if result.Camera.Ingress.RISTNodePort != 31002 || result.Camera.Ingress.SRTNodePort != 31003 {
 		t.Fatalf("ports = %#v", result.Camera.Ingress)
 	}
-	if result.ConnectionURLs.RIST != "rist://192.0.2.10:31002?rist_profile=main" || result.ConnectionURLs.SRT != "srt://192.0.2.10:31003?mode=caller&transtype=live" {
+	if result.ConnectionURLs.RIST != "rist://192.0.2.10:31002" || result.ConnectionURLs.SRT != "srt://192.0.2.10:31003?mode=caller&transtype=live" {
 		t.Fatalf("connection URLs = %#v", result.ConnectionURLs)
 	}
 

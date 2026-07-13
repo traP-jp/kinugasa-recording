@@ -34,21 +34,33 @@ func RunComponent(ctx context.Context, commands map[string]Command, statusAddres
 	}()
 
 	processExited := make(chan string, len(processes))
-	for name, process := range processes {
-		go func() {
-			<-process.Done()
-			processExited <- name
-		}()
-	}
+	observeProcessExits(processes, processExited)
 
 	var runError error
-	select {
-	case <-ctx.Done():
-	case name := <-processExited:
-		runError = fmt.Errorf("%s exited: %s", name, processes[name].Snapshot().Error)
-	case err := <-serverErrors:
-		if !errors.Is(err, http.ErrServerClosed) {
-			runError = fmt.Errorf("status server: %w", err)
+	running := true
+	for running {
+		select {
+		case <-ctx.Done():
+			running = false
+		case name := <-processExited:
+			restartTimer := time.NewTimer(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				restartTimer.Stop()
+				running = false
+			case <-restartTimer.C:
+				if err := processes[name].Start(); err != nil {
+					runError = fmt.Errorf("restart %s: %w", name, err)
+					running = false
+					break
+				}
+				observeProcessExit(name, processes[name], processExited)
+			}
+		case err := <-serverErrors:
+			if !errors.Is(err, http.ErrServerClosed) {
+				runError = fmt.Errorf("status server: %w", err)
+			}
+			running = false
 		}
 	}
 
@@ -60,6 +72,19 @@ func RunComponent(ctx context.Context, commands map[string]Command, statusAddres
 	}
 
 	return runError
+}
+
+func observeProcessExits(processes map[string]*Supervisor, exited chan<- string) {
+	for name, process := range processes {
+		observeProcessExit(name, process, exited)
+	}
+}
+
+func observeProcessExit(name string, process *Supervisor, exited chan<- string) {
+	go func() {
+		<-process.Done()
+		exited <- name
+	}()
 }
 
 func newStatusServer(address string, processes map[string]*Supervisor) *http.Server {

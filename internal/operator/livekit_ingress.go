@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
 	livekit "github.com/livekit/protocol/livekit"
@@ -68,13 +70,17 @@ func (manager *LiveKitIngressManager) Ensure(ctx context.Context, session *recor
 			return nil, fmt.Errorf("create LiveKit ingress: %w", err)
 		}
 	}
-	if info.Url == "" || info.IngressId == "" {
+	if info.Url == "" || info.IngressId == "" || info.StreamKey == "" {
 		return nil, fmt.Errorf("LiveKit ingress returned incomplete connection settings")
 	}
-	if err := manager.ensureSecret(ctx, session, camera.Name, info.Url); err != nil {
+	if err := manager.ensureSecret(ctx, session, camera.Name, whipPublishURL(info)); err != nil {
 		return nil, err
 	}
 	return info, nil
+}
+
+func whipPublishURL(info *livekit.IngressInfo) string {
+	return strings.TrimRight(info.Url, "/") + "/" + url.PathEscape(info.StreamKey)
 }
 
 func (manager *LiveKitIngressManager) Delete(ctx context.Context, session *recordingv1alpha1.Session, cameraName string) error {

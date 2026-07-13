@@ -46,9 +46,11 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 	previewUDP := fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", config.PreviewLoopbackPort)
 	recordingUDP := fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", config.RecordingLoopbackPort)
 	common := []string{"-nostdin", "-hide_banner", "-loglevel", "warning", "-progress", "pipe:1", "-nostats"}
-	newIngest := func(inputURL string) media.Command {
+	newIngest := func(inputURL string, inputOptions ...string) media.Command {
 		args := append([]string{}, common...)
-		args = append(args, "-fflags", "+genpts", "-i", inputURL, "-map", "0:v:0", "-c:v", "copy", "-f", "tee",
+		args = append(args, inputOptions...)
+		args = append(args, "-fflags", "+genpts", "-i", inputURL, "-map", "0:v:0", "-c:v", "copy",
+			"-bsf:v", "dump_extra=freq=keyframe", "-f", "tee",
 			fmt.Sprintf("[f=mpegts:onfail=ignore]%s|[f=mpegts:onfail=ignore]%s", previewUDP, recordingUDP))
 		return media.Command{Path: config.FFmpegPath, Args: args}
 	}
@@ -70,7 +72,7 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 	)
 
 	return map[string]media.Command{
-		"ingest-rist": newIngest(fmt.Sprintf("rist://0.0.0.0:%d?rist_profile=1", config.RISTListenPort)),
+		"ingest-rist": newIngest(fmt.Sprintf("rist://@0.0.0.0:%d", config.RISTListenPort), "-rist_profile", "1"),
 		"ingest-srt":  newIngest(fmt.Sprintf("srt://0.0.0.0:%d?mode=listener&transtype=live", config.SRTListenPort)),
 		"preview":     {Path: config.FFmpegPath, Args: previewArgs},
 		"recording":   {Path: config.FFmpegPath, Args: recordingArgs},

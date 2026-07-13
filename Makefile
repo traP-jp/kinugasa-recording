@@ -33,6 +33,7 @@ test-web:
 
 test-integration:
 	./test/integration/session-workloads.sh
+	./test/integration/media-fanout.sh
 
 build: build-go build-web
 

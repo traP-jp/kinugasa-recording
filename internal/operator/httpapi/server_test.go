@@ -144,7 +144,7 @@ func TestServerAddsAndDeletesCamera(t *testing.T) {
 	}
 	cameras := &cameraServiceStub{addResult: &operatorlib.CameraMutationResult{
 		Camera:         recordingv1alpha1.CameraSpec{Name: "front"},
-		ConnectionURLs: recordingv1alpha1.CameraEndpoints{RIST: "rist://host:31000?rist_profile=main", SRT: "srt://host:31001?mode=caller&transtype=live"},
+		ConnectionURLs: recordingv1alpha1.CameraEndpoints{RIST: "rist://host:31000", SRT: "srt://host:31001?mode=caller&transtype=live"},
 	}}
 	server := NewServer(fake.NewClientBuilder().WithScheme(scheme).Build(), "recording").WithCameraService(cameras)
 	addResponse := httptest.NewRecorder()

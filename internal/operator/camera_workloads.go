@@ -203,7 +203,7 @@ func cameraStatus(session *recordingv1alpha1.Session, name string) *recordingv1a
 
 func cameraEndpoints(host string, camera recordingv1alpha1.CameraSpec) recordingv1alpha1.CameraEndpoints {
 	return recordingv1alpha1.CameraEndpoints{
-		RIST: "rist://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.RISTNodePort))) + "?rist_profile=main",
+		RIST: "rist://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.RISTNodePort))),
 		SRT:  "srt://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.SRTNodePort))) + "?mode=caller&transtype=live",
 	}
 }

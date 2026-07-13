@@ -254,4 +254,12 @@ session名/
 - `internal/media/ffmpeg/fanout.go`: 外部RIST/SRT listenerと内部loopbackのportを分離し、FFmpeg 8でRIST main profileを数値指定する。
 - `internal/operator/livekit_ingress.go`: WHIP接続SecretへSession/camera管理labelとOwnerReferenceを付与し、追跡・cleanup可能にする。
 
+### Media fanout integration test phase
+
+- `test/integration/media-fanout.sh`: k3d内の送信PodからRIST main profileとSRTでH.264を入力し、LiveKit ingressの`Connected`遷移、録画SRT branchの受信、camera削除までを検証する。
+- `internal/media/component.go`: 個別のFFmpeg processが異常終了した場合にcomponent全体を終了せず、短いbackoff後にそのprocessだけを再起動する。
+- `internal/media/ffmpeg/fanout.go`: RIST receiver用URL、H.264 parameter setのkeyframe付加、外部listenerと内部UDP branchをFFmpeg 8の実動作に合わせて構成する。
+- `internal/operator/livekit_ingress.go`: LiveKit APIが返すWHIP base URLとstream keyを結合し、camera固有のpublish endpointをSecretへ保存する。
+- `scripts/k3d-import.sh`: k3dで複数imageのうち一部だけがimportされる事象を避けるため、component imageを1つずつimportする。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

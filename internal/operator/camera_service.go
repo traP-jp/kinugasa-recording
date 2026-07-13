@@ -198,7 +198,7 @@ func (service *CameraService) allocatePorts(ctx context.Context) (int32, int32, 
 func (service *CameraService) result(camera recordingv1alpha1.CameraSpec) CameraMutationResult {
 	host := service.PublicMediaHost
 	return CameraMutationResult{Camera: camera, ConnectionURLs: recordingv1alpha1.CameraEndpoints{
-		RIST: "rist://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.RISTNodePort))) + "?rist_profile=main",
+		RIST: "rist://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.RISTNodePort))),
 		SRT:  "srt://" + net.JoinHostPort(host, strconv.Itoa(int(camera.Ingress.SRTNodePort))) + "?mode=caller&transtype=live",
 	}}
 }

@@ -113,7 +113,7 @@ describe("App", () => {
           json: async () => ({
             camera: { name: "front", phase: "Provisioning" },
             connectionUrls: {
-              rist: "rist://host:31000?rist_profile=main",
+              rist: "rist://host:31000",
               srt: "srt://host:31001?mode=caller&transtype=live",
             },
           }),
@@ -142,9 +142,7 @@ describe("App", () => {
       target: { value: "front" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Cameraを追加" }));
-    expect(
-      await screen.findByText("rist://host:31000?rist_profile=main"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("rist://host:31000")).toBeInTheDocument();
     expect(screen.getByTitle("front RIST connection URL")).toBeInTheDocument();
     expect(screen.getByTitle("front SRT connection URL")).toBeInTheDocument();
   });

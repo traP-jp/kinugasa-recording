@@ -14,12 +14,12 @@
 ## 8. Container imageとKubernetes環境
 
 - [ ] スマートフォンから映像入力用Serviceへ、利用者のbrowserからWeb UIとLiveKitへLAN内で到達できるようにする。
+- [ ] fanoutのmedia activityをOperatorへ集約し、`connectedProtocol`と`lastFrameAt`をcamera statusへ反映する。
 
 ## 9. Testと受け入れ確認
 
 ### Integration test
 
-- [ ] RIST main profileとSRTの両方についてH.264入力を受信し、LiveKit previewと録画へ分岐できることをtestする。
 - [ ] 録画結果がMPEG-TSであり、`<session>/<take>/<camera>/`以下へ録画中からuploadされることをtestする。
 - [ ] camera切断、ffmpeg異常終了、S3一時障害・恒久障害を発生させ、status、retry、Web UIへの警告をtestする。
 

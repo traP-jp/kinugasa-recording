@@ -43,7 +43,7 @@ status:
       connectedProtocol: srt       # rist | srt。未接続時は省略
       lastFrameAt: "2026-07-14T01:09:59Z"
       endpoints:
-        rist: rist://192.0.2.10:31000?rist_profile=main
+        rist: rist://192.0.2.10:31000
         srt: srt://192.0.2.10:31001?mode=caller&transtype=live
       conditions: []
   takes:
@@ -149,7 +149,7 @@ POST /api/v1/sessions/{sessionName}/cameras
 {
   "camera": {"name":"front","phase":"Provisioning"},
   "connectionUrls": {
-    "rist":"rist://192.0.2.10:31000?rist_profile=main",
+    "rist":"rist://192.0.2.10:31000",
     "srt":"srt://192.0.2.10:31001?mode=caller&transtype=live"
   }
 }
@@ -223,7 +223,7 @@ status codeはvalidation=`400`、未認証=`401`、権限不足=`403`、resource
 - cameraごとにRIST用とSRT用のUDP NodePortを1つずつ割り当てる。
 - 割当範囲はOperator設定`MEDIA_NODE_PORT_MIN`から`MEDIA_NODE_PORT_MAX`とし、既存Session CRに保存されたportを全namespace横断で予約済みとして扱う。
 - スマートフォンへ返すhostは明示設定`PUBLIC_MEDIA_HOST`から生成する。HTTPのHost headerやPod/Service IPから推測しない。
-- RIST受信はmain profile、SRT受信はlistener/live modeとする。クライアントURLはそれぞれ`rist://<host>:<port>?rist_profile=main`、`srt://<host>:<port>?mode=caller&transtype=live`とする。
+- RIST受信はmain profile、SRT受信はlistener/live modeとする。クライアントURLはそれぞれ`rist://<host>:<port>`、`srt://<host>:<port>?mode=caller&transtype=live`とする。RIST profileは標準URL parameterではないためURLへ埋め込まず、camera client側でmain profileを選択する。FFmpegでは`-rist_profile main`相当をprotocol AVOptionとして明示する。
 - 認証情報を将来URLへ追加する場合、QRコード表示用responseにだけ含め、CR statusやlogには残さない。
 
 ### 5.2 component間の経路
