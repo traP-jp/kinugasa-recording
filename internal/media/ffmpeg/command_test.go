@@ -24,6 +24,15 @@ func TestFanoutCommandsSupportRISTAndSRT(t *testing.T) {
 			t.Errorf("%s does not stream-copy to tee: %s", name, ingest)
 		}
 	}
+	rist := strings.Join(commands["ingest-rist"].Args, " ")
+	if !strings.Contains(rist, "rist_profile=1") {
+		t.Fatalf("RIST listener does not select main profile: %s", rist)
+	}
+	preview := strings.Join(commands["preview"].Args, " ")
+	recording := strings.Join(commands["recording"].Args, " ")
+	if !strings.Contains(preview, "127.0.0.1:11000") || !strings.Contains(recording, "127.0.0.1:11001") {
+		t.Fatalf("loopback ports overlap external listeners: preview=%s recording=%s", preview, recording)
+	}
 }
 
 func TestIngressCommandSupportsCopyAndPreviewTranscode(t *testing.T) {

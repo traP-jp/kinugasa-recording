@@ -77,6 +77,9 @@ func TestLiveKitIngressManagerEnsuresAndDeletesCameraIngress(t *testing.T) {
 	if secret.StringData[whipURLSecretKey] != info.Url {
 		t.Fatalf("secret = %#v", secret.StringData)
 	}
+	if secret.Labels["recording.kinugasa.tra.pt/session"] != session.Name {
+		t.Fatalf("secret labels = %#v", secret.Labels)
+	}
 
 	liveKit.participants = []*livekit.ParticipantInfo{{Identity: info.ParticipantIdentity}}
 	if err := manager.Delete(context.Background(), session, camera.Name); !errors.Is(err, ErrLiveKitParticipantPresent) {

@@ -1,0 +1,15 @@
+apiVersion: recording.kinugasa.tra.pt/v1alpha1
+kind: Session
+metadata:
+  name: session-integration
+  namespace: kinugasa-recording
+spec:
+  name: Integration-1
+  reservedCameraNames:
+    - front
+  cameras:
+    - name: front
+      desiredState: Present
+      ingress:
+        ristNodePort: 31000
+        srtNodePort: 31001

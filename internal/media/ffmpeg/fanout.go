@@ -34,10 +34,10 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 		return nil, fmt.Errorf("invalid recording listen port %d", config.RecordingListenPort)
 	}
 	if config.PreviewLoopbackPort == 0 {
-		config.PreviewLoopbackPort = 10000
+		config.PreviewLoopbackPort = 11000
 	}
 	if config.RecordingLoopbackPort == 0 {
-		config.RecordingLoopbackPort = 10001
+		config.RecordingLoopbackPort = 11001
 	}
 	if config.PreviewRTMPURL == "" {
 		return nil, fmt.Errorf("preview RTMP URL is required")
@@ -70,7 +70,7 @@ func FanoutCommands(config FanoutConfig) (map[string]media.Command, error) {
 	)
 
 	return map[string]media.Command{
-		"ingest-rist": newIngest(fmt.Sprintf("rist://0.0.0.0:%d?rist_profile=main", config.RISTListenPort)),
+		"ingest-rist": newIngest(fmt.Sprintf("rist://0.0.0.0:%d?rist_profile=1", config.RISTListenPort)),
 		"ingest-srt":  newIngest(fmt.Sprintf("srt://0.0.0.0:%d?mode=listener&transtype=live", config.SRTListenPort)),
 		"preview":     {Path: config.FFmpegPath, Args: previewArgs},
 		"recording":   {Path: config.FFmpegPath, Args: recordingArgs},

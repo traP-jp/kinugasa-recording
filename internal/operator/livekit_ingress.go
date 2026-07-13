@@ -113,6 +113,7 @@ func (manager *LiveKitIngressManager) Delete(ctx context.Context, session *recor
 func (manager *LiveKitIngressManager) ensureSecret(ctx context.Context, session *recordingv1alpha1.Session, cameraName, url string) error {
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: cameraWHIPSecretName(session.Name, cameraName), Namespace: session.Namespace}}
 	_, err := controllerutil.CreateOrUpdate(ctx, manager.Client, secret, func() error {
+		secret.Labels = cameraLabels(session.Name, cameraName)
 		secret.Type = corev1.SecretTypeOpaque
 		secret.StringData = map[string]string{whipURLSecretKey: url}
 		return controllerutil.SetControllerReference(session, secret, manager.Client.Scheme())

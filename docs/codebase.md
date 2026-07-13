@@ -247,4 +247,11 @@ session名/
 - `internal/operator/*_test.go`: Session、camera、takeの状態制約、mutation冪等性、同一reconcile反復時のresource・condition安定性、停止・cleanup順序をfake Kubernetes clientで検証する。
 - `internal/storage/uploader_test.go`: S3 object key、SHA-256による冪等upload、逐次同期、一時障害retry、digest競合、`.part`を含む厳密な完了条件を検証する。
 
+### Kubernetes integration smoke test phase
+
+- `test/integration/session-workloads.yaml`: k3d上でcamera workload lifecycleを検証するための一時Session CRを定義する。
+- `test/integration/session-workloads.sh`: Session CRから2 Deployment、3 Service、WHIP Secretが冪等に作成され、camera削除時にstatusが`Removed`となって全子resourceが消えるまでを検証する。
+- `internal/media/ffmpeg/fanout.go`: 外部RIST/SRT listenerと内部loopbackのportを分離し、FFmpeg 8でRIST main profileを数値指定する。
+- `internal/operator/livekit_ingress.go`: WHIP接続SecretへSession/camera管理labelとOwnerReferenceを付与し、追跡・cleanup可能にする。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

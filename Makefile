@@ -3,7 +3,7 @@ IMAGE_PREFIX ?= kinugasa-recording
 IMAGE_TAG ?= latest
 MEDIA_COMPONENTS := video-fanout video-recorder livekit-ingress
 
-.PHONY: all build build-go build-web deploy fmt fmt-check generate help image-build k3d-create k3d-destroy k3d-import lint test test-go test-web
+.PHONY: all build build-go build-web deploy fmt fmt-check generate help image-build k3d-create k3d-destroy k3d-import lint test test-go test-integration test-web
 
 all: fmt-check lint test build
 
@@ -30,6 +30,9 @@ test-go:
 
 test-web:
 	pnpm test
+
+test-integration:
+	./test/integration/session-workloads.sh
 
 build: build-go build-web
 
