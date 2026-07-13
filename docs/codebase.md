@@ -146,4 +146,16 @@ session名/
 - `scripts/generate.sh`: controller-genとclient-genによるCRD、DeepCopy、Kubernetes API clientの生成入口とする。
 - `config/`, `build/`, `test/`: Kubernetes設定、container build、結合testを各READMEとともに開始する。
 
+### API・Custom Resource・Operator基盤phase
+
+- `api/recording/v1alpha1`: Session Custom ResourceのGo型、scheme登録、DeepCopy生成物を配置する。
+- `api/generated/clientset`: `client-gen`が生成する型付きKubernetes clientとfake clientを配置する。
+- `config/crd`: `controller-gen`が生成するSession CRDとKustomize入口を配置する。
+- `config/rbac`: OperatorのServiceAccount、ClusterRole、ClusterRoleBindingを配置する。
+- `config/default`: CRDとRBACをまとめて検証・適用するKustomize入口とnamespaceを配置する。Operator等のworkloadは後続phaseで追加する。
+- `internal/operator/session_controller.go`: Session監視、desired workload適用interface、依存障害時のstatus・Event・再queueを実装する。
+- `internal/operator/validation`: Web APIと操作handlerが共有する入力validationを配置する。
+- `internal/operator/httpapi`: Web UI向けHTTP server、routing、共通JSON error、Session状態取得を実装する。
+- `cmd/operator/main.go`: controller-runtime manager、Session reconciler、HTTP APIの起動を行う。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

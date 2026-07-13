@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kinugasa-recording-operator
+rules:
+  - apiGroups: [recording.kinugasa.tra.pt]
+    resources: [sessions]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [recording.kinugasa.tra.pt]
+    resources: [sessions/status]
+    verbs: [get, patch, update]
+  - apiGroups: [recording.kinugasa.tra.pt]
+    resources: [sessions/finalizers]
+    verbs: [update]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [""]
+    resources: [configmaps, persistentvolumeclaims, pods, services]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [create, patch]

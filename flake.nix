@@ -25,6 +25,7 @@
               golangci-lint
               kubernetes-code-generator
               kubernetes-controller-tools
+              kustomize
               nodejs_24
               pnpm
             ];

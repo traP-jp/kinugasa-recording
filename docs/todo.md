@@ -1,7 +1,7 @@
 # kinugasa-recording TODO
 
 `docs/requirements.md`をSSoTとし、`docs/codebase.md`で定めた責務の境界に沿って実装する。
-設計とRepository基盤が完了し、API・Custom Resource・Operator基盤の実装に着手する段階である。
+設計、Repository基盤、API・Custom Resource・Operator基盤が完了し、session作成の実装に着手する段階である。
 
 このファイルには未完了のタスクだけを記載する。完了したタスクはチェック済みの状態で残さず、項目自体を削除する。
 
@@ -10,14 +10,6 @@
 ### 実装前に文書化する事項
 
 - [ ] 実装で確定したpackage・fileの配置を、各phaseの完了時に`docs/codebase.md`へ反映する。
-
-## 2. API・Custom Resource・Operator基盤
-
-- [ ] Session Custom ResourceのGo型、CRD、validation、status subresourceを実装する。cameraとtakeの定義・状態・使用済み名称をSessionに関連付ける。
-- [ ] Operatorに必要なServiceAccount、RBAC、CRD manifestを`config/`へ追加する。
-- [ ] Sessionを監視してworkloadのdesired stateを反映するreconcilerの基盤を実装する。
-- [ ] Web UI向けHTTP server、routing、validation、共通error response、Custom Resourceの状態取得を実装する。
-- [ ] Kubernetes API、LiveKit、S3、子processに対する一時的な失敗をreconcile可能にし、statusへ反映する。
 
 ## 3. Session作成
 
