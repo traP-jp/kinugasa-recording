@@ -56,7 +56,7 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 			switch {
 			case recorder.Status.Failed > 0:
 				cameraState.RecorderPhase = recordingv1alpha1.ProcessPhaseFailed
-			case recorder.Status.Active > 0:
+			case recorder.Status.Ready != nil && *recorder.Status.Ready > 0:
 				cameraState.RecorderPhase = recordingv1alpha1.ProcessPhaseRunning
 			default:
 				cameraState.RecorderPhase = recordingv1alpha1.ProcessPhasePending
@@ -137,14 +137,14 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 	volume := corev1.Volume{Name: "recording", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: base}}}
 	mount := corev1.VolumeMount{Name: "recording", MountPath: "/recording"}
 	if err := reconciler.ensureJob(ctx, session, base+"-recorder", corev1.Container{
-		Name: "video-recorder", Image: reconciler.RecorderImage,
+		Name: "video-recorder", Image: reconciler.RecorderImage, ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:          []corev1.EnvVar{{Name: "INPUT_URL", Value: "srt://" + cameraWorkloadName(session.Name, camera.Name) + "-fanout:12000?mode=caller&transtype=live"}},
 		VolumeMounts: []corev1.VolumeMount{mount},
 	}, volume); err != nil {
 		return err
 	}
 	return reconciler.ensureJob(ctx, session, base+"-uploader", corev1.Container{
-		Name: "video-uploader", Image: reconciler.UploaderImage,
+		Name: "video-uploader", Image: reconciler.UploaderImage, ImagePullPolicy: corev1.PullIfNotPresent,
 		Env: []corev1.EnvVar{{Name: "SESSION_NAME", Value: session.Spec.Name}, {Name: "TAKE_NAME", Value: take.Name}, {Name: "CAMERA_NAME", Value: camera.Name}},
 		EnvFrom: []corev1.EnvFromSource{
 			{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3ConfigMapName}}},

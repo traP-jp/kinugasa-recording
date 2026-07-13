@@ -264,4 +264,11 @@ session名/
 - `internal/operator/camera_workloads.go`: fanout Serviceに内部status portを公開し、media activity取得成功時だけ`connectedProtocol`と`lastFrameAt`を更新する。
 - `scripts/k3d-import.sh`: k3dで複数imageのうち一部だけがimportされる事象を避けるため、component imageを1つずつimportする。
 
+### Recording upload integration test phase
+
+- `test/integration/recording-upload.sh`, `recording-upload.yaml`: SRT入力を録画し、takeがRecordingの間にMPEG-TS segmentが`<session>/<take>/<camera>/`へuploadされ、停止後にtake完了とresource cleanupへ進むことをk3dで検証する。
+- `test/integration/s3mock`: AWS SDKの署名requestを受けるtest専用の最小S3互換serverをk3d node内で起動し、object metadataと内容をintegration testから検査可能にする。
+- `internal/operator/take_workloads.go`: recorder Jobが実際にReadyになってからtakeをRecordingとし、local k3d imageを利用できるpull policyでrecorder/uploader Jobを作成する。
+- `scripts/k3d-create.sh`: 空き容量が少ない開発hostでもimport直後のlocal imageがGCされないよう、kubeletのimage GC閾値を開発cluster向けに調整する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

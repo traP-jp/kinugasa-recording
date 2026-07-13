@@ -19,7 +19,6 @@
 
 ### Integration test
 
-- [ ] 録画結果がMPEG-TSであり、`<session>/<take>/<camera>/`以下へ録画中からuploadされることをtestする。
 - [ ] camera切断、ffmpeg異常終了、S3一時障害・恒久障害を発生させ、status、retry、Web UIへの警告をtestする。
 
 ### End-to-end test

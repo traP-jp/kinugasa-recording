@@ -34,6 +34,7 @@ test-web:
 test-integration:
 	./test/integration/session-workloads.sh
 	./test/integration/media-fanout.sh
+	./test/integration/recording-upload.sh
 
 build: build-go build-web
 

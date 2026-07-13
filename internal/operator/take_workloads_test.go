@@ -41,6 +41,11 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if len(jobs.Items) != 2 {
 		t.Fatalf("jobs = %d", len(jobs.Items))
 	}
+	for _, job := range jobs.Items {
+		if job.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
+			t.Fatalf("job %s imagePullPolicy = %q", job.Name, job.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+		}
+	}
 	var claims corev1.PersistentVolumeClaimList
 	if err := kubernetesClient.List(context.Background(), &claims, client.InNamespace(session.Namespace)); err != nil {
 		t.Fatal(err)
@@ -66,6 +71,20 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	recorder.Status.Active = 1
+	if err := kubernetesClient.Status().Update(context.Background(), recorder); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseStarting {
+		t.Fatalf("phase with unready active Job = %q", session.Status.Takes[0].Phase)
+	}
+	recorder, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-recorder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder.Status.Ready = ptr(int32(1))
 	if err := kubernetesClient.Status().Update(context.Background(), recorder); err != nil {
 		t.Fatal(err)
 	}

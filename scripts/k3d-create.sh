@@ -12,6 +12,8 @@ k3d cluster create "$cluster_name" \
 	--agents 0 \
 	--k3s-arg '--disable=traefik@server:0' \
 	--k3s-arg '--kubelet-arg=eviction-hard=nodefs.available<2%,imagefs.available<2%@server:0' \
+	--k3s-arg '--kubelet-arg=image-gc-high-threshold=98@server:0' \
+	--k3s-arg '--kubelet-arg=image-gc-low-threshold=95@server:0' \
 	--port '30080:30080@server:0' \
 	--port '30081:30081@server:0' \
 	--port '30082:30082@server:0' \
