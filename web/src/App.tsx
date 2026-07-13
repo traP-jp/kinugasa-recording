@@ -9,12 +9,17 @@ import {
   createSession,
   deleteCamera,
   getSession,
+  startTake,
+  stopTake,
 } from "./api";
 import { Preview } from "./Preview";
 
 const namePattern = /^[A-Za-z0-9-]+$/;
 
-function validateName(name: string, kind: "Session" | "Camera"): string | null {
+function validateName(
+  name: string,
+  kind: "Session" | "Camera" | "Take",
+): string | null {
   if (name.length === 0) return `${kind}名を入力してください。`;
   if (new TextEncoder().encode(name).length > 255 || !namePattern.test(name))
     return `${kind}名は255 byte以内の英数字とハイフンで入力してください。`;
@@ -33,6 +38,9 @@ export function App() {
   const [session, setSession] = useState<SessionResource | null>(null);
   const [name, setName] = useState("");
   const [cameraName, setCameraName] = useState("");
+  const [takeName, setTakeName] = useState("");
+  const [selectedCameras, setSelectedCameras] = useState<string[]>([]);
+  const [takeWarnings, setTakeWarnings] = useState<string[]>([]);
   const [connectionURLs, setConnectionURLs] = useState<
     Record<string, { rist?: string; srt?: string }>
   >({});
@@ -114,6 +122,7 @@ export function App() {
           ],
         },
         status: {
+          ...session.status,
           cameras: [
             ...session.status.cameras,
             { name: cameraName, phase: "Provisioning" },
@@ -147,6 +156,7 @@ export function App() {
           ),
         },
         status: {
+          ...session.status,
           cameras: session.status.cameras.map((item) =>
             item.name === camera ? { ...item, phase: "Deleting" } : item,
           ),
@@ -163,6 +173,89 @@ export function App() {
     }
   }
 
+  async function submitTake(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sessionName === null || session === null) return;
+    const validationError = validateName(takeName, "Take");
+    if (validationError !== null) {
+      setError(validationError);
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    setTakeWarnings([]);
+    try {
+      const started = await startTake(sessionName, takeName, selectedCameras);
+      setTakeWarnings(
+        (started.excludedCameras ?? []).map(
+          (camera) => `${camera.name}: ${camera.reason}`,
+        ),
+      );
+      setSession({
+        ...session,
+        spec: {
+          ...session.spec,
+          takes: [
+            ...session.spec.takes,
+            {
+              name: takeName,
+              desiredState: "Recording",
+              cameraNames: started.take.cameraNames,
+            },
+          ],
+        },
+        status: {
+          ...session.status,
+          takes: [
+            ...session.status.takes,
+            { name: takeName, phase: "Pending" },
+          ],
+        },
+      });
+      setTakeName("");
+      setSelectedCameras([]);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === "NAME_RESERVED")
+        setError("このTake名は現在または過去に使用されています。");
+      else if (
+        caught instanceof ApiError &&
+        caught.code === "NO_AVAILABLE_CAMERA"
+      )
+        setError("録画可能なCameraがありません。");
+      else setError("Takeを開始できませんでした。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function requestTakeStop(take: string) {
+    if (sessionName === null || session === null) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await stopTake(sessionName, take);
+      setSession({
+        ...session,
+        spec: {
+          ...session.spec,
+          takes: session.spec.takes.map((item) =>
+            item.name === take ? { ...item, desiredState: "Stopped" } : item,
+          ),
+        },
+        status: {
+          ...session.status,
+          takes: session.status.takes.map((item) =>
+            item.name === take ? { ...item, phase: "Stopping" } : item,
+          ),
+        },
+      });
+    } catch {
+      setError("Takeを停止できませんでした。");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (sessionName !== null) {
     const recording =
       session?.spec.takes.some((take) => take.desiredState === "Recording") ??
@@ -170,6 +263,18 @@ export function App() {
     const cameras = (session?.status.cameras ?? []).filter(
       (camera) => camera.phase !== "Removed",
     );
+    const takeStatuses = session?.status.takes ?? [];
+    const activeTake = session?.spec.takes.find(
+      (take) => take.desiredState === "Recording",
+    );
+    const activeStatus = activeTake
+      ? takeStatuses.find((take) => take.name === activeTake.name)
+      : undefined;
+    const disconnectedRecordingCameras =
+      activeTake?.cameraNames.filter(
+        (name) =>
+          cameras.find((camera) => camera.name === name)?.phase !== "Connected",
+      ) ?? [];
     return (
       <main>
         <p className="eyebrow">Session</p>
@@ -202,6 +307,103 @@ export function App() {
               />
             ))}
           </div>
+        </section>
+        <section aria-labelledby="take-heading">
+          <h2 id="take-heading">Takes</h2>
+          {!recording && (
+            <form onSubmit={submitTake} noValidate>
+              <label htmlFor="take-name">Take名</label>
+              <input
+                id="take-name"
+                value={takeName}
+                onChange={(event) => setTakeName(event.target.value)}
+                disabled={submitting}
+              />
+              <fieldset>
+                <legend>録画するCamera（未選択の場合は全Camera）</legend>
+                {cameras.map((camera) => (
+                  <label key={camera.name} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedCameras.includes(camera.name)}
+                      onChange={(event) =>
+                        setSelectedCameras((current) =>
+                          event.target.checked
+                            ? [...current, camera.name]
+                            : current.filter((name) => name !== camera.name),
+                        )
+                      }
+                    />
+                    {camera.name} ({camera.phase})
+                  </label>
+                ))}
+              </fieldset>
+              <button
+                type="submit"
+                disabled={submitting || cameras.length === 0}
+              >
+                Takeを開始
+              </button>
+            </form>
+          )}
+          {activeTake && (
+            <article className="take-active">
+              <h3>{activeTake.name}</h3>
+              <p>Status: {activeStatus?.phase ?? "Pending"}</p>
+              <p>Camera: {activeTake.cameraNames.join(", ")}</p>
+              <button
+                type="button"
+                className="danger"
+                disabled={submitting}
+                onClick={() => void requestTakeStop(activeTake.name)}
+              >
+                Takeを停止
+              </button>
+            </article>
+          )}
+          {takeStatuses.length > 0 && (
+            <ul className="take-list">
+              {takeStatuses.map((take) => (
+                <li key={take.name}>
+                  {take.name}: {take.phase}
+                  {(take.cameras ?? []).map((camera) => (
+                    <span key={camera.name}>
+                      {" "}
+                      {camera.name} (Recorder:{" "}
+                      {camera.recorderPhase ?? "Pending"}, Upload:{" "}
+                      {camera.uploadPhase ?? "Pending"})
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+          {takeWarnings.map((warning) => (
+            <p role="alert" key={warning}>
+              除外Camera: {warning}
+            </p>
+          ))}
+          {disconnectedRecordingCameras.length > 0 && (
+            <p role="alert">
+              録画中にCameraが切断されています:{" "}
+              {disconnectedRecordingCameras.join(", ")}
+            </p>
+          )}
+          {takeStatuses
+            .flatMap((take) => take.cameras ?? [])
+            .filter((camera) => camera.uploadPhase === "Failed")
+            .map((camera) => (
+              <p role="alert" key={`upload-${camera.name}`}>
+                Upload失敗: {camera.name}
+              </p>
+            ))}
+          {takeStatuses
+            .filter((take) => take.phase === "Uploading")
+            .map((take) => (
+              <p role="status" key={`uploading-${take.name}`}>
+                Upload完了待ち: {take.name}
+              </p>
+            ))}
         </section>
         <Preview cameras={cameras} />
         {error !== null && (

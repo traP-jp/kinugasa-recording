@@ -20,6 +20,27 @@ form {
   gap: 0.75rem;
 }
 
+fieldset {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid #d5d8dc;
+  border-radius: 0.35rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.take-active {
+  max-width: 28rem;
+  margin-block: 1rem;
+  padding: 1rem;
+  border-left: 0.35rem solid #145a8d;
+  background: #fff;
+}
+
 input,
 button {
   border: 1px solid #aeb6bf;

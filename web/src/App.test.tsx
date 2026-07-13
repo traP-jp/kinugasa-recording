@@ -204,4 +204,88 @@ describe("App", () => {
     );
     expect(screen.getByText("Status: Deleting")).toBeInTheDocument();
   });
+
+  it("starts an all-camera take, reports exclusions, and stops it", async () => {
+    window.history.replaceState({}, "", "/sessions/Session-1");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (url === "/api/v1/sessions/Session-1")
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              session: {
+                name: "Session-1",
+                spec: {
+                  cameras: [
+                    { name: "front", desiredState: "Present" },
+                    { name: "side", desiredState: "Present" },
+                  ],
+                  takes: [],
+                },
+                status: {
+                  cameras: [
+                    { name: "front", phase: "Connected" },
+                    { name: "side", phase: "Disconnected" },
+                  ],
+                  takes: [],
+                },
+              },
+            }),
+          });
+        if (url === "/api/v1/livekit/token")
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              serverUrl: "wss://livekit",
+              roomName: "preview",
+              participantToken: "token",
+              expiresAt: "2026-07-14T01:05:00Z",
+            }),
+          });
+        if (url.endsWith("/takes") && init?.method === "POST")
+          return Promise.resolve({
+            ok: true,
+            status: 202,
+            json: async () => ({
+              take: {
+                name: "take-1",
+                phase: "Pending",
+                cameraNames: ["front"],
+              },
+              excludedCameras: [
+                { name: "side", reason: "CAMERA_DISCONNECTED" },
+              ],
+            }),
+          });
+        if (url.endsWith("/takes/take-1/stop"))
+          return Promise.resolve({
+            ok: true,
+            status: 202,
+            json: async () => ({
+              take: {
+                name: "take-1",
+                phase: "Stopping",
+                cameraNames: ["front"],
+              },
+            }),
+          });
+        throw new Error(`unexpected URL ${url}`);
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByLabelText("Take名");
+    fireEvent.change(screen.getByLabelText("Take名"), {
+      target: { value: "take-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Takeを開始" }));
+    expect(
+      await screen.findByText("除外Camera: side: CAMERA_DISCONNECTED"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Camera: front")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Takeを停止" }));
+    expect(await screen.findByText(/take-1: Stopping/)).toBeInTheDocument();
+  });
 });

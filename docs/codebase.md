@@ -226,4 +226,10 @@ session名/
 - `internal/operator/session_controller.go`: JobとPVCをowner resourceとして監視する。
 - `cmd/operator/main.go`: recorder/uploader image、S3 ConfigMap・Secret名、PVC容量をtake workload reconcilerへ注入する。
 
+### Take Web UI phase
+
+- `web/src/api.ts`: take開始・停止とSessionのtake/camera別statusを型付きで扱う。
+- `web/src/App.tsx`: take名、camera選択、未選択時の全選択、開始・停止、除外camera、録画中の切断、upload失敗・完了待ちとcamera別状態を表示する。
+- `web/src/App.test.tsx`: 全camera指定、利用不能cameraの除外表示、take停止の基本flowを検証する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

@@ -20,9 +20,37 @@ export interface SessionResource {
   name: string;
   spec: {
     cameras: CameraSpec[];
-    takes: { name: string; desiredState: string }[];
+    takes: {
+      name: string;
+      desiredState: "Recording" | "Stopped";
+      cameraNames: string[];
+    }[];
   };
-  status: { cameras: CameraStatus[] };
+  status: { cameras: CameraStatus[]; takes: TakeStatus[] };
+}
+
+export interface TakeStatus {
+  name: string;
+  phase:
+    | "Pending"
+    | "Starting"
+    | "Recording"
+    | "Stopping"
+    | "Uploading"
+    | "Completed"
+    | "Failed";
+  cameras?: {
+    name: string;
+    recorderPhase?: string;
+    uploadPhase?: string;
+    pendingFiles?: number;
+    failedFiles?: number;
+  }[];
+}
+
+export interface TakeMutation {
+  take: { name: string; phase: TakeStatus["phase"]; cameraNames: string[] };
+  excludedCameras?: { name: string; reason: string }[];
 }
 
 export interface CameraMutation {
@@ -60,7 +88,10 @@ function normalizeSession(
       cameras: session.spec?.cameras ?? [],
       takes: session.spec?.takes ?? [],
     },
-    status: { cameras: session.status?.cameras ?? [] },
+    status: {
+      cameras: session.status?.cameras ?? [],
+      takes: session.status?.takes ?? [],
+    },
   } satisfies SessionResource;
 }
 
@@ -135,4 +166,33 @@ export function getPreviewToken(): Promise<PreviewToken> {
     headers: { "Content-Type": "application/json" },
     body: "{}",
   });
+}
+
+export function startTake(
+  session: string,
+  name: string,
+  cameraNames: string[],
+): Promise<TakeMutation> {
+  return jsonRequest(`/api/v1/sessions/${encodeURIComponent(session)}/takes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+    body: JSON.stringify({ name, cameraNames }),
+  });
+}
+
+export function stopTake(session: string, name: string): Promise<TakeMutation> {
+  return jsonRequest(
+    `/api/v1/sessions/${encodeURIComponent(session)}/takes/${encodeURIComponent(name)}/stop`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: "{}",
+    },
+  );
 }
