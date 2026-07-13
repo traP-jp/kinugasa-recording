@@ -12,6 +12,7 @@ spec:
       labels:
         app.kubernetes.io/name: kinugasa-recording-operator
     spec:
+      enableServiceLinks: false
       serviceAccountName: kinugasa-recording-operator
       containers:
         - name: operator
@@ -72,6 +73,7 @@ spec:
       labels:
         app.kubernetes.io/name: kinugasa-recording-web
     spec:
+      enableServiceLinks: false
       containers:
         - name: web
           image: kinugasa-recording/web:latest
@@ -111,6 +113,7 @@ spec:
       labels:
         app.kubernetes.io/name: kinugasa-recording-redis
     spec:
+      enableServiceLinks: false
       containers:
         - name: redis
           image: redis:8.2-alpine
@@ -135,6 +138,8 @@ kind: Deployment
 metadata:
   name: livekit
 spec:
+  strategy:
+    type: Recreate
   replicas: 1
   selector:
     matchLabels:
@@ -144,6 +149,7 @@ spec:
       labels:
         app.kubernetes.io/name: kinugasa-recording-livekit
     spec:
+      enableServiceLinks: false
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
@@ -186,6 +192,8 @@ kind: Deployment
 metadata:
   name: livekit-ingress-service
 spec:
+  strategy:
+    type: Recreate
   replicas: 1
   selector:
     matchLabels:
@@ -195,6 +203,7 @@ spec:
       labels:
         app.kubernetes.io/name: kinugasa-recording-livekit-ingress-service
     spec:
+      enableServiceLinks: false
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:

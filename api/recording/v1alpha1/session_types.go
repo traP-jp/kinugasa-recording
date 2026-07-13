@@ -5,6 +5,8 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 const (
 	NamePattern = `^[A-Za-z0-9-]+$`
 	MaxNameSize = 255
+	// MaxSessionItems bounds CEL validation cost and the size of a single Session resource.
+	MaxSessionItems = 100
 )
 
 type DesiredState string
@@ -80,12 +82,14 @@ type SessionSpec struct {
 	Name string `json:"name"`
 
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=255
 	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9-]+$`
 	ReservedCameraNames []string `json:"reservedCameraNames,omitempty"`
 
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=255
 	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9-]+$`
@@ -93,10 +97,12 @@ type SessionSpec struct {
 
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
 	Cameras []CameraSpec `json:"cameras,omitempty"`
 
 	// +listType=map
 	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=100
 	Takes []TakeSpec `json:"takes,omitempty"`
 }
 
@@ -132,6 +138,7 @@ type TakeSpec struct {
 	DesiredState DesiredState `json:"desiredState"`
 
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=100
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=255
 	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9-]+$`

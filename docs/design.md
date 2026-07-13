@@ -68,6 +68,7 @@ status:
 ### 2.2 使用済み名称
 
 - `reservedCameraNames`と`reservedTakeNames`は追加のみ可能な履歴であり、対象を削除・完了しても消さない。
+- Kubernetes CEL validationの計算量と単一CRのsizeを制限するため、1 Sessionあたりのcamera履歴、take履歴、camera定義、take定義、1 takeのcamera選択はそれぞれ最大100件とする。上限到達後は新しいSessionを作成する。
 - camera/takeの作成は、対応する予約済み名称への追加と定義の追加を1回のCR更新で行う。
 - cameraは削除後も`desiredState: Absent`のtombstoneを残す。takeは監査とupload状態の保持のため完了後も残す。
 - Session名は、決定的に生成したCR名の存在確認に加えてS3の`<session>/.kinugasa-session`を予約objectとして扱う。Session作成APIはprefixまたは予約objectが存在すれば拒否し、存在しなければ`If-None-Match: *`相当の条件付きPUTで予約objectを作ってからCRを作る。利用するS3互換実装で条件付きPUTを提供できない場合は、leader electionで書き込み元を1つにしたOperator内で同じ判定を直列化する。
