@@ -7,17 +7,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	operatorlib "github.com/comavius/kinugasa-recording/internal/operator"
 	operatorvalidation "github.com/comavius/kinugasa-recording/internal/operator/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const shutdownTimeout = 10 * time.Second
+const maximumRequestBodySize = 1 << 20
 
 type requestIDContextKey struct{}
 
@@ -25,11 +28,17 @@ type requestIDContextKey struct{}
 type Server struct {
 	reader    client.Reader
 	namespace string
+	creator   sessionCreationService
 }
 
 // NewServer constructs the HTTP API using a Kubernetes cache-backed reader.
-func NewServer(reader client.Reader, namespace string) *Server {
-	return &Server{reader: reader, namespace: namespace}
+func NewServer(reader client.Reader, namespace string, creators ...sessionCreationService) *Server {
+	server := &Server{reader: reader, namespace: namespace}
+	if len(creators) > 0 {
+		server.creator = creators[0]
+	}
+
+	return server
 }
 
 // Handler returns the complete API handler.
@@ -47,11 +56,17 @@ func (s *Server) health(response http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) sessions(response http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
+	switch request.Method {
+	case http.MethodGet:
+		s.listSessions(response, request)
+	case http.MethodPost:
+		s.createSession(response, request)
+	default:
 		writeError(response, request, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method is not allowed", nil)
-		return
 	}
+}
 
+func (s *Server) listSessions(response http.ResponseWriter, request *http.Request) {
 	var sessions recordingv1alpha1.SessionList
 	options := []client.ListOption{}
 	if s.namespace != "" {
@@ -69,6 +84,42 @@ func (s *Server) sessions(response http.ResponseWriter, request *http.Request) {
 	sort.Slice(resources, func(left, right int) bool { return resources[left].Name < resources[right].Name })
 
 	writeJSON(response, http.StatusOK, sessionsResponse{Sessions: resources})
+}
+
+func (s *Server) createSession(response http.ResponseWriter, request *http.Request) {
+	if s.creator == nil {
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "session creation is not configured", nil)
+		return
+	}
+
+	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestBodySize)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var body createSessionRequest
+	if err := decoder.Decode(&body); err != nil {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must be a valid session creation object", nil)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "request body must contain one JSON object", nil)
+		return
+	}
+
+	session, err := s.creator.Create(request.Context(), body.Name, request.Header.Get("Idempotency-Key"))
+	switch {
+	case err == nil:
+		writeJSON(response, http.StatusCreated, sessionResponse{Session: newSessionResource(session)})
+	case errors.Is(err, operatorlib.ErrInvalidName):
+		writeError(response, request, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid session name", map[string]string{"field": "name"})
+	case errors.Is(err, operatorlib.ErrSessionNameReserved):
+		writeError(response, request, http.StatusConflict, "NAME_RESERVED", "session name has already been used", map[string]string{"field": "name", "value": body.Name})
+	case errors.Is(err, operatorlib.ErrIdempotencyConflict):
+		writeError(response, request, http.StatusConflict, "STATE_CONFLICT", "idempotency key was already used for another request", nil)
+	case errors.Is(err, operatorlib.ErrDependencyUnavailable):
+		writeError(response, request, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "session creation dependency is unavailable", nil)
+	default:
+		writeError(response, request, http.StatusInternalServerError, "INTERNAL", "session creation failed", nil)
+	}
 }
 
 func (s *Server) session(response http.ResponseWriter, request *http.Request) {
@@ -107,6 +158,14 @@ type sessionResource struct {
 	Name   string                          `json:"name"`
 	Spec   recordingv1alpha1.SessionSpec   `json:"spec"`
 	Status recordingv1alpha1.SessionStatus `json:"status"`
+}
+
+type createSessionRequest struct {
+	Name string `json:"name"`
+}
+
+type sessionCreationService interface {
+	Create(context.Context, string, string) (*recordingv1alpha1.Session, error)
 }
 
 type sessionsResponse struct {
@@ -192,7 +251,7 @@ func (r *Runnable) Start(ctx context.Context) error {
 	}
 }
 
-// NeedLeaderElection allows every replica to serve cache-backed read requests.
+// NeedLeaderElection ensures that session name reservations have a single writer.
 func (r *Runnable) NeedLeaderElection() bool {
-	return false
+	return true
 }

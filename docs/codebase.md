@@ -158,4 +158,13 @@ session名/
 - `internal/operator/httpapi`: Web UI向けHTTP server、routing、共通JSON error、Session状態取得を実装する。
 - `cmd/operator/main.go`: controller-runtime manager、Session reconciler、HTTP APIの起動を行う。
 
+### Session作成phase
+
+- `internal/storage/session_registry.go`: S3上の`<session>/.kinugasa-session`予約objectと既存prefixによるSession名の永続予約を実装する。
+- `internal/operator/session_creator.go`: 名称validation、決定的なCR名生成、現在のCRとの重複確認、S3予約、Session CR作成、idempotency処理を実装する。
+- `internal/operator/httpapi/server.go`: `POST /api/v1/sessions`とSession作成errorのHTTP mappingを追加する。
+- `cmd/operator/main.go`: S3 endpoint、region、bucket、path-style設定をAWS SDKへ接続し、Session作成serviceをHTTP APIへ注入する。
+- `web/src/api.ts`: Web UIからOperator APIへSession作成を要求するclientを配置する。
+- `web/src/App.tsx`: Session名入力、client-side validation、重複警告、作成後のSession画面への遷移を実装する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

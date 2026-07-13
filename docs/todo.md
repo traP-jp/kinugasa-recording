@@ -1,7 +1,7 @@
 # kinugasa-recording TODO
 
 `docs/requirements.md`をSSoTとし、`docs/codebase.md`で定めた責務の境界に沿って実装する。
-設計、Repository基盤、API・Custom Resource・Operator基盤が完了し、session作成の実装に着手する段階である。
+Session作成まで完了し、映像処理componentの実装に着手する段階である。
 
 このファイルには未完了のタスクだけを記載する。完了したタスクはチェック済みの状態で残さず、項目自体を削除する。
 
@@ -10,14 +10,6 @@
 ### 実装前に文書化する事項
 
 - [ ] 実装で確定したpackage・fileの配置を、各phaseの完了時に`docs/codebase.md`へ反映する。
-
-## 3. Session作成
-
-- [ ] session名の形式をvalidationする。
-- [ ] 同名のSession Custom Resourceが現在または過去に存在しないことを確認する。
-- [ ] S3互換object storageに同名sessionのobject prefixが現在または過去に存在しないことを確認する。
-- [ ] 条件を満たす場合にSession Custom Resourceを作成し、重複時には競合を表すHTTP errorを返すAPIを実装する。（UC-006、FR-006）
-- [ ] Web UIにsession名の入力、作成操作、validation・重複警告、作成後のsession画面への遷移を実装する。
 
 ## 4. 映像処理コンポーネント
 
