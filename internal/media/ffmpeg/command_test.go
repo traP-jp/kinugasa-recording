@@ -62,3 +62,29 @@ func TestIngressCommandSupportsCopyAndPreviewTranscode(t *testing.T) {
 		t.Fatalf("transcode command is not WHIP-compatible: %s", joined)
 	}
 }
+
+func TestRecorderCommandUsesStreamCopyAndSegmentContract(t *testing.T) {
+	t.Parallel()
+
+	command, err := RecorderCommand(RecorderConfig{
+		InputURL:      "srt://video-fanout:12000?mode=caller&transtype=live",
+		RecordingRoot: "/recording",
+		SegmentLength: 10,
+	})
+	if err != nil {
+		t.Fatalf("RecorderCommand() returned %v", err)
+	}
+	joined := strings.Join(command.Args, " ")
+	for _, expected := range []string{
+		"-c:v copy",
+		"-f segment",
+		"-segment_format mpegts",
+		"-segment_time 10",
+		"-segment_list /recording/state/segments.list",
+		"/recording/staging/segment-%020d.ts.part",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Errorf("command does not contain %q: %s", expected, joined)
+		}
+	}
+}

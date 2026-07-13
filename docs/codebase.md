@@ -177,4 +177,12 @@ session名/
 - `cmd/video-fanout/main.go`, `cmd/livekit-ingress/main.go`: 環境変数からcommandを構築し、signalとstatus serverを含むcomponentを起動する。
 - `flake.nix`: 開発・test用FFmpegを追加し、RIST、SRT、RTMP、WHIP、MPEG-TS、libx264が有効な実バイナリを固定する。
 
+### 録画・upload component phase
+
+- `internal/media/ffmpeg/recorder.go`: H.264を再encodeせず、20桁の連番を持つMPEG-TS segmentへ分割するffmpeg commandを生成する。
+- `internal/media/recorder.go`: ffmpegがclose済みとしてsegment listへ記録したfileだけを`staging/`から`ready/`へatomic renameし、録画状態と正常終了markerをatomicに公開する。
+- `cmd/video-recorder/main.go`: SRT等の入力URL、segment長、shared volume、status endpointを環境変数から受け取り、recorder lifecycleを起動する。
+- `internal/storage/uploader.go`: `ready/`の逐次検出、SHA-256 metadataによるS3 objectの冪等性確認、条件付きupload、指数backoff、local state、全fileのupload完了判定を実装する。
+- `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderを起動する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。
