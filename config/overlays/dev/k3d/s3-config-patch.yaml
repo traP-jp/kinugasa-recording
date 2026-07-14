@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kinugasa-recording-s3
+data:
+  S3_BUCKET: kinugasa-recording
+  S3_REGION: garage
+  S3_ENDPOINT: http://garage:3900
+  S3_USE_PATH_STYLE: "true"

@@ -242,7 +242,7 @@ session名/
 - `build/check-ffmpeg.sh`: container build中にRIST、SRT、RTMP、WHIP、MPEG-TS、segment、tee、libx264の存在を検査する。
 - `build/Dockerfile.web`, `build/nginx.conf`: Web UIをproduction buildし、Operator APIをreverse proxyするnginx imageを作成する。
 - `config/default`: CRD・RBACに加え、Operator、Web、Redis、LiveKit server、LiveKit公式Ingress service、S3/LiveKit設定を共通Kustomize構成として配置する。
-- `config/overlays/k3d`, `config/overlays/production`: local clusterの適用入口と、実環境固有設定を重ねる雛形を分離する。
+- `config/overlays/dev/k3d`, `config/overlays/production`: 開発profileのlocal cluster用入口と、実環境固有設定を重ねる雛形を分離する。dev/k3d overlayは単一nodeのGarage、永続PVC、開発用bucket・credentialを構成し、アプリのS3接続先をcluster内Garageへ差し替える。
 - `scripts/k3d-{create,import,deploy,destroy}.sh`: NodePort・LiveKit RTC portを公開したcluster作成、local image import、公開host差し替えdeploy、cluster破棄を行う。
 - `flake.nix`: containerへ取り込むFFmpegのbin outputと、k3d・kubectlを含むdeploy toolchainを固定する。
 
@@ -295,7 +295,8 @@ session名/
 
 ### 運用文書phase
 
-- `docs/operations.md`: 開発環境、build/test、S3・LiveKit Secret、LAN deploy、映像送信、録画object取得、障害調査と復旧を実行順にまとめる。
+- `docs/development.md`: dev/k3d profileの前提、初回構築、Garage確認、更新、test、cluster破棄を実行順にまとめる。
+- `docs/operations.md`: S3・LiveKit Secret、映像送信、録画object取得、障害調査と復旧を実行順にまとめる。
 - `docs/deployment.md`: k3dのLAN公開addressとfirewall portに絞ったquick referenceを提供する。
 - `docs/acceptance.md`: KPI、FR、UCと自動testの対応、および残るLet's Note CF-SR実機確認を記録する。
 - `docs/hardware-validation.md`: Let's Note CF-SR上の基本flow、実行条件、資源使用量、frame drop、合否を再現可能な形で記録する確認票を提供する。

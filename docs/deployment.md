@@ -1,6 +1,7 @@
 # k3d deployment on a LAN
 
-S3/LiveKit Secret、build、映像入力、録画、障害復旧を含む全手順は`docs/operations.md`を参照する。
+開発環境の構築は`docs/development.md`、S3/LiveKit設定、映像入力、録画、障害復旧は
+`docs/operations.md`を参照する。
 
 ホストPCとスマートフォンを同じLANへ接続し、ホストPC上で次を実行する。
 
@@ -12,8 +13,9 @@ make deploy
 ```
 
 `make deploy`はdefault routeからホストPCのLAN IPv4 addressを検出し、そのaddressを
-camera接続URLとLiveKitの公開URLへ設定する。複数NIC、VPN、default routeがない環境では、
-使用するLAN IPv4 addressを明示する。
+camera接続URLとLiveKitの公開URLへ設定する。また、k3d内に開発用Garageを起動し、
+`kinugasa-recording` bucketとアプリ用credentialを自動構成する。複数NIC、VPN、
+default routeがない環境では、使用するLAN IPv4 addressを明示する。
 
 ```sh
 PUBLIC_HOST=192.168.1.20 make deploy
