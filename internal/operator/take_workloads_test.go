@@ -160,6 +160,9 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
 		t.Fatal(err)
 	}
+	if err := reconciler.Reconcile(context.Background(), session); !errors.Is(err, ErrWorkloadProgressing) {
+		t.Fatalf("uploader cleanup reconcile = %v", err)
+	}
 	if err := reconciler.Reconcile(context.Background(), session); err != nil {
 		t.Fatal(err)
 	}

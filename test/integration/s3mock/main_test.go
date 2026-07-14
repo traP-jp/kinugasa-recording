@@ -47,3 +47,25 @@ func TestServerHonorsPutIfNoneMatch(t *testing.T) {
 		t.Fatalf("status = %d, object = %q", response.Code, mock.objects["bucket/key"].body)
 	}
 }
+
+func TestServerInjectsConfiguredPutFailures(t *testing.T) {
+	t.Parallel()
+	mock := &server{objects: map[string]object{}}
+	control := httptest.NewRequest(http.MethodPost, "/_control?put_failures=1&put_status=403&put_code=AccessDenied", nil)
+	controlResponse := httptest.NewRecorder()
+	mock.ServeHTTP(controlResponse, control)
+	if controlResponse.Code != http.StatusNoContent {
+		t.Fatalf("control status = %d", controlResponse.Code)
+	}
+
+	failedResponse := httptest.NewRecorder()
+	mock.ServeHTTP(failedResponse, httptest.NewRequest(http.MethodPut, "/bucket/key", strings.NewReader("first")))
+	if failedResponse.Code != http.StatusForbidden || !strings.Contains(failedResponse.Body.String(), "AccessDenied") {
+		t.Fatalf("first PUT = %d %q", failedResponse.Code, failedResponse.Body.String())
+	}
+	successResponse := httptest.NewRecorder()
+	mock.ServeHTTP(successResponse, httptest.NewRequest(http.MethodPut, "/bucket/key", strings.NewReader("second")))
+	if successResponse.Code != http.StatusOK || mock.failuresServed != 1 {
+		t.Fatalf("second PUT = %d, failures = %d", successResponse.Code, mock.failuresServed)
+	}
+}

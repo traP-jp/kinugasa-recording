@@ -98,6 +98,12 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 		cameraState.RecorderPhase = recordingv1alpha1.ProcessPhaseStopped
 		uploader, err := getJob(ctx, reconciler.Client, session.Namespace, base+"-uploader")
 		if apierrors.IsNotFound(err) && cameraState.UploadPhase == recordingv1alpha1.UploadPhaseCompleted {
+			if err := reconciler.deleteObject(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}); err != nil {
+				return err
+			}
+			if err := reconciler.deleteObject(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: base, Namespace: session.Namespace}}); err != nil {
+				return err
+			}
 			continue
 		}
 		if err != nil {
@@ -106,14 +112,12 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 		switch {
 		case uploader.Status.Succeeded > 0:
 			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseCompleted
-			if err := reconciler.deleteObject(ctx, uploader); err != nil {
+			deleted, err := reconciler.deleteJobAndWait(ctx, session.Namespace, uploader.Name)
+			if err != nil {
 				return err
 			}
-			if err := reconciler.deleteObject(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}); err != nil {
-				return err
-			}
-			if err := reconciler.deleteObject(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: base, Namespace: session.Namespace}}); err != nil {
-				return err
+			if !deleted {
+				return ErrWorkloadProgressing
 			}
 		case uploader.Status.Failed > 0:
 			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseFailed

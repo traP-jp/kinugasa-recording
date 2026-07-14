@@ -17,10 +17,6 @@
 
 ## 9. Testと受け入れ確認
 
-### Integration test
-
-- [ ] S3一時障害・恒久障害を発生させ、status、retry、Web UIへの警告をtestする。
-
 ### End-to-end test
 
 - [ ] UC-006、UC-001、UC-003、UC-002、UC-004の基本フローを順に実行するtestを作成する。

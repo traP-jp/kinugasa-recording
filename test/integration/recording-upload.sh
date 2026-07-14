@@ -7,6 +7,7 @@ node="k3d-$cluster-server-0"
 session="recording-integration"
 session_name="Recording-Integration"
 take="take-1"
+failed_take="take-failure"
 camera="front"
 selector="recording.kinugasa.tra.pt/session=$session"
 node_ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$node")"
@@ -15,6 +16,10 @@ sender_pod="recording-sender"
 original_endpoint=""
 original_path_style="false"
 mock_started="false"
+take_digest="$(printf '%s\0%s\0%s' "$session" "$take" "$camera" | sha256sum | cut -c1-24)"
+take_base="take-$take_digest"
+failed_digest="$(printf '%s\0%s\0%s' "$session" "$failed_take" "$camera" | sha256sum | cut -c1-24)"
+failed_base="take-$failed_digest"
 
 import_image() {
 	k3d image import --cluster "$cluster" "kinugasa-recording/$1:latest" >/dev/null
@@ -61,10 +66,23 @@ wait_for_resource() {
 	return 1
 }
 
+wait_for_absent() {
+	resource="$1"
+	for _ in $(seq 1 120); do
+		if ! kubectl -n "$namespace" get "$resource" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 1
+	done
+	echo "timed out waiting for $resource deletion" >&2
+	return 1
+}
+
 wait_for_object() {
+	take_name="$1"
 	for _ in $(seq 1 90); do
 		objects="$(curl --fail --silent "$s3_endpoint/_objects" 2>/dev/null || true)"
-		object_path="$(printf '%s' "$objects" | sed -n 's#.*\(kinugasa-recording/Recording-Integration/take-1/front/segment-[0-9][0-9]*\.ts\).*#\1#p')"
+		object_path="$(printf '%s' "$objects" | sed -n "s#.*\(kinugasa-recording/Recording-Integration/$take_name/front/segment-[0-9][0-9]*\.ts\).*#\1#p")"
 		if [ -n "$object_path" ]; then
 			return 0
 		fi
@@ -101,12 +119,21 @@ for _ in $(seq 1 30); do
 	sleep 1
 done
 curl --fail --silent --output /dev/null "$s3_endpoint/_health"
+curl --fail --silent --request POST \
+	"$s3_endpoint/_control?put_failures=100&put_status=503&put_code=SlowDown" --output /dev/null
 
 kubectl -n "$namespace" patch configmap kinugasa-recording-s3 --type=merge \
 	--patch "{\"data\":{\"S3_ENDPOINT\":\"$s3_endpoint\",\"S3_USE_PATH_STYLE\":\"true\"}}" >/dev/null
 import_image video-fanout
 import_image livekit-ingress
 kubectl -n "$namespace" delete krsession "$session" --ignore-not-found --wait=true >/dev/null
+for base in "$take_base" "$failed_base"; do
+	kubectl -n "$namespace" delete pod -l "job-name=$base-recorder" --ignore-not-found --wait=false >/dev/null
+	kubectl -n "$namespace" delete pod -l "job-name=$base-uploader" --ignore-not-found --wait=false >/dev/null
+	for resource in "job/$base-recorder" "job/$base-uploader" "service/$base-uploader" "pvc/$base"; do
+		wait_for_absent "$resource"
+	done
+done
 kubectl apply -f test/integration/recording-upload.yaml >/dev/null
 wait_for_count deployment 2
 kubectl -n "$namespace" wait deployment -l "$selector" --for=condition=Available --timeout=120s >/dev/null
@@ -124,14 +151,18 @@ import_image video-recorder
 import_image video-uploader
 kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
 	"{\"spec\":{\"reservedTakeNames\":[\"$take\"],\"takes\":[{\"name\":\"$take\",\"desiredState\":\"Recording\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$requested_at\"}]}}" >/dev/null
-take_digest="$(printf '%s\0%s\0%s' "$session" "$take" "$camera" | sha256sum | cut -c1-24)"
-take_base="take-$take_digest"
 wait_for_resource "job/$take_base-recorder"
 wait_for_resource "job/$take_base-uploader"
 kubectl -n "$namespace" wait pod -l "job-name=$take_base-recorder" --for=condition=Ready --timeout=120s >/dev/null
 kubectl -n "$namespace" wait pod -l "job-name=$take_base-uploader" --for=condition=Ready --timeout=120s >/dev/null
 wait_for_value "krsession/$session" '{.status.takes[0].phase}' Recording
-wait_for_object
+wait_for_value "krsession/$session" '{.status.takes[0].cameras[0].conditions[?(@.type=="UploadHealthy")].reason}' Retrying
+temporary_failures="$(curl --fail --silent "$s3_endpoint/_stats" | sed -n 's/.*"failuresServed":\([0-9][0-9]*\).*/\1/p')"
+test "$temporary_failures" -gt 0
+curl --fail --silent --request POST \
+	"$s3_endpoint/_control?put_failures=0" --output /dev/null
+wait_for_object "$take"
+wait_for_value "krsession/$session" '{.status.takes[0].cameras[0].conditions[?(@.type=="UploadHealthy")].reason}' Uploading
 
 content_type="$(curl --fail --silent --head "$s3_endpoint/$object_path" | tr -d '\r' | sed -n 's/^Content-Type: //Ip')"
 first_byte="$(curl --fail --silent "$s3_endpoint/$object_path" | od -An -tu1 -N1 | tr -d ' ')"
@@ -146,6 +177,25 @@ stopped_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
 	"{\"spec\":{\"takes\":[{\"name\":\"$take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$requested_at\",\"stopRequestedAt\":\"$stopped_at\"}]}}" >/dev/null
 wait_for_value "krsession/$session" '{.status.takes[0].phase}' Completed
+
+failed_requested_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl --fail --silent --request POST \
+	"$s3_endpoint/_control?put_failures=100&put_status=403&put_code=AccessDenied" --output /dev/null
+import_image video-recorder
+import_image video-uploader
+kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
+	"{\"spec\":{\"reservedTakeNames\":[\"$take\",\"$failed_take\"],\"takes\":[{\"name\":\"$take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$requested_at\",\"stopRequestedAt\":\"$stopped_at\"},{\"name\":\"$failed_take\",\"desiredState\":\"Recording\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$failed_requested_at\"}]}}" >/dev/null
+wait_for_resource "job/$failed_base-recorder"
+wait_for_resource "job/$failed_base-uploader"
+kubectl -n "$namespace" wait pod -l "job-name=$failed_base-recorder" --for=condition=Ready --timeout=120s >/dev/null
+kubectl -n "$namespace" wait pod -l "job-name=$failed_base-uploader" --for=condition=Ready --timeout=120s >/dev/null
+wait_for_value "krsession/$session" '{.status.takes[1].phase}' Recording
+wait_for_value "krsession/$session" '{.status.takes[1].cameras[0].uploadPhase}' Failed
+wait_for_value "krsession/$session" '{.status.takes[1].cameras[0].conditions[?(@.type=="UploadHealthy")].reason}' PermanentFailure
+failed_stopped_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
+	"{\"spec\":{\"takes\":[{\"name\":\"$take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$requested_at\",\"stopRequestedAt\":\"$stopped_at\"},{\"name\":\"$failed_take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$failed_requested_at\",\"stopRequestedAt\":\"$failed_stopped_at\"}]}}" >/dev/null
+wait_for_value "krsession/$session" '{.status.takes[1].phase}' Uploading
 
 kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
 	'{"spec":{"cameras":[{"name":"front","desiredState":"Absent","ingress":{"ristNodePort":31000,"srtNodePort":31001}}]}}' >/dev/null

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,8 +22,12 @@ type object struct {
 }
 
 type server struct {
-	mutex   sync.RWMutex
-	objects map[string]object
+	mutex          sync.RWMutex
+	objects        map[string]object
+	putFailures    int
+	putStatus      int
+	putCode        string
+	failuresServed int
 }
 
 func main() {
@@ -47,6 +52,14 @@ func (mock *server) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		mock.list(response)
 		return
 	}
+	if request.URL.Path == "/_control" && request.Method == http.MethodPost {
+		mock.control(response, request)
+		return
+	}
+	if request.URL.Path == "/_stats" {
+		mock.stats(response)
+		return
+	}
 	key := strings.TrimPrefix(request.URL.EscapedPath(), "/")
 	if key == "" || !strings.Contains(key, "/") {
 		writeS3Error(response, http.StatusBadRequest, "InvalidURI")
@@ -63,6 +76,39 @@ func (mock *server) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		response.Header().Set("Allow", "GET, HEAD, PUT")
 		response.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (mock *server) control(response http.ResponseWriter, request *http.Request) {
+	failures, err := strconv.Atoi(request.URL.Query().Get("put_failures"))
+	if err != nil || failures < 0 {
+		http.Error(response, "put_failures must be a non-negative integer", http.StatusBadRequest)
+		return
+	}
+	status := http.StatusServiceUnavailable
+	if value := request.URL.Query().Get("put_status"); value != "" {
+		status, err = strconv.Atoi(value)
+		if err != nil || status < 400 || status > 599 {
+			http.Error(response, "put_status must be an error HTTP status", http.StatusBadRequest)
+			return
+		}
+	}
+	code := request.URL.Query().Get("put_code")
+	if code == "" {
+		code = "SlowDown"
+	}
+	mock.mutex.Lock()
+	mock.putFailures, mock.putStatus, mock.putCode = failures, status, code
+	mock.failuresServed = 0
+	mock.mutex.Unlock()
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (mock *server) stats(response http.ResponseWriter) {
+	mock.mutex.RLock()
+	stats := map[string]int{"putFailuresRemaining": mock.putFailures, "failuresServed": mock.failuresServed}
+	mock.mutex.RUnlock()
+	response.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(response).Encode(stats)
 }
 
 func (mock *server) list(response http.ResponseWriter) {
@@ -102,6 +148,16 @@ func (mock *server) get(response http.ResponseWriter, key string) {
 }
 
 func (mock *server) put(response http.ResponseWriter, request *http.Request, key string) {
+	mock.mutex.Lock()
+	if mock.putFailures > 0 {
+		mock.putFailures--
+		mock.failuresServed++
+		status, code := mock.putStatus, mock.putCode
+		mock.mutex.Unlock()
+		writeS3Error(response, status, code)
+		return
+	}
+	mock.mutex.Unlock()
 	body, err := io.ReadAll(io.LimitReader(request.Body, 1<<30))
 	if err != nil {
 		writeS3Error(response, http.StatusBadRequest, "InvalidRequest")

@@ -222,7 +222,7 @@ session名/
 ### Take workload lifecycle phase
 
 - `internal/operator/session_workloads.go`: cameraとtakeのreconcilerをSession reconcile内で順に実行する。
-- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobとstatus Serviceを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Job成功後にJob・Service・PVCをcleanupしてtakeを完了する。
+- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobとstatus Serviceを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Jobもforeground削除してPodの消失を確認してからService・PVCをcleanupしてtakeを完了する。
 - `internal/operator/uploader_status.go`: uploader Serviceのstatus endpointを読み取り、retry・恒久障害とupload済みfile数をcamera単位のtake statusへ集約する。
 - `internal/operator/session_controller.go`: JobとPVCをowner resourceとして監視する。
 - `cmd/operator/main.go`: recorder/uploader image、S3 ConfigMap・Secret名、PVC容量をtake workload reconcilerへ注入する。
@@ -268,8 +268,8 @@ session名/
 
 ### Recording upload integration test phase
 
-- `test/integration/recording-upload.sh`, `recording-upload.yaml`: SRT入力を録画し、takeがRecordingの間にMPEG-TS segmentが`<session>/<take>/<camera>/`へuploadされ、停止後にtake完了とresource cleanupへ進むことをk3dで検証する。
-- `test/integration/s3mock`: AWS SDKの署名requestを受けるtest専用の最小S3互換serverをk3d node内で起動し、object metadataと内容をintegration testから検査可能にする。
+- `test/integration/recording-upload.sh`, `recording-upload.yaml`: SRT入力を録画し、takeがRecordingの間にMPEG-TS segmentが`<session>/<take>/<camera>/`へuploadされ、停止後にtake完了とresource cleanupへ進むことをk3dで検証する。S3の5xx一時障害では`Retrying`を観測して解除後に完了し、403恒久障害では録画を自動停止せず`PermanentFailure`を報告することも確認する。
+- `test/integration/s3mock`: AWS SDKの署名requestを受けるtest専用の最小S3互換serverをk3d node内で起動し、object metadataと内容を検査可能にする。制御endpointからPUTの一時・恒久障害を決定的に注入できる。
 - `internal/operator/take_workloads.go`: recorder Jobが実際にReadyになってからtakeをRecordingとし、local k3d imageを利用できるpull policyでrecorder/uploader Jobを作成する。
 - `scripts/k3d-create.sh`: 空き容量が少ない開発hostでもimport直後のlocal imageがGCされないよう、kubeletのimage GC閾値を開発cluster向けに調整する。
 
