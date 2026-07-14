@@ -6,8 +6,15 @@ cluster="${K3D_CLUSTER_NAME:-kinugasa-recording}"
 session="session-integration"
 selector="recording.kinugasa.tra.pt/session=$session"
 sender_pod=""
+sender_pid=""
+media_sender_host="${MEDIA_SENDER_HOST:-}"
 
 stop_sender() {
+	if [ -n "$sender_pid" ]; then
+		kill "$sender_pid" >/dev/null 2>&1 || true
+		wait "$sender_pid" 2>/dev/null || true
+		sender_pid=""
+	fi
 	if [ -n "$sender_pod" ]; then
 		kubectl -n "$namespace" delete pod "$sender_pod" --ignore-not-found --wait=false >/dev/null
 		sender_pod=""
@@ -26,6 +33,10 @@ wait_for_value() {
 	jsonpath="$2"
 	want="$3"
 	for _ in $(seq 1 120); do
+		if [ -n "$sender_pid" ] && ! kill -0 "$sender_pid" >/dev/null 2>&1; then
+			echo "host media sender stopped while waiting for $resource $jsonpath=$want" >&2
+			return 1
+		fi
 		if [ -n "$sender_pod" ]; then
 			sender_phase="$(kubectl -n "$namespace" get "pod/$sender_pod" -o 'jsonpath={.status.phase}' 2>/dev/null || true)"
 			if [ "$sender_phase" = Failed ] || [ "$sender_phase" = Succeeded ]; then
@@ -78,7 +89,9 @@ wait_for_probe() {
 run_protocol() {
 	protocol="$1"
 	probe="recording-probe-$protocol"
-	sender_pod="sender-$protocol"
+	if [ -z "$media_sender_host" ]; then
+		sender_pod="sender-$protocol"
+	fi
 
 	kubectl apply -f test/integration/session-workloads.yaml >/dev/null
 	wait_for_count deployment 2
@@ -87,18 +100,32 @@ run_protocol() {
 	input_service="$(kubectl -n "$namespace" get service -l "$selector" -o 'jsonpath={.items[?(@.spec.type=="NodePort")].metadata.name}')"
 	test -n "$input_service"
 	if [ "$protocol" = rist ]; then
-		output_url="rist://$input_service:10000"
+		service_port=10000
+		node_port=31000
 		protocol_args="-rist_profile 1"
 	else
-		output_url="srt://$input_service:10001?mode=caller&transtype=live"
+		service_port=10001
+		node_port=31001
 		protocol_args=""
 	fi
-	# shellcheck disable=SC2086
-	kubectl -n "$namespace" run "$sender_pod" --image=kinugasa-recording/video-fanout:latest --image-pull-policy=IfNotPresent --restart=Never --command -- \
+	if [ -n "$media_sender_host" ]; then
+		output_url="$protocol://$media_sender_host:$node_port"
+		[ "$protocol" = rist ] || output_url="$output_url?mode=caller&transtype=live"
+		# shellcheck disable=SC2086
 		ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=320x180:rate=15 \
-		-an -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p \
-		-x264-params repeat-headers=1:keyint=30 \
-		-f mpegts $protocol_args "$output_url" >/dev/null
+			-an -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p \
+			-x264-params repeat-headers=1:keyint=30 -f mpegts $protocol_args "$output_url" >/dev/null 2>&1 &
+		sender_pid=$!
+	else
+		output_url="$protocol://$input_service:$service_port"
+		[ "$protocol" = rist ] || output_url="$output_url?mode=caller&transtype=live"
+		# shellcheck disable=SC2086
+		kubectl -n "$namespace" run "$sender_pod" --image=kinugasa-recording/video-fanout:latest --image-pull-policy=IfNotPresent --restart=Never --command -- \
+			ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=320x180:rate=15 \
+			-an -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p \
+			-x264-params repeat-headers=1:keyint=30 \
+			-f mpegts $protocol_args "$output_url" >/dev/null
+	fi
 
 	wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Connected
 	wait_for_value "krsession/$session" '{.status.cameras[0].connectedProtocol}' "$protocol"

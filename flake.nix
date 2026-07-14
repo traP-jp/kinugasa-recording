@@ -34,6 +34,7 @@
               go_1_26
               gnumake
               golangci-lint
+              iproute2
               k3d
               kubernetes-code-generator
               kubernetes-controller-tools

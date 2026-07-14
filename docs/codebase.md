@@ -273,4 +273,13 @@ session名/
 - `internal/operator/take_workloads.go`: recorder Jobが実際にReadyになってからtakeをRecordingとし、local k3d imageを利用できるpull policyでrecorder/uploader Jobを作成する。
 - `scripts/k3d-create.sh`: 空き容量が少ない開発hostでもimport直後のlocal imageがGCされないよう、kubeletのimage GC閾値を開発cluster向けに調整する。
 
+### LAN公開phase
+
+- `scripts/detect-public-ip.sh`: `PUBLIC_HOST`の明示値またはdefault routeから、公開URLへ使用するLAN IPv4 addressを決定・検証する。
+- `scripts/k3d-create.sh`: Web、LiveKit signaling・media、camera用NodePortを全host interfaceへ明示的にpublishする。
+- `scripts/k3d-deploy.sh`: LAN IPv4をcamera endpointとLiveKit設定へ反映し、ConfigMap・Secretと同一tagのimage更新をprocessへ確実に反映するため全Deploymentをrolloutする。
+- `scripts/k3d-lan-check.sh`: LAN IPv4経由のWeb・LiveKit到達性と、Operatorの公開camera host・LiveKit URL設定の一致を検査する。
+- `test/integration/media-fanout.sh`: `MEDIA_SENDER_HOST`指定時はhostのLAN IPv4と公開UDP NodePortを経由してRIST/SRT test streamを送信し、通常のcluster内送信と同じfanout動作を検証する。
+- `docs/deployment.md`: LAN deploy、明示的な公開IPv4指定、firewallで許可するTCP/UDP port、実機確認範囲を記録する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

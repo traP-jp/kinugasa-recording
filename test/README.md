@@ -8,7 +8,8 @@ workloadとLiveKit ingressが作成・削除される一連のreconcileを検証
 
 `test/integration/media-fanout.sh`はRIST main profileとSRTでH.264 test streamを
 cluster内のcamera入力Serviceへ送り、LiveKit接続状態、`connectedProtocol`と
-`lastFrameAt`、内部recording SRT branchを検証する。
+`lastFrameAt`、内部recording SRT branchを検証する。`MEDIA_SENDER_HOST`にLAN IPv4を
+指定すると、hostの公開UDP NodePort経由で同じtestを実行する。
 
 `test/integration/recording-upload.sh`はtest専用S3 mockをk3d node内で起動し、
 録画中のMPEG-TS逐次upload、object key階層、停止後のupload完了とcleanupに加え、

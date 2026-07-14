@@ -11,10 +11,6 @@
 
 - [ ] 実装で確定したpackage・fileの配置を、各phaseの完了時に`docs/codebase.md`へ反映する。
 
-## 8. Container imageとKubernetes環境
-
-- [ ] スマートフォンから映像入力用Serviceへ、利用者のbrowserからWeb UIとLiveKitへLAN内で到達できるようにする。
-
 ## 9. Testと受け入れ確認
 
 ### End-to-end test
