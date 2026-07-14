@@ -35,6 +35,8 @@ kinugasa-recording/
 │   ├── requirements.md   # 人間が管理する要件のSSoT
 │   ├── design.md         # CR、HTTP API、映像経路、録画・uploadの初期設計
 │   ├── codebase.md       # package・file配置と責務
+│   ├── operations.md     # 開発、deploy、実運用、障害復旧の手順
+│   ├── acceptance.md     # 要件ごとの受け入れtest状況
 │   └── todo.md           # 未完了タスク
 ├── Makefile              # build、test、deploy等の共通entry point
 ├── flake.nix             # 開発toolchainを固定するNix flake
@@ -289,5 +291,11 @@ session名/
 - `web/src/App.test.tsx`, `test/e2e/basic-flow.sh`: RIST/SRT QR componentへ渡す内容がAPIの接続URLと一致し、そのLAN SRT URLで実際にcameraが接続できることを組み合わせてKPI-006を検証する。
 - `test/integration/s3mock`: Session作成serviceが使用するS3 ListObjectsV2と条件付き予約object作成を含め、end-to-end testでも実AWS SDK requestを処理する。
 - `Makefile`: deploy済みk3dに対して基本flowを実行する`test-e2e` targetを提供する。
+
+### 運用文書phase
+
+- `docs/operations.md`: 開発環境、build/test、S3・LiveKit Secret、LAN deploy、映像送信、録画object取得、障害調査と復旧を実行順にまとめる。
+- `docs/deployment.md`: k3dのLAN公開addressとfirewall portに絞ったquick referenceを提供する。
+- `docs/acceptance.md`: KPI、FR、UCと自動testの対応、および残るLet's Note CF-SR実機確認を記録する。
 
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

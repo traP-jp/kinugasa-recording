@@ -30,6 +30,7 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              awscli2
               ffmpeg-full
               go_1_26
               gnumake

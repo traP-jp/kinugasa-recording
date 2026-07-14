@@ -1,5 +1,7 @@
 # k3d deployment on a LAN
 
+S3/LiveKit Secret、build、映像入力、録画、障害復旧を含む全手順は`docs/operations.md`を参照する。
+
 ホストPCとスマートフォンを同じLANへ接続し、ホストPC上で次を実行する。
 
 ```sh
@@ -24,6 +26,7 @@ PUBLIC_HOST=192.168.1.20 ./scripts/k3d-lan-check.sh
 | --- | ---: | --- |
 | TCP | 30080 | Web UI |
 | TCP | 30081 | LiveKit signaling |
+| TCP | 30082 | LiveKit RTC ServiceのNodePort（診断用。通常は7881を使用） |
 | TCP | 7881 | LiveKit RTC fallback |
 | UDP | 7882 | LiveKit RTC media |
 | UDP | 31000-31099 | cameraのRIST/SRT入力NodePort |
