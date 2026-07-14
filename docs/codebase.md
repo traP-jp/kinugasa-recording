@@ -284,7 +284,7 @@ session名/
 
 ### 基本end-to-end test phase
 
-- `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約、LAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera録画、録画中の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。
+- `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約、2台cameraへのLAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera一括録画、明示的な1台選択、camera別の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。
 - `test/integration/s3mock`: Session作成serviceが使用するS3 ListObjectsV2と条件付き予約object作成を含め、end-to-end testでも実AWS SDK requestを処理する。
 - `Makefile`: deploy済みk3dに対して基本flowを実行する`test-e2e` targetを提供する。
 

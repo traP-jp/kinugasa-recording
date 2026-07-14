@@ -15,7 +15,6 @@
 
 ### End-to-end test
 
-- [ ] 複数cameraの一括録画、camera選択、未指定時の全選択をtestする。（KPI-005-1）
 - [ ] session、camera、takeの不正名・重複名・使用済み名をWeb UIから指定し、拒否と警告をtestする。（KPI-005-3）
 - [ ] QRコードの内容が選択したprotocolの到達可能な接続先URLと一致することをtestする。（KPI-006）
 - [ ] 録画停止後、すべてのuploadが完了してS3から取得できることをtestする。（UC-005）

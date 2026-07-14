@@ -15,5 +15,6 @@ cluster内のcamera入力Serviceへ送り、LiveKit接続状態、`connectedProt
 録画中のMPEG-TS逐次upload、object key階層、停止後のupload完了とcleanupに加え、
 S3の一時障害からのretry復旧と恒久障害のstatus反映を検証する。
 
-`make test-e2e`は公開Web HTTP APIからSession作成、camera追加とLAN SRT入力、
-preview接続、未指定時の全camera take、逐次upload、停止、camera削除を順に実行する。
+`make test-e2e`は公開Web HTTP APIからSession作成、2台camera追加とLAN SRT入力、
+preview接続、未指定時の全camera take、明示的な1台選択、camera別の逐次upload、停止、
+camera削除を順に実行する。
