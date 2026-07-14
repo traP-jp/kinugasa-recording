@@ -338,4 +338,94 @@ describe("App", () => {
       "alert",
     );
   });
+
+  it("shows reserved-name warnings for camera and take forms", async () => {
+    window.history.replaceState({}, "", "/sessions/Session-1");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (url === "/api/v1/sessions/Session-1")
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              session: {
+                name: "Session-1",
+                spec: {
+                  cameras: [{ name: "front", desiredState: "Present" }],
+                  takes: [],
+                },
+                status: {
+                  cameras: [{ name: "front", phase: "Connected" }],
+                  takes: [],
+                },
+              },
+            }),
+          });
+        if (url === "/api/v1/livekit/token")
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              serverUrl: "wss://livekit",
+              roomName: "preview",
+              participantToken: "token",
+              expiresAt: "2026-07-14T01:05:00Z",
+            }),
+          });
+        if (url.endsWith("/cameras") && init?.method === "POST")
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: { code: "NAME_RESERVED", message: "reserved" },
+            }),
+          });
+        if (url.endsWith("/takes") && init?.method === "POST")
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: { code: "NAME_RESERVED", message: "reserved" },
+            }),
+          });
+        throw new Error(`unexpected URL ${url}`);
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    await screen.findByLabelText("Camera名");
+    fireEvent.change(screen.getByLabelText("Camera名"), {
+      target: { value: "invalid_name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cameraを追加" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Camera名は255 byte以内の英数字とハイフン",
+    );
+    fireEvent.change(screen.getByLabelText("Take名"), {
+      target: { value: "invalid_name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Takeを開始" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Take名は255 byte以内の英数字とハイフン",
+    );
+
+    fireEvent.change(screen.getByLabelText("Camera名"), {
+      target: { value: "front" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cameraを追加" }));
+    expect(
+      await screen.findByText(
+        "このCamera名は現在または過去に使用されています。",
+      ),
+    ).toHaveAttribute("role", "alert");
+
+    fireEvent.change(screen.getByLabelText("Take名"), {
+      target: { value: "take-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Takeを開始" }));
+    expect(
+      await screen.findByText("このTake名は現在または過去に使用されています。"),
+    ).toHaveAttribute("role", "alert");
+  });
 });

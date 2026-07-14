@@ -112,6 +112,20 @@ wait_for_object() {
 	return 1
 }
 
+expect_name_reserved() {
+	method="$1"
+	path="$2"
+	idempotency_key="$3"
+	data="$4"
+	response="$(curl --silent --show-error --request "$method" "$web_url$path" \
+		--header 'Content-Type: application/json' --header "Idempotency-Key: $idempotency_key" \
+		--data "$data" --write-out '\n%{http_code}')"
+	status="$(printf '%s\n' "$response" | tail -n 1)"
+	body="$(printf '%s\n' "$response" | sed '$d')"
+	test "$status" = 409
+	test "$(printf '%s' "$body" | jq -r '.error.code')" = NAME_RESERVED
+}
+
 original_endpoint="$(kubectl -n "$namespace" get configmap kinugasa-recording-s3 -o 'jsonpath={.data.S3_ENDPOINT}')"
 original_path_style="$(kubectl -n "$namespace" get configmap kinugasa-recording-s3 -o 'jsonpath={.data.S3_USE_PATH_STYLE}')"
 original_config_captured=true
@@ -141,6 +155,7 @@ created="$(curl $curl_flags --request POST "$web_url/api/v1/sessions" \
 	--header 'Content-Type: application/json' --header 'Idempotency-Key: e2e-create-session' \
 	--data "{\"name\":\"$session_name\"}")"
 test "$(printf '%s' "$created" | jq -r '.session.name')" = "$session_name"
+expect_name_reserved POST /api/v1/sessions e2e-create-session-duplicate "{\"name\":\"$session_name\"}"
 
 import_image video-fanout
 import_image livekit-ingress
@@ -154,6 +169,7 @@ front_srt_url="$(printf '%s' "$added_front" | jq -r '.connectionUrls.srt')"
 side_srt_url="$(printf '%s' "$added_side" | jq -r '.connectionUrls.srt')"
 test "$front_srt_url" = "srt://$public_host:31001?mode=caller&transtype=live"
 test "$side_srt_url" = "srt://$public_host:31003?mode=caller&transtype=live"
+expect_name_reserved POST "/api/v1/sessions/$session_name/cameras" e2e-add-front-duplicate "{\"name\":\"$camera_front\"}"
 wait_for_api_value '.session.status.cameras[0].phase' Waiting
 wait_for_api_value '.session.status.cameras[1].phase' Waiting
 resource_name="$(session_resource)"
@@ -191,6 +207,7 @@ curl $curl_flags --output /dev/null --request POST "$web_url/api/v1/sessions/$se
 wait_for_api_value '.session.status.takes[0].phase' Completed
 test "$(curl $curl_flags --head "$s3_endpoint/$front_object_path" | tr -d '\r' | sed -n 's/^Content-Type: //Ip')" = video/mp2t
 test "$(curl $curl_flags --head "$s3_endpoint/$side_object_path" | tr -d '\r' | sed -n 's/^Content-Type: //Ip')" = video/mp2t
+expect_name_reserved POST "/api/v1/sessions/$session_name/takes" e2e-start-all-duplicate "{\"name\":\"$take_all\",\"cameraNames\":[]}"
 
 import_image video-recorder
 import_image video-uploader

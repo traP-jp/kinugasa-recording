@@ -15,7 +15,6 @@
 
 ### End-to-end test
 
-- [ ] session、camera、takeの不正名・重複名・使用済み名をWeb UIから指定し、拒否と警告をtestする。（KPI-005-3）
 - [ ] QRコードの内容が選択したprotocolの到達可能な接続先URLと一致することをtestする。（KPI-006）
 - [ ] 録画停止後、すべてのuploadが完了してS3から取得できることをtestする。（UC-005）
 - [ ] Let's Note CF-SR上でsession作成、複数cameraのpreview、take録画、逐次uploadの基本フローが動作することを確認する。（KPI-001）
