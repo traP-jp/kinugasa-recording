@@ -1,0 +1,234 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording-operator
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: kinugasa-recording-operator
+      containers:
+        - name: operator
+          image: kinugasa-recording/operator:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: kinugasa-recording-operator
+            - configMapRef:
+                name: kinugasa-recording-s3
+            - secretRef:
+                name: kinugasa-recording-s3
+          env:
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kinugasa-recording-livekit
+                  key: api-key
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kinugasa-recording-livekit
+                  key: api-secret
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: metrics, containerPort: 8081}
+            - {name: health, containerPort: 8082}
+          readinessProbe:
+            httpGet: {path: /readyz, port: health}
+          livenessProbe:
+            httpGet: {path: /healthz, port: health}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            runAsNonRoot: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: operator
+spec:
+  selector:
+    app.kubernetes.io/name: kinugasa-recording-operator
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording-web
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: web
+          image: kinugasa-recording/web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /, port: http}
+          livenessProbe:
+            httpGet: {path: /, port: http}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: kinugasa-recording-web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording-redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording-redis
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: redis:8.2-alpine
+          args: [redis-server, --save, "", --appendonly, "no"]
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            tcpSocket: {port: redis}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    app.kubernetes.io/name: kinugasa-recording-redis
+  ports:
+    - {name: redis, port: 6379, targetPort: redis}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording-livekit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording-livekit
+    spec:
+      enableServiceLinks: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: livekit
+          image: livekit/livekit-server:v1.13.1
+          args: [--config, /etc/livekit/livekit.yaml]
+          env:
+            - name: LIVEKIT_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: kinugasa-recording-livekit
+                  key: keys
+          volumeMounts:
+            - {name: config, mountPath: /etc/livekit, readOnly: true}
+          ports:
+            - {name: signal, containerPort: 7880}
+            - {name: rtc-tcp, containerPort: 7881}
+            - {name: rtc-udp, containerPort: 7882, protocol: UDP}
+          readinessProbe:
+            httpGet: {path: /, port: signal}
+      volumes:
+        - name: config
+          configMap:
+            name: livekit
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: kinugasa-recording-livekit
+  ports:
+    - {name: signal, port: 7880, targetPort: signal, nodePort: 30081}
+    - {name: rtc-tcp, port: 7881, targetPort: rtc-tcp, nodePort: 30082}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit-ingress-service
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording-livekit-ingress-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording-livekit-ingress-service
+    spec:
+      enableServiceLinks: false
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: ingress
+          image: livekit/ingress:v1.5.0
+          args: [--config, /etc/ingress/ingress.yaml]
+          volumeMounts:
+            - {name: config, mountPath: /etc/ingress, readOnly: true}
+          ports:
+            - {name: whip, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: whip}
+      volumes:
+        - name: config
+          secret:
+            secretName: kinugasa-recording-livekit
+            items:
+              - {key: ingress.yaml, path: ingress.yaml}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit-ingress-service
+spec:
+  selector:
+    app.kubernetes.io/name: kinugasa-recording-livekit-ingress-service
+  ports:
+    - {name: whip, port: 8080, targetPort: whip}

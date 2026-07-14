@@ -1,0 +1,129 @@
+:root {
+  color: #17202a;
+  background: #f5f7f9;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+form {
+  display: grid;
+  max-width: 28rem;
+  gap: 0.75rem;
+}
+
+fieldset {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid #d5d8dc;
+  border-radius: 0.35rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.take-active {
+  max-width: 28rem;
+  margin-block: 1rem;
+  padding: 1rem;
+  border-left: 0.35rem solid #145a8d;
+  background: #fff;
+}
+
+input,
+button {
+  border: 1px solid #aeb6bf;
+  border-radius: 0.35rem;
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
+button {
+  border-color: #145a8d;
+  color: #fff;
+  background: #145a8d;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+[role="alert"] {
+  color: #a93226;
+}
+
+.eyebrow {
+  color: #566573;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.camera-list,
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1rem;
+  margin-block: 1rem 2rem;
+}
+
+.camera-card,
+.preview-card {
+  padding: 1rem;
+  border: 1px solid #d5d8dc;
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.connection-grid {
+  display: grid;
+  gap: 1rem;
+  margin-block: 1rem;
+}
+
+.connection-grid > div {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+}
+
+.danger {
+  border-color: #922b21;
+  background: #922b21;
+}
+
+.preview-card video,
+.video-placeholder {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.35rem;
+  background: #17202a;
+}
+
+.video-placeholder {
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.warning {
+  color: #a93226;
+}

@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kinugasa-recording
+
+resources:
+  - namespace.yaml
+  - ../crd
+  - ../rbac
+  - platform-config.yaml
+  - platform-secrets.yaml
+  - platform.yaml
+
+images:
+  - name: kinugasa-recording/operator
+    newTag: latest
+  - name: kinugasa-recording/web
+    newTag: latest
+  - name: kinugasa-recording/video-fanout
+    newTag: latest
+  - name: kinugasa-recording/video-recorder
+    newTag: latest
+  - name: kinugasa-recording/video-uploader
+    newTag: latest
+  - name: kinugasa-recording/livekit-ingress
+    newTag: latest
