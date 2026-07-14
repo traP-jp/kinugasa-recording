@@ -19,7 +19,7 @@
 
 ### Integration test
 
-- [ ] camera切断、ffmpeg異常終了、S3一時障害・恒久障害を発生させ、status、retry、Web UIへの警告をtestする。
+- [ ] S3一時障害・恒久障害を発生させ、status、retry、Web UIへの警告をtestする。
 
 ### End-to-end test
 

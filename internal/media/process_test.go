@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,6 +33,19 @@ func TestSupervisorObservesProgressAndStopsGracefully(t *testing.T) {
 	}
 	if snapshot := supervisor.Snapshot(); snapshot.Phase != ProcessPhaseStopped {
 		t.Fatalf("phase = %q, want %q", snapshot.Phase, ProcessPhaseStopped)
+	}
+}
+
+func TestSupervisorDoesNotTreatHeartbeatAsFrameProgress(t *testing.T) {
+	t.Parallel()
+	observedAt := time.Date(2026, 7, 14, 1, 2, 3, 0, time.UTC)
+	supervisor := NewSupervisor(Command{}, nil)
+	supervisor.snapshot.Frame = 12
+	supervisor.snapshot.LastProgressAt = observedAt
+
+	supervisor.observeProgress(strings.NewReader("progress=continue\nframe=12\n"))
+	if snapshot := supervisor.Snapshot(); !snapshot.LastProgressAt.Equal(observedAt) || snapshot.Frame != 12 {
+		t.Fatalf("heartbeat advanced frame progress: %#v", snapshot)
 	}
 }
 

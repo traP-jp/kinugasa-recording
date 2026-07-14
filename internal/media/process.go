@@ -157,11 +157,11 @@ func (supervisor *Supervisor) observeProgress(reader io.Reader) {
 		switch key {
 		case "frame":
 			if frame, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
-				supervisor.snapshot.Frame = frame
-				supervisor.snapshot.LastProgressAt = time.Now().UTC()
+				if frame > supervisor.snapshot.Frame {
+					supervisor.snapshot.Frame = frame
+					supervisor.snapshot.LastProgressAt = time.Now().UTC()
+				}
 			}
-		case "progress":
-			supervisor.snapshot.LastProgressAt = time.Now().UTC()
 		}
 		supervisor.mutex.Unlock()
 	}

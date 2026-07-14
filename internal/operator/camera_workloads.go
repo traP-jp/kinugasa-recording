@@ -101,6 +101,8 @@ func (reconciler *CameraWorkloadReconciler) ensureCamera(ctx context.Context, se
 	}
 	status.Endpoints = cameraEndpoints(reconciler.PublicMediaHost, camera)
 	if reconciler.Activity != nil {
+		wasConnected := status.Phase == recordingv1alpha1.CameraPhaseConnected ||
+			status.Phase == recordingv1alpha1.CameraPhaseDisconnected || status.ConnectedProtocol != ""
 		activityEndpoint := fmt.Sprintf("http://%s-fanout.%s.svc:8080/status", base, session.Namespace)
 		activity, activityErr := reconciler.Activity.Read(ctx, activityEndpoint)
 		if activityErr == nil {
@@ -112,6 +114,9 @@ func (reconciler *CameraWorkloadReconciler) ensureCamera(ctx context.Context, se
 				status.ConnectedProtocol = activity.Protocol
 			} else {
 				status.ConnectedProtocol = ""
+				if wasConnected {
+					status.Phase = recordingv1alpha1.CameraPhaseDisconnected
+				}
 			}
 		}
 	}

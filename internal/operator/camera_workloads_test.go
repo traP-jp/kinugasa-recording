@@ -7,6 +7,7 @@ import (
 	"time"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
+	livekit "github.com/livekit/protocol/livekit"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -83,6 +84,14 @@ func TestCameraWorkloadReconcilerCreatesAndDeletesResourcesInOrder(t *testing.T)
 	}
 	if len(deployments.Items) != 2 || len(services.Items) != 3 {
 		t.Fatalf("idempotent resources: deployments=%d services=%d", len(deployments.Items), len(services.Items))
+	}
+	liveKit.items[0].State = &livekit.IngressState{Status: livekit.IngressState_ENDPOINT_ERROR}
+	reconciler.Activity = cameraMediaActivityStub{activity: CameraMediaActivity{Protocol: "srt", LastFrameAt: frameAt, Active: false}}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if session.Status.Cameras[0].Phase != recordingv1alpha1.CameraPhaseDisconnected || session.Status.Cameras[0].ConnectedProtocol != "" {
+		t.Fatalf("disconnected camera status = %#v", session.Status.Cameras[0])
 	}
 
 	session.Spec.Cameras[0].DesiredState = recordingv1alpha1.DesiredStateAbsent

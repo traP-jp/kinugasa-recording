@@ -2,6 +2,7 @@
 set -eu
 
 namespace="${KINUGASA_NAMESPACE:-kinugasa-recording}"
+cluster="${K3D_CLUSTER_NAME:-kinugasa-recording}"
 session="session-integration"
 selector="recording.kinugasa.tra.pt/session=$session"
 sender_pod=""
@@ -103,6 +104,23 @@ run_protocol() {
 	wait_for_value "krsession/$session" '{.status.cameras[0].connectedProtocol}' "$protocol"
 	last_frame_at="$(kubectl -n "$namespace" get "krsession/$session" -o 'jsonpath={.status.cameras[0].lastFrameAt}')"
 	test -n "$last_frame_at"
+	if [ "$protocol" = rist ]; then
+		fanout_pod="$(kubectl -n "$namespace" get pod -l "$selector" -o name | sed -n '/fanout/{s#pod/##;p;q;}')"
+		kubectl -n "$namespace" exec "$fanout_pod" -- sh -c '
+			for path in /proc/[0-9]*/cmdline; do
+				command=$(tr "\000" " " < "$path")
+				case "$command" in
+				*srt://0.0.0.0:10001*)
+					pid=${path#/proc/}; pid=${pid%/cmdline}; kill -9 "$pid"; exit 0 ;;
+				esac
+			done
+			exit 1'
+		sleep 2
+		kubectl -n "$namespace" wait "pod/$fanout_pod" --for=condition=Ready --timeout=30s >/dev/null
+		restarts="$(kubectl -n "$namespace" get "pod/$fanout_pod" -o 'jsonpath={.status.containerStatuses[0].restartCount}')"
+		test "$restarts" = 0
+		wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Connected
+	fi
 	service="$(kubectl -n "$namespace" get service -l "$selector" -o 'jsonpath={.items[?(@.spec.ports[0].name=="recording")].metadata.name}')"
 	test -n "$service"
 	kubectl -n "$namespace" run "$probe" --image=kinugasa-recording/video-fanout:latest --image-pull-policy=IfNotPresent --restart=Never --command -- \
@@ -110,6 +128,8 @@ run_protocol() {
 	wait_for_probe "$probe"
 	kubectl -n "$namespace" delete pod "$probe" --wait=false >/dev/null
 	stop_sender
+	wait_for_value "krsession/$session" '{.status.cameras[0].connectedProtocol}' ""
+	wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Disconnected
 
 	kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch '{"spec":{"cameras":[{"name":"front","desiredState":"Absent","ingress":{"ristNodePort":31000,"srtNodePort":31001}}]}}' >/dev/null
 	wait_for_value "krsession/$session" '{.status.cameras[0].phase}' Removed
@@ -118,6 +138,8 @@ run_protocol() {
 }
 
 cleanup
+k3d image import --cluster "$cluster" kinugasa-recording/video-fanout:latest >/dev/null
+k3d image import --cluster "$cluster" kinugasa-recording/livekit-ingress:latest >/dev/null
 wait_for_count deployment 0
 run_protocol rist
 run_protocol srt
