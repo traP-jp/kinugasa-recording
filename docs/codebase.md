@@ -36,6 +36,7 @@ kinugasa-recording/
 │   ├── design.md         # CR、HTTP API、映像経路、録画・uploadの初期設計
 │   ├── codebase.md       # package・file配置と責務
 │   ├── operations.md     # 開発、deploy、実運用、障害復旧の手順
+│   ├── hardware-validation.md # Let's Note実機確認票
 │   ├── acceptance.md     # 要件ごとの受け入れtest状況
 │   └── todo.md           # 未完了タスク
 ├── Makefile              # build、test、deploy等の共通entry point
@@ -297,5 +298,6 @@ session名/
 - `docs/operations.md`: 開発環境、build/test、S3・LiveKit Secret、LAN deploy、映像送信、録画object取得、障害調査と復旧を実行順にまとめる。
 - `docs/deployment.md`: k3dのLAN公開addressとfirewall portに絞ったquick referenceを提供する。
 - `docs/acceptance.md`: KPI、FR、UCと自動testの対応、および残るLet's Note CF-SR実機確認を記録する。
+- `docs/hardware-validation.md`: Let's Note CF-SR上の基本flow、実行条件、資源使用量、frame drop、合否を再現可能な形で記録する確認票を提供する。
 
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

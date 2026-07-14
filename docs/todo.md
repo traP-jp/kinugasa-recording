@@ -1,11 +1,10 @@
 # kinugasa-recording TODO
 
 `docs/requirements.md`をSSoTとし、`docs/codebase.md`で定めた責務の境界に沿って実装する。
-主要機能とcontainer/Kubernetes構成まで完了し、LAN上の実機確認、test拡充、運用文書を進める段階である。
+主要機能、container/Kubernetes構成、自動test、運用文書は完了している。
+残る作業はLet's Note CF-SR上の実機確認と、その実測に基づく性能要件の検討である。
 
 このファイルには未完了のタスクだけを記載する。完了したタスクはチェック済みの状態で残さず、項目自体を削除する。
-
-## 0. 要件の確認と設計
 
 ## 9. Testと受け入れ確認
 

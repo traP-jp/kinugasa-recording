@@ -27,5 +27,6 @@
 | FR-005 / UC-005 | `<Session>/<Take>/<Camera>/segment-*.ts`の全件照合、MPEG-TSとして全object取得 |
 | FR-006 / UC-006 | S3とCR双方の使用履歴を確認するSession作成、重複警告 |
 
-自動testの実行方法と範囲は`test/README.md`、実機手順は`docs/operations.md`を参照する。
+自動testの実行方法と範囲は`test/README.md`、実機操作は`docs/operations.md`、
+KPI-001の記録項目と合否は`docs/hardware-validation.md`を参照する。
 初期実装の最終受け入れには、KPI-001の実機確認を完了する必要がある。
