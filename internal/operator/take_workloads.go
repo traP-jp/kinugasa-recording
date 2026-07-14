@@ -20,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+const uploadConfigVersionAnnotation = "recording.kinugasa.tra.pt/upload-config-version"
+
 type TakeWorkloadReconciler struct {
 	Client                        client.Client
 	RecorderImage, UploaderImage  string
@@ -70,6 +72,15 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 			if err != nil {
 				return err
 			}
+			if uploader.Status.Failed > 0 {
+				retrying, err := reconciler.retryUploaderAfterConfigChange(ctx, session.Namespace, uploader)
+				if err != nil {
+					return err
+				}
+				if retrying {
+					return ErrWorkloadProgressing
+				}
+			}
 			reconciler.updateUploadStatus(ctx, session, take.Name, cameraState, uploader)
 		}
 		if allRunning {
@@ -98,6 +109,17 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 		cameraState := takeCameraStatus(status, cameraName)
 		cameraState.RecorderPhase = recordingv1alpha1.ProcessPhaseStopped
 		uploader, err := getJob(ctx, reconciler.Client, session.Namespace, base+"-uploader")
+		if apierrors.IsNotFound(err) && cameraState.UploadPhase == recordingv1alpha1.UploadPhaseFailed {
+			camera, found := findCamera(session.Spec.Cameras, cameraName)
+			if !found {
+				return fmt.Errorf("take %s references missing camera %s", take.Name, cameraName)
+			}
+			if err := reconciler.ensureUploadResources(ctx, session, take, *camera); err != nil {
+				return err
+			}
+			allUploaded = false
+			continue
+		}
 		if apierrors.IsNotFound(err) && cameraState.UploadPhase == recordingv1alpha1.UploadPhaseCompleted {
 			if err := reconciler.deleteObject(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}); err != nil {
 				return err
@@ -109,6 +131,15 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 		}
 		if err != nil {
 			return err
+		}
+		if uploader.Status.Failed > 0 {
+			retrying, err := reconciler.retryUploaderAfterConfigChange(ctx, session.Namespace, uploader)
+			if err != nil {
+				return err
+			}
+			if retrying {
+				return ErrWorkloadProgressing
+			}
 		}
 		switch {
 		case uploader.Status.Succeeded > 0:
@@ -160,9 +191,21 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 		Name: "video-recorder", Image: reconciler.RecorderImage, ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:          []corev1.EnvVar{{Name: "INPUT_URL", Value: "srt://" + cameraWorkloadName(session.Name, camera.Name) + "-fanout:12000?mode=caller&transtype=live"}},
 		VolumeMounts: []corev1.VolumeMount{mount},
-	}, volume); err != nil {
+	}, volume, nil); err != nil {
 		return err
 	}
+	return reconciler.ensureUploadResources(ctx, session, take, camera)
+}
+
+func (reconciler *TakeWorkloadReconciler) ensureUploadResources(ctx context.Context, session *recordingv1alpha1.Session, take recordingv1alpha1.TakeSpec, camera recordingv1alpha1.CameraSpec) error {
+	base := takeResourceName(session.Name, take.Name, camera.Name)
+	volume := corev1.Volume{Name: "recording", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: base}}}
+	mount := corev1.VolumeMount{Name: "recording", MountPath: "/recording"}
+	configVersion, err := reconciler.uploadConfigVersion(ctx, session.Namespace)
+	if err != nil {
+		return err
+	}
+	annotations := map[string]string{uploadConfigVersionAnnotation: configVersion}
 	if err := reconciler.ensureJob(ctx, session, base+"-uploader", corev1.Container{
 		Name: "video-uploader", Image: reconciler.UploaderImage, ImagePullPolicy: corev1.PullIfNotPresent,
 		TerminationMessagePath: "/dev/termination-log", TerminationMessagePolicy: corev1.TerminationMessageReadFile,
@@ -171,7 +214,7 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 			{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3ConfigMapName}}},
 			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3SecretName}}},
 		}, VolumeMounts: []corev1.VolumeMount{mount}, Ports: []corev1.ContainerPort{{Name: "status", ContainerPort: 8080}},
-	}, volume); err != nil {
+	}, volume, annotations); err != nil {
 		return err
 	}
 	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}
@@ -181,6 +224,30 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 		return controllerutil.SetControllerReference(session, service, reconciler.Client.Scheme())
 	})
 	return err
+}
+
+func (reconciler *TakeWorkloadReconciler) uploadConfigVersion(ctx context.Context, namespace string) (string, error) {
+	var config corev1.ConfigMap
+	if err := reconciler.Client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: reconciler.S3ConfigMapName}, &config); err != nil {
+		return "", err
+	}
+	var secret corev1.Secret
+	if err := reconciler.Client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: reconciler.S3SecretName}, &secret); err != nil {
+		return "", err
+	}
+	return config.ResourceVersion + "/" + secret.ResourceVersion, nil
+}
+
+func (reconciler *TakeWorkloadReconciler) retryUploaderAfterConfigChange(ctx context.Context, namespace string, job *batchv1.Job) (bool, error) {
+	configVersion, err := reconciler.uploadConfigVersion(ctx, namespace)
+	if err != nil {
+		return false, err
+	}
+	if job.Annotations[uploadConfigVersionAnnotation] == configVersion {
+		return false, nil
+	}
+	_, err = reconciler.deleteJobAndWait(ctx, namespace, job.Name)
+	return true, err
 }
 
 func (reconciler *TakeWorkloadReconciler) completedUploadCount(ctx context.Context, namespace, jobName string) (int32, bool, error) {
@@ -237,7 +304,7 @@ func setUploadCondition(session *recordingv1alpha1.Session, camera *recordingv1a
 	meta.SetStatusCondition(&camera.Conditions, metav1.Condition{Type: "UploadHealthy", Status: status, Reason: reason, Message: message, ObservedGeneration: session.Generation})
 }
 
-func (reconciler *TakeWorkloadReconciler) ensureJob(ctx context.Context, owner *recordingv1alpha1.Session, name string, container corev1.Container, volume corev1.Volume) error {
+func (reconciler *TakeWorkloadReconciler) ensureJob(ctx context.Context, owner *recordingv1alpha1.Session, name string, container corev1.Container, volume corev1.Volume, annotations map[string]string) error {
 	var existing batchv1.Job
 	err := reconciler.Client.Get(ctx, types.NamespacedName{Namespace: owner.Namespace, Name: name}, &existing)
 	if err == nil {
@@ -247,9 +314,9 @@ func (reconciler *TakeWorkloadReconciler) ensureJob(ctx context.Context, owner *
 		return err
 	}
 	backoff := int32(0)
-	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: owner.Namespace}, Spec: batchv1.JobSpec{
+	job := &batchv1.Job{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: owner.Namespace, Annotations: annotations}, Spec: batchv1.JobSpec{
 		BackoffLimit: &backoff,
-		Template:     corev1.PodTemplateSpec{Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, TerminationGracePeriodSeconds: ptr(int64(15)), Containers: []corev1.Container{container}, Volumes: []corev1.Volume{volume}}},
+		Template:     corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Annotations: annotations}, Spec: corev1.PodSpec{RestartPolicy: corev1.RestartPolicyNever, TerminationGracePeriodSeconds: ptr(int64(15)), Containers: []corev1.Container{container}, Volumes: []corev1.Volume{volume}}},
 	}}
 	if err := controllerutil.SetControllerReference(owner, job, reconciler.Client.Scheme()); err != nil {
 		return err

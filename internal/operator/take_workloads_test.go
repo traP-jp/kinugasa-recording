@@ -37,7 +37,9 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	session := cameraTestSession("Session-A", "recording")
 	session.Spec.Cameras = []recordingv1alpha1.CameraSpec{{Name: "front", DesiredState: recordingv1alpha1.DesiredStatePresent}}
 	session.Spec.Takes = []recordingv1alpha1.TakeSpec{{Name: "take-1", DesiredState: recordingv1alpha1.DesiredStateRecording, CameraNames: []string{"front"}}}
-	kubernetesClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&batchv1.Job{}).WithObjects(session).Build()
+	s3Config := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "s3", Namespace: session.Namespace}, Data: map[string]string{"S3_BUCKET": "recordings"}}
+	s3Secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s3-credentials", Namespace: session.Namespace}, Data: map[string][]byte{"AWS_ACCESS_KEY_ID": []byte("old")}}
+	kubernetesClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&batchv1.Job{}).WithObjects(session, s3Config, s3Secret).Build()
 	reconciler := &TakeWorkloadReconciler{Client: kubernetesClient, RecorderImage: "recorder:test", UploaderImage: "uploader:test", S3ConfigMapName: "s3", S3SecretName: "s3-credentials"}
 
 	if err := reconciler.Reconcile(context.Background(), session); err != nil {
@@ -133,13 +135,26 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseRecording || cameraStatus.UploadPhase != recordingv1alpha1.UploadPhaseFailed || cameraStatus.Conditions[0].Reason != "PermanentFailure" {
 		t.Fatalf("permanent upload failure status = %#v", session.Status.Takes[0])
 	}
+	initialConfigVersion := uploader.Annotations[uploadConfigVersionAnnotation]
+	if err := kubernetesClient.Get(context.Background(), client.ObjectKeyFromObject(s3Secret), s3Secret); err != nil {
+		t.Fatal(err)
+	}
+	s3Secret.Data["AWS_ACCESS_KEY_ID"] = []byte("new")
+	if err := kubernetesClient.Update(context.Background(), s3Secret); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); !errors.Is(err, ErrWorkloadProgressing) {
+		t.Fatalf("config change retry reconcile = %v", err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
 	uploader, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
 	if err != nil {
 		t.Fatal(err)
 	}
-	uploader.Status.Failed = 0
-	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
-		t.Fatal(err)
+	if uploader.Annotations[uploadConfigVersionAnnotation] == initialConfigVersion {
+		t.Fatalf("uploader config version was not updated: %q", initialConfigVersion)
 	}
 	reconciler.UploadStatus = uploaderStatusStub{status: UploaderStatus{Phase: "Uploading", UploadedFiles: 3}}
 
@@ -152,6 +167,33 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	}
 	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseUploading {
 		t.Fatalf("phase = %q", session.Status.Takes[0].Phase)
+	}
+	uploader, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploader.Status.Failed = 1
+	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if session.Status.Takes[0].Cameras[0].UploadPhase != recordingv1alpha1.UploadPhaseFailed {
+		t.Fatalf("stopped take upload phase = %q", session.Status.Takes[0].Cameras[0].UploadPhase)
+	}
+	if err := kubernetesClient.Get(context.Background(), client.ObjectKeyFromObject(s3Config), s3Config); err != nil {
+		t.Fatal(err)
+	}
+	s3Config.Data["S3_BUCKET"] = "recovered-recordings"
+	if err := kubernetesClient.Update(context.Background(), s3Config); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); !errors.Is(err, ErrWorkloadProgressing) {
+		t.Fatalf("stopped config change retry reconcile = %v", err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
 	}
 	uploader, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
 	if err != nil {

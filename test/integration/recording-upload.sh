@@ -101,6 +101,7 @@ cleanup() {
 	fi
 	kubectl -n "$namespace" patch configmap kinugasa-recording-s3 --type=merge \
 		--patch "{\"data\":{\"S3_ENDPOINT\":\"$original_endpoint\",\"S3_USE_PATH_STYLE\":\"$original_path_style\"}}" >/dev/null 2>&1 || true
+	kubectl -n "$namespace" annotate secret kinugasa-recording-s3 recording-integration-recovery- >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -196,6 +197,14 @@ failed_stopped_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
 	"{\"spec\":{\"takes\":[{\"name\":\"$take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$requested_at\",\"stopRequestedAt\":\"$stopped_at\"},{\"name\":\"$failed_take\",\"desiredState\":\"Stopped\",\"cameraNames\":[\"$camera\"],\"requestedAt\":\"$failed_requested_at\",\"stopRequestedAt\":\"$failed_stopped_at\"}]}}" >/dev/null
 wait_for_value "krsession/$session" '{.status.takes[1].phase}' Uploading
+
+curl --fail --silent --request POST \
+	"$s3_endpoint/_control?put_failures=0" --output /dev/null
+kubectl -n "$namespace" annotate secret kinugasa-recording-s3 \
+	"recording-integration-recovery=$(date +%s)" --overwrite >/dev/null
+wait_for_value "krsession/$session" '{.status.takes[1].cameras[0].uploadPhase}' Uploading
+wait_for_object "$failed_take"
+wait_for_value "krsession/$session" '{.status.takes[1].phase}' Completed
 
 kubectl -n "$namespace" patch "krsession/$session" --type=merge --patch \
 	'{"spec":{"cameras":[{"name":"front","desiredState":"Absent","ingress":{"ristNodePort":31000,"srtNodePort":31001}}]}}' >/dev/null

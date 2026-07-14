@@ -139,9 +139,9 @@ kubectl -n kinugasa-recording logs <pod-name> --all-containers
 | Cameraが`Disconnected` | Camera client、UDP NodePort、fanout Pod log、Sessionの`CameraConnected` | 入力を再接続する。fanout内processは異常終了時に自動再起動し、Takeは自動停止しない |
 | Recorderが`Failed` | recorder Job/Pod log、PVC容量、入力SRT | 他Cameraは継続する。原因とPVC上の`ready/`を保全し、新しいTakeで録画を再開する |
 | Uploadが`Retrying` | uploader Pod log、S3 endpoint/network、`UploadHealthy` | timeout、5xx、rate limitは上限付き指数backoffで自動再試行する。Takeは自動停止しない |
-| Uploadが`PermanentFailure` | S3 credential、bucket、既存objectの`sha256` metadata | 認証・bucket・競合を修正する。Takeが録画中なら、修正後に失敗したuploader Jobを削除するとoperatorが同じPVCから再作成する。停止後はPVCを削除せず、`ready/*.ts`を同じkeyへ手動退避する |
+| Uploadが`PermanentFailure` | S3 credential、bucket、既存objectの`sha256` metadata | 認証・bucket・競合を修正してS3 ConfigMapまたはSecretを更新する。operatorが変更を検知し、録画中・停止後とも同じPVCからuploaderだけを再作成する |
 | Podが`ImagePullBackOff` | `kubectl describe pod`、k3d image一覧、disk容量 | `make image-build k3d-import deploy`を再実行する。開発hostの空き容量も確保する |
 
 uploadは同じkeyとSHA-256 metadataが一致するobjectを成功済みとして扱うため再開可能である。
-異なるdigestの既存objectは上書きせず恒久失敗にする。録画停止後もTakeが`Uploading`なら、
-upload完了前なのでSessionやPVCを削除しない。
+異なるdigestの既存objectは上書きせず恒久失敗にする。競合objectを調査せずに削除・上書きしない。
+録画停止後もTakeが`Uploading`ならupload完了前なので、SessionやPVCを削除しない。
