@@ -21,6 +21,14 @@ vi.mock("livekit-client", () => ({
   Track: { Kind: { Video: "video" } },
 }));
 
+vi.mock("qrcode.react", () => ({
+  QRCodeSVG: ({ value, title }: { value: string; title: string }) => (
+    <svg data-encoded-value={value}>
+      <title>{title}</title>
+    </svg>
+  ),
+}));
+
 describe("App", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -143,8 +151,15 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Cameraを追加" }));
     expect(await screen.findByText("rist://host:31000")).toBeInTheDocument();
-    expect(screen.getByTitle("front RIST connection URL")).toBeInTheDocument();
-    expect(screen.getByTitle("front SRT connection URL")).toBeInTheDocument();
+    expect(
+      screen.getByTitle("front RIST connection URL").parentElement,
+    ).toHaveAttribute("data-encoded-value", "rist://host:31000");
+    expect(
+      screen.getByTitle("front SRT connection URL").parentElement,
+    ).toHaveAttribute(
+      "data-encoded-value",
+      "srt://host:31001?mode=caller&transtype=live",
+    );
   });
 
   it("shows disconnected state and requests camera deletion", async () => {

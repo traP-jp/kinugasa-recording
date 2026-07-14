@@ -286,6 +286,7 @@ session名/
 
 - `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約とSession・Camera・Take使用済み名の拒否、2台cameraへのLAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera一括録画、明示的な1台選択、camera別の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。
 - `web/src/App.test.tsx`: Session・Camera・Takeの不正名を送信前に拒否し、各使用済み名のAPI responseを利用者向け警告として表示することを検証する。
+- `web/src/App.test.tsx`, `test/e2e/basic-flow.sh`: RIST/SRT QR componentへ渡す内容がAPIの接続URLと一致し、そのLAN SRT URLで実際にcameraが接続できることを組み合わせてKPI-006を検証する。
 - `test/integration/s3mock`: Session作成serviceが使用するS3 ListObjectsV2と条件付き予約object作成を含め、end-to-end testでも実AWS SDK requestを処理する。
 - `Makefile`: deploy済みk3dに対して基本flowを実行する`test-e2e` targetを提供する。
 
