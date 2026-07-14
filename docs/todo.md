@@ -15,7 +15,6 @@
 
 ### End-to-end test
 
-- [ ] 録画停止後、すべてのuploadが完了してS3から取得できることをtestする。（UC-005）
 - [ ] Let's Note CF-SR上でsession作成、複数cameraのpreview、take録画、逐次uploadの基本フローが動作することを確認する。（KPI-001）
 
 ## 10. 運用文書と完了条件

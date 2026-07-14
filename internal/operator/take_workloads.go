@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
@@ -112,6 +113,11 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 		switch {
 		case uploader.Status.Succeeded > 0:
 			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseCompleted
+			if uploadedFiles, found, err := reconciler.completedUploadCount(ctx, session.Namespace, uploader.Name); err != nil {
+				return err
+			} else if found {
+				cameraState.UploadedFiles = uploadedFiles
+			}
 			deleted, err := reconciler.deleteJobAndWait(ctx, session.Namespace, uploader.Name)
 			if err != nil {
 				return err
@@ -159,6 +165,7 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 	}
 	if err := reconciler.ensureJob(ctx, session, base+"-uploader", corev1.Container{
 		Name: "video-uploader", Image: reconciler.UploaderImage, ImagePullPolicy: corev1.PullIfNotPresent,
+		TerminationMessagePath: "/dev/termination-log", TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		Env: []corev1.EnvVar{{Name: "SESSION_NAME", Value: session.Spec.Name}, {Name: "TAKE_NAME", Value: take.Name}, {Name: "CAMERA_NAME", Value: camera.Name}},
 		EnvFrom: []corev1.EnvFromSource{
 			{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3ConfigMapName}}},
@@ -174,6 +181,29 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 		return controllerutil.SetControllerReference(session, service, reconciler.Client.Scheme())
 	})
 	return err
+}
+
+func (reconciler *TakeWorkloadReconciler) completedUploadCount(ctx context.Context, namespace, jobName string) (int32, bool, error) {
+	var pods corev1.PodList
+	if err := reconciler.Client.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{"batch.kubernetes.io/job-name": jobName}); err != nil {
+		return 0, false, err
+	}
+	for _, pod := range pods.Items {
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name != "video-uploader" || status.State.Terminated == nil || status.State.Terminated.Message == "" {
+				continue
+			}
+			var summary struct {
+				Phase         string `json:"phase"`
+				UploadedFiles int32  `json:"uploadedFiles"`
+			}
+			if err := json.Unmarshal([]byte(status.State.Terminated.Message), &summary); err != nil || summary.Phase != "Completed" || summary.UploadedFiles < 0 {
+				continue
+			}
+			return summary.UploadedFiles, true, nil
+		}
+	}
+	return 0, false, nil
 }
 
 func (reconciler *TakeWorkloadReconciler) updateUploadStatus(ctx context.Context, session *recordingv1alpha1.Session, takeName string, camera *recordingv1alpha1.TakeCameraStatus, job *batchv1.Job) {

@@ -8,6 +8,7 @@ import (
 	recordingv1alpha1 "github.com/comavius/kinugasa-recording/api/recording/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -160,6 +161,15 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
 		t.Fatal(err)
 	}
+	uploaderPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader-pod", Namespace: session.Namespace, Labels: map[string]string{"batch.kubernetes.io/job-name": base + "-uploader"}},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name: "video-uploader", State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Message: `{"phase":"Completed","uploadedFiles":4}`}},
+		}}},
+	}
+	if err := kubernetesClient.Create(context.Background(), uploaderPod); err != nil {
+		t.Fatal(err)
+	}
 	if err := reconciler.Reconcile(context.Background(), session); !errors.Is(err, ErrWorkloadProgressing) {
 		t.Fatalf("uploader cleanup reconcile = %v", err)
 	}
@@ -168,6 +178,9 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	}
 	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseCompleted {
 		t.Fatalf("phase = %q", session.Status.Takes[0].Phase)
+	}
+	if session.Status.Takes[0].Cameras[0].UploadedFiles != 4 {
+		t.Fatalf("final uploaded files = %d", session.Status.Takes[0].Cameras[0].UploadedFiles)
 	}
 	if err := kubernetesClient.List(context.Background(), &claims, client.InNamespace(session.Namespace)); err != nil {
 		t.Fatal(err)

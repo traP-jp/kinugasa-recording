@@ -183,7 +183,7 @@ session名/
 - `internal/media/recorder.go`: ffmpegがclose済みとしてsegment listへ記録したfileだけを`staging/`から`ready/`へatomic renameし、録画状態と正常終了markerをatomicに公開する。
 - `cmd/video-recorder/main.go`: SRT等の入力URL、segment長、shared volume、status endpointを環境変数から受け取り、recorder lifecycleを起動する。
 - `internal/storage/uploader.go`: `ready/`の逐次検出、SHA-256 metadataによるS3 objectの冪等性確認、条件付きupload、指数backoff、local state、全fileのupload完了判定を実装する。並行するstatus要求にはupload状態のsnapshotを公開する。
-- `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderと内部status endpointを起動する。
+- `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderと内部status endpointを起動する。正常完了時は最終upload件数をcompactなKubernetes termination messageへ書き出す。
 
 ### Camera mutation API phase
 
@@ -222,7 +222,7 @@ session名/
 ### Take workload lifecycle phase
 
 - `internal/operator/session_workloads.go`: cameraとtakeのreconcilerをSession reconcile内で順に実行する。
-- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobとstatus Serviceを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Jobもforeground削除してPodの消失を確認してからService・PVCをcleanupしてtakeを完了する。
+- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobとstatus Serviceを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploaderのtermination messageから最終upload件数を反映する。uploader Jobもforeground削除してPodの消失を確認してからService・PVCをcleanupしてtakeを完了する。
 - `internal/operator/uploader_status.go`: uploader Serviceのstatus endpointを読み取り、retry・恒久障害とupload済みfile数をcamera単位のtake statusへ集約する。
 - `internal/operator/session_controller.go`: JobとPVCをowner resourceとして監視する。
 - `cmd/operator/main.go`: recorder/uploader image、S3 ConfigMap・Secret名、PVC容量をtake workload reconcilerへ注入する。
@@ -284,7 +284,7 @@ session名/
 
 ### 基本end-to-end test phase
 
-- `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約とSession・Camera・Take使用済み名の拒否、2台cameraへのLAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera一括録画、明示的な1台選択、camera別の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。
+- `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約とSession・Camera・Take使用済み名の拒否、2台cameraへのLAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera一括録画、明示的な1台選択、camera別の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。UC-005として、各camera statusのupload済み件数とS3上の全segmentを照合し、全objectがMPEG-TSとして取得できることも確認する。実行ごとに一意なSession名を使い、disk逼迫時もworkload作成後のimage importとsender再接続で再現性を保つ。
 - `web/src/App.test.tsx`: Session・Camera・Takeの不正名を送信前に拒否し、各使用済み名のAPI responseを利用者向け警告として表示することを検証する。
 - `web/src/App.test.tsx`, `test/e2e/basic-flow.sh`: RIST/SRT QR componentへ渡す内容がAPIの接続URLと一致し、そのLAN SRT URLで実際にcameraが接続できることを組み合わせてKPI-006を検証する。
 - `test/integration/s3mock`: Session作成serviceが使用するS3 ListObjectsV2と条件付き予約object作成を含め、end-to-end testでも実AWS SDK requestを処理する。

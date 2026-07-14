@@ -68,7 +68,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	return runUploader(ctx, uploader, environment.String("STATUS_ADDRESS", ":8080"))
+	if err := runUploader(ctx, uploader, environment.String("STATUS_ADDRESS", ":8080")); err != nil {
+		return err
+	}
+	state := uploader.Snapshot()
+	summary, err := json.Marshal(map[string]any{"phase": state.Phase, "uploadedFiles": len(state.Uploaded), "updatedAt": state.UpdatedAt})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(environment.String("TERMINATION_LOG_PATH", "/dev/termination-log"), summary, 0o600)
 }
 
 func runUploader(ctx context.Context, uploader *storagelib.Uploader, statusAddress string) error {
