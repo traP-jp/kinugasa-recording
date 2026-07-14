@@ -45,6 +45,12 @@ export interface TakeStatus {
     uploadPhase?: string;
     pendingFiles?: number;
     failedFiles?: number;
+    conditions?: {
+      type: string;
+      status: "True" | "False" | "Unknown";
+      reason: string;
+      message: string;
+    }[];
   }[];
 }
 

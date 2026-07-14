@@ -138,6 +138,7 @@ func main() {
 	takeWorkloads := &operator.TakeWorkloadReconciler{
 		Client: manager.GetClient(), RecorderImage: recorderImage, UploaderImage: uploaderImage,
 		S3ConfigMapName: s3ConfigMapName, S3SecretName: s3SecretName, VolumeSize: volumeSize,
+		UploadStatus: &operator.HTTPUploaderStatusReader{Client: &http.Client{Timeout: 2 * time.Second}},
 	}
 	reconciler.Workloads = &operator.SessionWorkloadReconciler{Cameras: cameraWorkloads, Takes: takeWorkloads}
 	must(reconciler.SetupWithManager(manager), "register Session reconciler")

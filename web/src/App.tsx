@@ -391,6 +391,21 @@ export function App() {
           )}
           {takeStatuses
             .flatMap((take) => take.cameras ?? [])
+            .filter((camera) =>
+              camera.conditions?.some(
+                (condition) =>
+                  condition.type === "UploadHealthy" &&
+                  condition.status === "False" &&
+                  condition.reason === "Retrying",
+              ),
+            )
+            .map((camera) => (
+              <p role="alert" key={`upload-retrying-${camera.name}`}>
+                Upload再試行中: {camera.name}
+              </p>
+            ))}
+          {takeStatuses
+            .flatMap((take) => take.cameras ?? [])
             .filter((camera) => camera.uploadPhase === "Failed")
             .map((camera) => (
               <p role="alert" key={`upload-${camera.name}`}>

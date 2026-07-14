@@ -286,4 +286,56 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Takeを停止" }));
     expect(await screen.findByText(/take-1: Stopping/)).toBeInTheDocument();
   });
+
+  it("shows warnings for retrying and permanently failed uploads", async () => {
+    window.history.replaceState({}, "", "/sessions/Session-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          session: {
+            name: "Session-1",
+            spec: { cameras: [], takes: [] },
+            status: {
+              cameras: [],
+              takes: [
+                {
+                  name: "take-1",
+                  phase: "Recording",
+                  cameras: [
+                    {
+                      name: "front",
+                      uploadPhase: "Uploading",
+                      conditions: [
+                        {
+                          type: "UploadHealthy",
+                          status: "False",
+                          reason: "Retrying",
+                          message: "Upload is retrying.",
+                        },
+                      ],
+                    },
+                    { name: "side", uploadPhase: "Failed" },
+                  ],
+                },
+              ],
+            },
+          },
+        }),
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Upload再試行中: front")).toHaveAttribute(
+      "role",
+      "alert",
+    );
+    expect(screen.getByText("Upload失敗: side")).toHaveAttribute(
+      "role",
+      "alert",
+    );
+  });
 });

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -64,5 +68,49 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	return uploader.Run(ctx)
+	return runUploader(ctx, uploader, environment.String("STATUS_ADDRESS", ":8080"))
+}
+
+func runUploader(ctx context.Context, uploader *storagelib.Uploader, statusAddress string) error {
+	if statusAddress == "" {
+		return uploader.Run(ctx)
+	}
+	runContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	server := &http.Server{Addr: statusAddress, Handler: uploaderStatusHandler(uploader), ReadHeaderTimeout: 5 * time.Second}
+	uploadErrors := make(chan error, 1)
+	serverErrors := make(chan error, 1)
+	go func() { uploadErrors <- uploader.Run(runContext) }()
+	go func() { serverErrors <- server.ListenAndServe() }()
+
+	var runError error
+	select {
+	case runError = <-uploadErrors:
+	case err := <-serverErrors:
+		if !errors.Is(err, http.ErrServerClosed) {
+			runError = err
+		}
+	}
+	cancel()
+	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	_ = server.Shutdown(shutdownContext)
+	return runError
+}
+
+func uploaderStatusHandler(uploader *storagelib.Uploader) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(response http.ResponseWriter, _ *http.Request) {
+		phase := uploader.Snapshot().Phase
+		if phase == "Failed" {
+			http.Error(response, "unhealthy", http.StatusServiceUnavailable)
+			return
+		}
+		response.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/status", func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(response).Encode(map[string]any{"uploader": uploader.Snapshot()})
+	})
+	return mux
 }

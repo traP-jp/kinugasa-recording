@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -42,6 +43,7 @@ type UploadState struct {
 type Uploader struct {
 	client s3UploadAPI
 	config UploadConfig
+	mutex  sync.RWMutex
 	state  UploadState
 }
 
@@ -76,12 +78,14 @@ func (uploader *Uploader) Run(ctx context.Context) error {
 	for {
 		complete, err := uploader.Sync(ctx)
 		if err != nil {
-			uploader.state.Phase = "Retrying"
-			uploader.state.LastError = err.Error()
-			uploader.state.UpdatedAt = time.Now().UTC()
+			uploader.updateState(func(state *UploadState) {
+				state.Phase = "Retrying"
+				state.LastError = err.Error()
+				state.UpdatedAt = time.Now().UTC()
+			})
 			_ = uploader.writeState("uploader.json")
 			if errors.Is(err, ErrObjectConflict) || isPermanentS3Error(err) {
-				uploader.state.Phase = "Failed"
+				uploader.updateState(func(state *UploadState) { state.Phase = "Failed" })
 				_ = uploader.writeState("uploader.json")
 				return err
 			}
@@ -117,7 +121,7 @@ func (uploader *Uploader) Sync(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if uploader.state.Uploaded[name] == digest {
+		if uploader.Snapshot().Uploaded[name] == digest {
 			continue
 		}
 		key := strings.Join([]string{uploader.config.Session, uploader.config.Take, uploader.config.Camera, name}, "/")
@@ -145,10 +149,12 @@ func (uploader *Uploader) Sync(ctx context.Context) (bool, error) {
 		} else {
 			return false, fmt.Errorf("inspect %s: %w", name, err)
 		}
-		uploader.state.Uploaded[name] = digest
-		uploader.state.Phase = "Uploading"
-		uploader.state.LastError = ""
-		uploader.state.UpdatedAt = time.Now().UTC()
+		uploader.updateState(func(state *UploadState) {
+			state.Uploaded[name] = digest
+			state.Phase = "Uploading"
+			state.LastError = ""
+			state.UpdatedAt = time.Now().UTC()
+		})
 		if err := uploader.writeState("uploader.json"); err != nil {
 			return false, err
 		}
@@ -160,11 +166,14 @@ func (uploader *Uploader) Sync(ctx context.Context) (bool, error) {
 		}
 	}
 	parts, err := filepath.Glob(filepath.Join(uploader.config.Root, "staging", "*.part"))
-	if err != nil || len(parts) > 0 || len(uploader.state.Uploaded) != len(files) {
+	if err != nil || len(parts) > 0 || len(uploader.Snapshot().Uploaded) != len(files) {
 		return false, err
 	}
-	uploader.state.Phase = "Completed"
-	uploader.state.UpdatedAt = time.Now().UTC()
+	uploader.updateState(func(state *UploadState) {
+		state.Phase = "Completed"
+		state.LastError = ""
+		state.UpdatedAt = time.Now().UTC()
+	})
 	if err := uploader.writeState("uploader.json"); err != nil {
 		return false, err
 	}
@@ -220,6 +229,24 @@ func (uploader *Uploader) loadState() error {
 	return json.Unmarshal(contents, &uploader.state)
 }
 
+// Snapshot returns a copy safe for status reporting while uploads continue.
+func (uploader *Uploader) Snapshot() UploadState {
+	uploader.mutex.RLock()
+	defer uploader.mutex.RUnlock()
+	state := uploader.state
+	state.Uploaded = make(map[string]string, len(uploader.state.Uploaded))
+	for name, digest := range uploader.state.Uploaded {
+		state.Uploaded[name] = digest
+	}
+	return state
+}
+
+func (uploader *Uploader) updateState(update func(*UploadState)) {
+	uploader.mutex.Lock()
+	defer uploader.mutex.Unlock()
+	update(&uploader.state)
+}
+
 func (uploader *Uploader) writeState(name string) error {
 	if err := os.MkdirAll(filepath.Join(uploader.config.Root, "state"), 0o750); err != nil {
 		return err
@@ -230,7 +257,7 @@ func (uploader *Uploader) writeState(name string) error {
 	}
 	temporaryName := temporary.Name()
 	defer func() { _ = os.Remove(temporaryName) }()
-	if err := json.NewEncoder(temporary).Encode(uploader.state); err != nil {
+	if err := json.NewEncoder(temporary).Encode(uploader.Snapshot()); err != nil {
 		_ = temporary.Close()
 		return err
 	}

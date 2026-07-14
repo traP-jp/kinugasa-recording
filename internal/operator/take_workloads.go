@@ -10,9 +10,11 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -22,6 +24,7 @@ type TakeWorkloadReconciler struct {
 	RecorderImage, UploaderImage  string
 	S3ConfigMapName, S3SecretName string
 	VolumeSize                    resource.Quantity
+	UploadStatus                  UploaderStatusReader
 }
 
 func (reconciler *TakeWorkloadReconciler) Reconcile(ctx context.Context, session *recordingv1alpha1.Session) error {
@@ -62,7 +65,11 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 				cameraState.RecorderPhase = recordingv1alpha1.ProcessPhasePending
 				allRunning = false
 			}
-			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseUploading
+			uploader, err := getJob(ctx, reconciler.Client, session.Namespace, takeResourceName(session.Name, take.Name, cameraName)+"-uploader")
+			if err != nil {
+				return err
+			}
+			reconciler.updateUploadStatus(ctx, session, take.Name, cameraState, uploader)
 		}
 		if allRunning {
 			status.Phase = recordingv1alpha1.TakePhaseRecording
@@ -102,6 +109,9 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 			if err := reconciler.deleteObject(ctx, uploader); err != nil {
 				return err
 			}
+			if err := reconciler.deleteObject(ctx, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}); err != nil {
+				return err
+			}
 			if err := reconciler.deleteObject(ctx, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: base, Namespace: session.Namespace}}); err != nil {
 				return err
 			}
@@ -109,7 +119,7 @@ func (reconciler *TakeWorkloadReconciler) reconcileTake(ctx context.Context, ses
 			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseFailed
 			allUploaded = false
 		default:
-			cameraState.UploadPhase = recordingv1alpha1.UploadPhaseUploading
+			reconciler.updateUploadStatus(ctx, session, take.Name, cameraState, uploader)
 			allUploaded = false
 		}
 	}
@@ -143,14 +153,54 @@ func (reconciler *TakeWorkloadReconciler) ensureRecordingResources(ctx context.C
 	}, volume); err != nil {
 		return err
 	}
-	return reconciler.ensureJob(ctx, session, base+"-uploader", corev1.Container{
+	if err := reconciler.ensureJob(ctx, session, base+"-uploader", corev1.Container{
 		Name: "video-uploader", Image: reconciler.UploaderImage, ImagePullPolicy: corev1.PullIfNotPresent,
 		Env: []corev1.EnvVar{{Name: "SESSION_NAME", Value: session.Spec.Name}, {Name: "TAKE_NAME", Value: take.Name}, {Name: "CAMERA_NAME", Value: camera.Name}},
 		EnvFrom: []corev1.EnvFromSource{
 			{ConfigMapRef: &corev1.ConfigMapEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3ConfigMapName}}},
 			{SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: reconciler.S3SecretName}}},
-		}, VolumeMounts: []corev1.VolumeMount{mount},
-	}, volume)
+		}, VolumeMounts: []corev1.VolumeMount{mount}, Ports: []corev1.ContainerPort{{Name: "status", ContainerPort: 8080}},
+	}, volume); err != nil {
+		return err
+	}
+	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: base + "-uploader", Namespace: session.Namespace}}
+	_, err = controllerutil.CreateOrUpdate(ctx, reconciler.Client, service, func() error {
+		service.Spec.Selector = map[string]string{"batch.kubernetes.io/job-name": base + "-uploader"}
+		service.Spec.Ports = []corev1.ServicePort{{Name: "status", Port: 8080, TargetPort: intstr.FromString("status")}}
+		return controllerutil.SetControllerReference(session, service, reconciler.Client.Scheme())
+	})
+	return err
+}
+
+func (reconciler *TakeWorkloadReconciler) updateUploadStatus(ctx context.Context, session *recordingv1alpha1.Session, takeName string, camera *recordingv1alpha1.TakeCameraStatus, job *batchv1.Job) {
+	if job.Status.Failed > 0 {
+		camera.UploadPhase = recordingv1alpha1.UploadPhaseFailed
+		setUploadCondition(session, camera, metav1.ConditionFalse, "PermanentFailure", "Upload failed and requires operator action.")
+		return
+	}
+	camera.UploadPhase = recordingv1alpha1.UploadPhaseUploading
+	if reconciler.UploadStatus == nil {
+		return
+	}
+	base := takeResourceName(session.Name, takeName, camera.Name)
+	status, err := reconciler.UploadStatus.Read(ctx, fmt.Sprintf("http://%s-uploader.%s.svc:8080/status", base, session.Namespace))
+	if err != nil {
+		return
+	}
+	camera.UploadedFiles = status.UploadedFiles
+	switch status.Phase {
+	case "Retrying":
+		setUploadCondition(session, camera, metav1.ConditionFalse, "Retrying", "Upload is retrying after an object storage error.")
+	case "Failed":
+		camera.UploadPhase = recordingv1alpha1.UploadPhaseFailed
+		setUploadCondition(session, camera, metav1.ConditionFalse, "PermanentFailure", "Upload failed and requires operator action.")
+	default:
+		setUploadCondition(session, camera, metav1.ConditionTrue, "Uploading", "Upload is operating normally.")
+	}
+}
+
+func setUploadCondition(session *recordingv1alpha1.Session, camera *recordingv1alpha1.TakeCameraStatus, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&camera.Conditions, metav1.Condition{Type: "UploadHealthy", Status: status, Reason: reason, Message: message, ObservedGeneration: session.Generation})
 }
 
 func (reconciler *TakeWorkloadReconciler) ensureJob(ctx context.Context, owner *recordingv1alpha1.Session, name string, container corev1.Container, volume corev1.Volume) error {

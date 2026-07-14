@@ -13,6 +13,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+type uploaderStatusStub struct {
+	status UploaderStatus
+}
+
+func (stub uploaderStatusStub) Read(context.Context, string) (UploaderStatus, error) {
+	return stub.status, nil
+}
+
 func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	t.Parallel()
 	scheme := runtime.NewScheme()
@@ -40,6 +48,13 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	}
 	if len(jobs.Items) != 2 {
 		t.Fatalf("jobs = %d", len(jobs.Items))
+	}
+	var services corev1.ServiceList
+	if err := kubernetesClient.List(context.Background(), &services, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(services.Items) != 1 || services.Items[0].Spec.Ports[0].Port != 8080 {
+		t.Fatalf("uploader services = %#v", services.Items)
 	}
 	for _, job := range jobs.Items {
 		if job.Spec.Template.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
@@ -94,6 +109,38 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseRecording {
 		t.Fatalf("phase = %q", session.Status.Takes[0].Phase)
 	}
+	reconciler.UploadStatus = uploaderStatusStub{status: UploaderStatus{Phase: "Retrying", UploadedFiles: 2}}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	cameraStatus := session.Status.Takes[0].Cameras[0]
+	if cameraStatus.UploadPhase != recordingv1alpha1.UploadPhaseUploading || cameraStatus.UploadedFiles != 2 || len(cameraStatus.Conditions) != 1 || cameraStatus.Conditions[0].Reason != "Retrying" {
+		t.Fatalf("retrying upload status = %#v", cameraStatus)
+	}
+	uploader, err := getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploader.Status.Failed = 1
+	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconciler.Reconcile(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	cameraStatus = session.Status.Takes[0].Cameras[0]
+	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseRecording || cameraStatus.UploadPhase != recordingv1alpha1.UploadPhaseFailed || cameraStatus.Conditions[0].Reason != "PermanentFailure" {
+		t.Fatalf("permanent upload failure status = %#v", session.Status.Takes[0])
+	}
+	uploader, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploader.Status.Failed = 0
+	if err := kubernetesClient.Status().Update(context.Background(), uploader); err != nil {
+		t.Fatal(err)
+	}
+	reconciler.UploadStatus = uploaderStatusStub{status: UploaderStatus{Phase: "Uploading", UploadedFiles: 3}}
 
 	session.Spec.Takes[0].DesiredState = recordingv1alpha1.DesiredStateStopped
 	if err := reconciler.Reconcile(context.Background(), session); !errors.Is(err, ErrWorkloadProgressing) {
@@ -105,7 +152,7 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	if session.Status.Takes[0].Phase != recordingv1alpha1.TakePhaseUploading {
 		t.Fatalf("phase = %q", session.Status.Takes[0].Phase)
 	}
-	uploader, err := getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
+	uploader, err = getJob(context.Background(), kubernetesClient, session.Namespace, base+"-uploader")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,5 +171,11 @@ func TestTakeWorkloadReconcilerRecordsStopsUploadsAndCleansUp(t *testing.T) {
 	}
 	if len(claims.Items) != 0 {
 		t.Fatalf("claims remain = %d", len(claims.Items))
+	}
+	if err := kubernetesClient.List(context.Background(), &services, client.InNamespace(session.Namespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(services.Items) != 0 {
+		t.Fatalf("uploader services remain = %d", len(services.Items))
 	}
 }

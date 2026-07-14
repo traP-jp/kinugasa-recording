@@ -182,8 +182,8 @@ session名/
 - `internal/media/ffmpeg/recorder.go`: H.264を再encodeせず、20桁の連番を持つMPEG-TS segmentへ分割するffmpeg commandを生成する。
 - `internal/media/recorder.go`: ffmpegがclose済みとしてsegment listへ記録したfileだけを`staging/`から`ready/`へatomic renameし、録画状態と正常終了markerをatomicに公開する。
 - `cmd/video-recorder/main.go`: SRT等の入力URL、segment長、shared volume、status endpointを環境変数から受け取り、recorder lifecycleを起動する。
-- `internal/storage/uploader.go`: `ready/`の逐次検出、SHA-256 metadataによるS3 objectの冪等性確認、条件付きupload、指数backoff、local state、全fileのupload完了判定を実装する。
-- `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderを起動する。
+- `internal/storage/uploader.go`: `ready/`の逐次検出、SHA-256 metadataによるS3 objectの冪等性確認、条件付きupload、指数backoff、local state、全fileのupload完了判定を実装する。並行するstatus要求にはupload状態のsnapshotを公開する。
+- `cmd/video-uploader/main.go`: S3 endpoint、region、bucket、path style、SDK標準のcredential環境変数と録画識別子を受け取り、uploaderと内部status endpointを起動する。
 
 ### Camera mutation API phase
 
@@ -222,14 +222,15 @@ session名/
 ### Take workload lifecycle phase
 
 - `internal/operator/session_workloads.go`: cameraとtakeのreconcilerをSession reconcile内で順に実行する。
-- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Job成功後にJobとPVCをcleanupしてtakeを完了する。
+- `internal/operator/take_workloads.go`: take/cameraごとのRWO PVC、再試行しないrecorder Job、内部retryを行うuploader Jobとstatus Serviceを冪等に作成する。停止時はrecorder Jobをforeground削除して正常終了markerを確定し、uploader Job成功後にJob・Service・PVCをcleanupしてtakeを完了する。
+- `internal/operator/uploader_status.go`: uploader Serviceのstatus endpointを読み取り、retry・恒久障害とupload済みfile数をcamera単位のtake statusへ集約する。
 - `internal/operator/session_controller.go`: JobとPVCをowner resourceとして監視する。
 - `cmd/operator/main.go`: recorder/uploader image、S3 ConfigMap・Secret名、PVC容量をtake workload reconcilerへ注入する。
 
 ### Take Web UI phase
 
 - `web/src/api.ts`: take開始・停止とSessionのtake/camera別statusを型付きで扱う。
-- `web/src/App.tsx`: take名、camera選択、未選択時の全選択、開始・停止、除外camera、録画中の切断、upload失敗・完了待ちとcamera別状態を表示する。
+- `web/src/App.tsx`: take名、camera選択、未選択時の全選択、開始・停止、除外camera、録画中の切断、upload retry・恒久失敗・完了待ちとcamera別状態を表示する。
 - `web/src/App.test.tsx`: 全camera指定、利用不能cameraの除外表示、take停止の基本flowを検証する。
 
 ### Container image・Kubernetes環境phase
