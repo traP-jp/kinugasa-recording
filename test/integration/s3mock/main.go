@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +61,10 @@ func (mock *server) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		mock.stats(response)
 		return
 	}
+	if request.Method == http.MethodGet && request.URL.Query().Get("list-type") == "2" {
+		mock.listObjectsV2(response, strings.TrimPrefix(request.URL.Path, "/"), request.URL.Query().Get("prefix"))
+		return
+	}
 	key := strings.TrimPrefix(request.URL.EscapedPath(), "/")
 	if key == "" || !strings.Contains(key, "/") {
 		writeS3Error(response, http.StatusBadRequest, "InvalidURI")
@@ -76,6 +81,34 @@ func (mock *server) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		response.Header().Set("Allow", "GET, HEAD, PUT")
 		response.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (mock *server) listObjectsV2(response http.ResponseWriter, bucket, prefix string) {
+	type content struct {
+		Key string `xml:"Key"`
+	}
+	type result struct {
+		XMLName     xml.Name  `xml:"ListBucketResult"`
+		XMLNS       string    `xml:"xmlns,attr"`
+		Name        string    `xml:"Name"`
+		Prefix      string    `xml:"Prefix"`
+		KeyCount    int       `xml:"KeyCount"`
+		MaxKeys     int       `xml:"MaxKeys"`
+		IsTruncated bool      `xml:"IsTruncated"`
+		Contents    []content `xml:"Contents"`
+	}
+	bucketPrefix := strings.TrimSuffix(bucket, "/") + "/"
+	mock.mutex.RLock()
+	contents := []content{}
+	for key := range mock.objects {
+		if strings.HasPrefix(key, bucketPrefix+prefix) {
+			contents = append(contents, content{Key: strings.TrimPrefix(key, bucketPrefix)})
+		}
+	}
+	mock.mutex.RUnlock()
+	sort.Slice(contents, func(left, right int) bool { return contents[left].Key < contents[right].Key })
+	response.Header().Set("Content-Type", "application/xml")
+	_ = xml.NewEncoder(response).Encode(result{XMLNS: "http://s3.amazonaws.com/doc/2006-03-01/", Name: bucket, Prefix: prefix, KeyCount: len(contents), MaxKeys: 1000, Contents: contents})
 }
 
 func (mock *server) control(response http.ResponseWriter, request *http.Request) {

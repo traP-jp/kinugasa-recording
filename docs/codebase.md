@@ -282,4 +282,10 @@ session名/
 - `test/integration/media-fanout.sh`: `MEDIA_SENDER_HOST`指定時はhostのLAN IPv4と公開UDP NodePortを経由してRIST/SRT test streamを送信し、通常のcluster内送信と同じfanout動作を検証する。
 - `docs/deployment.md`: LAN deploy、明示的な公開IPv4指定、firewallで許可するTCP/UDP port、実機確認範囲を記録する。
 
+### 基本end-to-end test phase
+
+- `test/e2e/basic-flow.sh`: 公開Web HTTP APIからUC-006、UC-001、UC-003、UC-002、UC-004を順に実行する。Session名のS3予約、LAN公開SRT URLからの実映像入力、LiveKit接続とtoken、未指定時の全camera録画、録画中の逐次upload、停止完了、camera削除を実clusterで検証し、一時S3設定を復元する。
+- `test/integration/s3mock`: Session作成serviceが使用するS3 ListObjectsV2と条件付き予約object作成を含め、end-to-end testでも実AWS SDK requestを処理する。
+- `Makefile`: deploy済みk3dに対して基本flowを実行する`test-e2e` targetを提供する。
+
 以降のphaseでpackage・fileが確定するたびに、この節へ配置と責務を追記する。

@@ -15,7 +15,6 @@
 
 ### End-to-end test
 
-- [ ] UC-006、UC-001、UC-003、UC-002、UC-004の基本フローを順に実行するtestを作成する。
 - [ ] 複数cameraの一括録画、camera選択、未指定時の全選択をtestする。（KPI-005-1）
 - [ ] session、camera、takeの不正名・重複名・使用済み名をWeb UIから指定し、拒否と警告をtestする。（KPI-005-3）
 - [ ] QRコードの内容が選択したprotocolの到達可能な接続先URLと一致することをtestする。（KPI-006）

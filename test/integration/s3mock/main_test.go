@@ -69,3 +69,16 @@ func TestServerInjectsConfiguredPutFailures(t *testing.T) {
 		t.Fatalf("second PUT = %d, failures = %d", successResponse.Code, mock.failuresServed)
 	}
 }
+
+func TestServerListsS3ObjectsByPrefix(t *testing.T) {
+	t.Parallel()
+	mock := &server{objects: map[string]object{
+		"bucket/Session-A/.kinugasa-session": {},
+		"bucket/Session-B/segment.ts":        {},
+	}}
+	response := httptest.NewRecorder()
+	mock.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/bucket?list-type=2&prefix=Session-A%2F", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Session-A/.kinugasa-session") || strings.Contains(response.Body.String(), "Session-B") {
+		t.Fatalf("list response = %d %q", response.Code, response.Body.String())
+	}
+}

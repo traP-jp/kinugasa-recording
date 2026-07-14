@@ -32,3 +32,9 @@ Web UIは`http://<LAN IPv4>:30080`で開く。camera追加後に表示されるR
 同じLAN IPv4と、cameraへ割り当てられた`31000-31099`のportを使用する。
 `k3d-lan-check.sh`の成功はホスト上の公開経路と設定の一致を示す。スマートフォンと別PCからの
 到達性は、LANのclient isolationとホストfirewallの影響を受けるため実機でも確認する。
+
+deploy後の基本flowは次で自動確認できる。このtestは一時S3 mockを使用し、終了時に元のS3設定へ戻す。
+
+```sh
+make test-e2e
+```
