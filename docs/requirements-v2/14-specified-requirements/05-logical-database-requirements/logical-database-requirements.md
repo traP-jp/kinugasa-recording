@@ -20,6 +20,8 @@
 | --- | --- | --- |
 | id | SessionId | Sessionの識別子。 |
 | name | SessionName | ユーザーが指定するSessionの名前。 |
+| state | SessionState | activeまたはinactiveのいずれか。 |
+| videoHubId | Option\<VideoHubId\> | 現在動作しているvideo hub processが起動時に生成したUUID。 |
 | createdAt | Timestamp | Sessionを作成した時刻。 |
 
 #### CameraIdentity
@@ -140,6 +142,7 @@ stateDiagram-v2
 
 ### 制約
 
+- SessionのstateとvideoHubIdの有無は独立し、両者の間に不変条件を設けない。
 - RecordingCameraはCameraConnectionが存在する間だけ存在でき、RecordingCameraが存在する間はCameraConnectionを削除してはならない。
 - OngoingTake、FinishedTake、RecordingCamera、VideoFile、CameraConnectionおよびCameraIdentityの関係は同一のSession内で完結し、Sessionをまたいでcameraを貸し借りしてはならない。
 - 同一のOngoingTakeとCameraIdentityの組に対応するRecordingCamera、および同一のFinishedTakeとCameraIdentityの組に対応するVideoFileは、それぞれ1つ以下とする。
