@@ -5,23 +5,128 @@
 ### エンティティ
 
 - Session: 一連の収録作業をまとめる単位。
-- Camera: sessionで使用する映像入力。
-- Take: 複数のcameraを同時に録画する単位。
-- Recording: takeとcameraの組に対する録画処理およびその結果。
-- VideoFile: recordingによって生成される動画ファイル。
+- CameraIdentity: sessionに登録されたことのある映像入力を表す、削除されない識別子。
+- CameraConnection: 現在システムが管理しているcameraクライアントの接続。接続先と接続状態を持つ。
+- OngoingTake: 複数のcameraを用いて進行中の録画。
+- RecordingCamera: OngoingTakeで録画中のCameraConnection。
+- FinishedTake: 終了した録画。状態としてuploading、completedまたはerroredを持つ。
+- VideoFile: FinishedTakeにおいてcameraから生成された動画ファイル。アップロード状態を持つ。
+
+### 属性
+
+#### Session
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| id | SessionId | Sessionの識別子。 |
+| name | SessionName | ユーザーが指定するSessionの名前。 |
+| createdAt | Timestamp | Sessionを作成した時刻。 |
+
+#### CameraIdentity
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| id | CameraIdentityId | CameraIdentityの識別子。 |
+| sessionId | SessionId | CameraIdentityが属するSessionへの参照。 |
+| name | CameraName | ユーザーが指定するcameraの名前。 |
+| createdAt | Timestamp | CameraIdentityを作成した時刻。 |
+
+#### CameraConnection
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| cameraIdentityId | CameraIdentityId | 対応するCameraIdentityへの参照。CameraConnection間で一意とする。 |
+| url | Url | cameraクライアントの接続先URL。 |
+| status | CameraConnectionStatus | cameraクライアントの接続状態。 |
+
+#### OngoingTake
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| id | TakeId | takeの識別子。FinishedTakeへ引き継ぐ。 |
+| sessionId | SessionId | OngoingTakeが属するSessionへの参照。OngoingTake間で一意とする。 |
+| name | TakeName | ユーザーが指定するtakeの名前。 |
+| startedAt | Timestamp | 録画を開始した時刻。 |
+
+#### RecordingCamera
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| ongoingTakeId | TakeId | RecordingCameraが属するOngoingTakeへの参照。 |
+| cameraIdentityId | CameraIdentityId | 録画に使用するCameraConnectionへの参照。 |
+| startedAt | Timestamp | cameraの録画を開始した時刻。 |
+
+#### FinishedTake
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| id | TakeId | OngoingTakeから引き継いだtakeの識別子。 |
+| sessionId | SessionId | FinishedTakeが属するSessionへの参照。 |
+| name | TakeName | ユーザーが指定したtakeの名前。 |
+| state | FinishedTakeState | uploading、completed、erroredのいずれか。 |
+| startedAt | Timestamp | 録画を開始した時刻。 |
+| finishedAt | Timestamp | 録画を終了した時刻。 |
+
+#### VideoFile
+
+| 属性 | 型 | 説明 |
+| --- | --- | --- |
+| finishedTakeId | TakeId | VideoFileが属するFinishedTakeへの参照。 |
+| cameraIdentityId | CameraIdentityId | 録画に使用したCameraIdentityへの参照。 |
+| state | VideoFileState | uploading、completed、erroredのいずれか。 |
+| startedAt | Timestamp | cameraの録画を開始した時刻。 |
+| finishedAt | Timestamp | cameraの録画を終了した時刻。 |
+| objectKey | Option\<ObjectKey\> | オブジェクトストレージ上の保存先。 |
+| hash | Option\<ContentHash\> | 動画ファイルの内容から計算したハッシュ。 |
+
+##### 属性の制約
+
+- stateがuploading以外の場合、objectKeyとhashは値を持たなければならない。
 
 ### 関係
 
 ```mermaid
 erDiagram
-    Session ||--o{ Camera : contains
-    Session ||--o{ Take : contains
-    Take ||--o{ Recording : contains
-    Camera ||--o{ Recording : targets
-    Recording ||--o{ VideoFile : generates
+    Session ||--o{ CameraIdentity : contains
+    CameraIdentity ||--o| CameraConnection : currently_has
+    Session ||--o| OngoingTake : has
+    Session ||--o{ FinishedTake : contains
+    OngoingTake ||--o{ RecordingCamera : contains
+    CameraConnection ||--o| RecordingCamera : is_referenced_by
+    FinishedTake ||--o{ VideoFile : contains
+    CameraIdentity ||--o{ VideoFile : is_referenced_by
 ```
 
-- CameraとTakeは、それぞれ1つのSessionに属する。
-- Recordingは、同一Sessionに属するTakeとCameraの組に対応する。
-- 同一のTakeとCameraの組に対応するRecordingは1つとする。
-- VideoFileは、1つのRecordingに属する。
+### ライフサイクル
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "CameraIdentity + CameraConnection" as CameraPresent
+    state "CameraIdentity" as CameraRemoved
+
+    [*] --> CameraPresent : camera登録 / 両方を作成
+    CameraPresent --> CameraRemoved : camera削除 [RecordingCameraなし] / CameraConnectionを削除
+```
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "OngoingTake + RecordingCamera" as Ongoing
+    state "FinishedTake (uploading)" as Uploading
+    state "FinishedTake (completed)" as Completed
+    state "FinishedTake (errored)" as Errored
+
+    [*] --> Ongoing : 録画開始
+    Ongoing --> Uploading : 録画正常終了 / VideoFileの作成とアップロードを開始
+    Ongoing --> Errored : エラー終了
+    Uploading --> Completed : 全VideoFileがcompleted
+    Uploading --> Errored : 全アップロード終了 [1つ以上errored]
+```
+
+### 制約
+
+- RecordingCameraはCameraConnectionが存在する間だけ存在でき、RecordingCameraが存在する間はCameraConnectionを削除してはならない。
+- OngoingTake、FinishedTake、RecordingCamera、VideoFile、CameraConnectionおよびCameraIdentityの関係は同一のSession内で完結し、Sessionをまたいでcameraを貸し借りしてはならない。
+- 同一のOngoingTakeとCameraIdentityの組に対応するRecordingCamera、および同一のFinishedTakeとCameraIdentityの組に対応するVideoFileは、それぞれ1つ以下とする。
+- FinishedTakeがuploadingであることと、そのFinishedTakeに属する1つ以上のVideoFileがuploadingであることは同値とする。
