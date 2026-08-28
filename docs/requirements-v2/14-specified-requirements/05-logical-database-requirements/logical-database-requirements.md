@@ -38,12 +38,13 @@
 | 属性 | 型 | 説明 |
 | --- | --- | --- |
 | cameraIdentityId | CameraIdentityId | 対応するCameraIdentityへの参照。CameraConnection間で一意とする。 |
-| url | Url | cameraクライアントの接続先URL。 |
-| status | CameraConnectionStatus | waiting、connected、errorのいずれか。 |
+| url | Option\<Url\> | Kubernetes Serviceの割り当て結果から生成したcameraクライアントの接続先URL。 |
+| status | CameraConnectionStatus | activating、waiting、connected、errorのいずれか。 |
 | error | Option\<CameraConnectionError\> | 接続を拒否した理由。 |
 
 ##### 属性の制約
 
+- statusがactivatingの場合、urlは値を持たない。
 - statusがerrorであることと、errorが値を持つことは同値とする。
 
 #### OngoingTake

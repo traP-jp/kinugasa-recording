@@ -11,5 +11,5 @@
 
 - `/`へアクセスした場合は`/sessions`へ遷移する。
 - Session Consoleでは、OngoingTakeとuploadingなFinishedTakeを同時に確認できるものとする。
-- cameraの接続先URLとQRコードは、Session Console上のモーダルで確認できるものとする。
+- cameraの接続先URLとQRコードは、CameraConnectionがactivating以外の場合、Session Console上のモーダルで確認できるものとする。
 - Session Consoleでは、video gatewayがcameraクライアントからの接続を拒否した場合、対応するCameraConnectionをerrorとして、その理由とともに表示する。
