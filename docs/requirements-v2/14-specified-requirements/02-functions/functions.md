@@ -40,3 +40,11 @@ console serverは、web consoleからシステムを操作するための内部R
 - APIのリソース指定には、内部の識別子ではなくユーザーが指定したnameを使用する。
 - OngoingTakeはSessionごとに最大1つのsingleton resourceとして扱う。
 - 録画停止後のVideoFileの作成、ハッシュ計算およびアップロードは非同期に実行する。
+
+## reconciliation
+
+- console serverは、DBに永続化されたドメイン状態を正としてKubernetes上のリソースをreconcileする。
+- console serverの起動時および再起動時には、DBから状態を復元して全リソースをreconcileする。
+- console serverが停止している間も、video gateway、video hubおよびvideo uploaderは処理を継続する。console serverの停止だけを理由にOngoingTakeを終了してはならない。
+- video hubの予期しない停止を検出した場合、対応するOngoingTakeがあればerroredなFinishedTakeへ遷移させる。その他のドメイン状態は維持したままvideo hubを再起動する。
+- 再起動したvideo hubが新しいUUIDを通知した場合、対応するSessionのvideoHubIdを更新する。

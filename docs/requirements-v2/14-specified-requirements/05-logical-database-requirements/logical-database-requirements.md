@@ -136,7 +136,7 @@ stateDiagram-v2
 
     [*] --> Ongoing : 録画開始
     Ongoing --> Uploading : 録画正常終了 / VideoFileの作成とアップロードを開始
-    Ongoing --> Errored : エラー終了
+    Ongoing --> Errored : video hubの予期しない停止などによるエラー終了
     Uploading --> Completed : 全VideoFileがcompleted
     Uploading --> Errored : 全アップロード終了 [1つ以上errored]
 ```
