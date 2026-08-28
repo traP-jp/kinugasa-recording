@@ -8,7 +8,7 @@
 - CameraIdentity: sessionに登録されたことのある映像入力を表す、削除されない識別子。
 - CameraConnection: 現在システムが管理しているcameraクライアントの接続。接続先と接続状態を持つ。
 - OngoingTake: 複数のcameraを用いて進行中の録画。
-- RecordingCamera: OngoingTakeで録画中のCameraConnection。
+- RecordingCamera: OngoingTakeで録画対象となったCameraConnection。状態としてrecordingまたはerroredを持つ。
 - FinishedTake: 終了した録画。状態としてuploading、completedまたはerroredを持つ。
 - VideoFile: FinishedTakeにおいてcameraから生成された動画ファイル。アップロード状態を持つ。
 
@@ -37,7 +37,12 @@
 | --- | --- | --- |
 | cameraIdentityId | CameraIdentityId | 対応するCameraIdentityへの参照。CameraConnection間で一意とする。 |
 | url | Url | cameraクライアントの接続先URL。 |
-| status | CameraConnectionStatus | cameraクライアントの接続状態。 |
+| status | CameraConnectionStatus | waiting、connected、errorのいずれか。 |
+| error | Option\<CameraConnectionError\> | 接続を拒否した理由。 |
+
+##### 属性の制約
+
+- statusがerrorであることと、errorが値を持つことは同値とする。
 
 #### OngoingTake
 
@@ -54,6 +59,7 @@
 | --- | --- | --- |
 | ongoingTakeId | TakeId | RecordingCameraが属するOngoingTakeへの参照。 |
 | cameraIdentityId | CameraIdentityId | 録画に使用するCameraConnectionへの参照。 |
+| state | RecordingCameraState | recordingまたはerroredのいずれか。 |
 | startedAt | Timestamp | cameraの録画を開始した時刻。 |
 
 #### FinishedTake
@@ -137,4 +143,5 @@ stateDiagram-v2
 - RecordingCameraはCameraConnectionが存在する間だけ存在でき、RecordingCameraが存在する間はCameraConnectionを削除してはならない。
 - OngoingTake、FinishedTake、RecordingCamera、VideoFile、CameraConnectionおよびCameraIdentityの関係は同一のSession内で完結し、Sessionをまたいでcameraを貸し借りしてはならない。
 - 同一のOngoingTakeとCameraIdentityの組に対応するRecordingCamera、および同一のFinishedTakeとCameraIdentityの組に対応するVideoFileは、それぞれ1つ以下とする。
+- RecordingCameraのerroredへの遷移は、OngoingTakeおよび他のRecordingCameraの状態を変更しない。
 - FinishedTakeがuploadingであることと、そのFinishedTakeに属する1つ以上のVideoFileがuploadingであることは同値とする。
