@@ -44,7 +44,7 @@
 
 ##### 属性の制約
 
-- statusがactivatingの場合、urlは値を持たない。
+- statusがactivating以外の場合、urlは値を持たなければならない。
 - statusがerrorであることと、errorが値を持つことは同値とする。
 
 #### OngoingTake
