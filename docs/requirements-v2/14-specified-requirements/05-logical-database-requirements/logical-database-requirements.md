@@ -83,6 +83,14 @@
 
 - stateがuploading以外の場合、objectKeyとhashは値を持たなければならない。
 
+#### 名前の制約
+
+- SessionName、CameraNameおよびTakeNameは、正規表現`^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$`に一致しなければならない。
+- SessionNameは、すべてのSession間で一意でなければならない。
+- CameraNameは、同一のSessionに属するすべてのCameraIdentity間で一意でなければならない。
+- TakeNameは、同一のSessionに属するすべてのOngoingTakeおよびFinishedTake間で一意でなければならない。
+- 一度使用した名前は、対応するリソースの削除または終了後も再利用してはならない。
+
 ### 関係
 
 ```mermaid
