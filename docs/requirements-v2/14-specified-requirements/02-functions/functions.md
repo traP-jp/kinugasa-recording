@@ -39,6 +39,7 @@ console serverは、web consoleからシステムを操作するための内部R
 
 - APIのリソース指定には、内部の識別子ではなくユーザーが指定したnameを使用する。
 - OngoingTakeはSessionごとに最大1つのsingleton resourceとして扱う。
+- OngoingTakeの作成時には、CameraConnectionを持つcameraを1つ以上指定しなければならない。
 - 録画停止後のVideoFileの作成、ハッシュ計算およびアップロードは非同期に実行する。
 
 ## reconciliation
