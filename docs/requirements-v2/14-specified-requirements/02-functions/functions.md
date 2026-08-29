@@ -2,7 +2,7 @@
 
 ## console server REST API
 
-console serverは、web consoleからシステムを操作するための内部REST APIを提供する。
+console serverは、web consoleからシステムを操作するための内部REST APIと、後段パイプラインへ録画ファイルのlock fileを提供するREST APIを提供する。
 
 ### Session
 
@@ -11,6 +11,14 @@ console serverは、web consoleからシステムを操作するための内部R
 | `GET` | `/api/sessions` | Sessionの一覧を取得する。 |
 | `POST` | `/api/sessions` | Sessionを作成する。 |
 | `GET` | `/api/sessions/{sessionName}` | Sessionの詳細と、存在する場合はOngoingTakeの名前を取得する。 |
+
+### 後段パイプライン
+
+| メソッド | パス | 機能 |
+| --- | --- | --- |
+| `GET` | `/sessions/{name}/lockfile` | Sessionに属するアップロード済み録画ファイルのlock fileを取得する。 |
+
+`{name}`にはSessionNameを指定する。Sessionが存在しない場合は`404 Not Found`を返す。成功時は`200 OK`を返し、`Content-Type`を`text/plain; charset=utf-8`として、bodyにはlock fileをserializationしたJSON文字列を設定する。JSON文字列をparseして得られる値は、[後段パイプライン入力lock file](../01-external-interfaces/external-interfaces.md#後段パイプライン)の規格に従う。
 
 ### camera
 

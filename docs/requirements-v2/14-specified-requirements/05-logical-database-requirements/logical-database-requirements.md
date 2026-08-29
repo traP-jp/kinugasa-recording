@@ -96,13 +96,14 @@
 | startedAt | Timestamp | cameraの録画を開始した時刻。 |
 | finishedAt | Timestamp | cameraの録画を終了した時刻。 |
 | objectKey | Option\<ObjectKey\> | オブジェクトストレージ上の保存先。 |
-| hash | Option\<ContentHash\> | 動画ファイルの内容から計算したSHA-256ハッシュをBase64でエンコードした文字列。 |
+| hash | Option\<ContentHash\> | 動画ファイルの内容から計算したSHA-256ハッシュ。 |
+| size | Option\<FileSize\> | 動画ファイルのbyte数を表す0以上の整数。 |
 | error | Option\<ErrorReason\> | 動画ファイルの処理に失敗した事由。 |
 
 ##### 属性の制約
 
-- stateがcompletedの場合、objectKeyとhashは値を持たなければならない。
-- stateがuploadingまたはerroredの場合、objectKeyとhashは値を持たないことがある。
+- stateがcompletedの場合、objectKey、hashおよびsizeは値を持たなければならない。
+- stateがuploadingまたはerroredの場合、objectKey、hashおよびsizeは値を持たないことがある。
 - stateがerroredであることと、errorが値を持つことは同値とする。
 
 #### 名前の制約
