@@ -108,7 +108,7 @@
 
 #### 名前の制約
 
-- SessionName、CameraNameおよびTakeNameは、正規表現`^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$`に一致しなければならない。
+- SessionName、CameraNameおよびTakeNameは1文字以上32文字以下とし、正規表現`^[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?$`に一致しなければならない。
 - SessionNameは、すべてのSession間で一意でなければならない。
 - CameraNameは、同一のSessionに属するすべてのCameraIdentity間で一意でなければならない。
 - TakeNameは、同一のSessionに属するすべてのOngoingTakeおよびFinishedTake間で一意でなければならない。

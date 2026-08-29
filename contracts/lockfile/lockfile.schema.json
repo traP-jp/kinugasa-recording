@@ -19,7 +19,7 @@
     "objects": {
       "type": "object",
       "propertyNames": {
-        "pattern": "^recording/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/video\\.mp4$"
+        "pattern": "^recording/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/video\\.mp4$"
       },
       "additionalProperties": {
         "$ref": "#/$defs/object"
@@ -38,7 +38,7 @@
       "properties": {
         "key": {
           "type": "string",
-          "pattern": "^recording/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?/[0-9a-f]{64}-video\\.mp4$"
+          "pattern": "^recording/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?/[0-9a-f]{64}-video\\.mp4$"
         },
         "sha256": {
           "type": "string",

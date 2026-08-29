@@ -5,7 +5,7 @@ post:
   operationId: startTake
   tags: [Takes]
   summary: OngoingTakeを作成して録画を開始する
-  description: CameraConnectionを持つcameraを1つ以上指定する必要がある。
+  description: connectedなCameraConnectionを持つcameraを1つ以上指定する必要がある。指定したすべてのcameraがこの条件を満たさなければならない。
   requestBody:
     required: true
     content:
@@ -24,6 +24,10 @@ post:
     '404':
       $ref: ../openapi.yaml#/components/responses/NotFound
     '409':
-      $ref: ../openapi.yaml#/components/responses/Conflict
+      description: OngoingTakeがすでに存在する、名前が使用済み、または指定したcameraのCameraConnectionがconnectedではない
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/error.yaml#/Error
     '500':
       $ref: ../openapi.yaml#/components/responses/InternalServerError
