@@ -101,7 +101,8 @@
 
 ##### 属性の制約
 
-- stateがuploading以外の場合、objectKeyとhashは値を持たなければならない。
+- stateがcompletedの場合、objectKeyとhashは値を持たなければならない。
+- stateがuploadingまたはerroredの場合、objectKeyとhashは値を持たないことがある。
 - stateがerroredであることと、errorが値を持つことは同値とする。
 
 #### 名前の制約
