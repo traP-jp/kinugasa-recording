@@ -10,7 +10,7 @@ console serverは、web consoleからシステムを操作するための内部R
 | --- | --- | --- |
 | `GET` | `/api/sessions` | Sessionの一覧を取得する。 |
 | `POST` | `/api/sessions` | Sessionを作成する。 |
-| `GET` | `/api/sessions/{sessionName}` | Sessionの詳細を取得する。 |
+| `GET` | `/api/sessions/{sessionName}` | Sessionの詳細と、存在する場合はOngoingTakeの名前を取得する。 |
 
 ### camera
 
@@ -26,8 +26,8 @@ console serverは、web consoleからシステムを操作するための内部R
 | メソッド | パス | 機能 |
 | --- | --- | --- |
 | `GET` | `/api/sessions/{sessionName}/ongoing-take` | OngoingTakeを取得する。 |
-| `PUT` | `/api/sessions/{sessionName}/ongoing-take` | OngoingTakeを作成し、録画を開始する。 |
-| `DELETE` | `/api/sessions/{sessionName}/ongoing-take` | 録画を停止し、OngoingTakeからFinishedTakeへ遷移させる。 |
+| `POST` | `/api/sessions/{sessionName}/ongoing-take/start` | OngoingTakeを作成し、録画を開始する。 |
+| `POST` | `/api/sessions/{sessionName}/ongoing-take/finish` | 録画を終了し、OngoingTakeからFinishedTakeへ遷移させる。 |
 | `GET` | `/api/sessions/{sessionName}/takes` | FinishedTakeの一覧を取得する。 |
 | `GET` | `/api/sessions/{sessionName}/takes/{takeName}` | FinishedTakeとVideoFileの詳細を取得する。 |
 
@@ -39,7 +39,10 @@ console serverは、web consoleからシステムを操作するための内部R
 
 - APIのリソース指定には、内部の識別子ではなくユーザーが指定したnameを使用する。
 - OngoingTakeはSessionごとに最大1つのsingleton resourceとして扱う。
+- Sessionの詳細では、OngoingTakeが存在しない場合、ongoingTakeNameをnullとして返す。
+- OngoingTakeの取得結果は、OngoingTakeの有無を判別できるtagged unionとして返す。OngoingTakeが存在しない場合は正常系として扱い、`200 OK`を返す。Session自体が存在しない場合は`404 Not Found`を返す。
 - OngoingTakeの作成時には、CameraConnectionを持つcameraを1つ以上指定しなければならない。
+- OngoingTakeが存在しない状態で録画終了を要求した場合は、`409 Conflict`を返す。
 - 録画停止後のVideoFileの作成、ハッシュ計算およびアップロードは非同期に実行する。
 - APIがエラーを返す場合は、web consoleで確認できる人が読めるエラー事由を含めなければならない。
 
