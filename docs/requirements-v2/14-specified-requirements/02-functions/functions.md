@@ -4,7 +4,7 @@
 
 console serverは、web consoleからシステムを操作するための内部REST APIと、後段パイプラインへ録画ファイルのlock fileを提供するREST APIを提供する。
 
-web console向けREST APIのエンドポイント、リクエスト、レスポンスおよびエラーの詳細は、[console API contract](../../../../contracts/console-api/openapi.yaml)に定義する。
+REST APIのエンドポイント、リクエスト、レスポンスおよびエラーの詳細は、[console API contract](../../../../contracts/console-api/openapi.yaml)に定義する。
 
 ### Session
 
@@ -18,9 +18,7 @@ web console向けREST APIのエンドポイント、リクエスト、レスポ�
 
 | メソッド | パス | 機能 |
 | --- | --- | --- |
-| `GET` | `/sessions/{name}/lockfile` | Sessionに属するアップロード済み録画ファイルのlock fileを取得する。 |
-
-`{name}`にはSessionNameを指定する。Sessionが存在しない場合は`404 Not Found`を返す。成功時は`200 OK`を返し、`Content-Type`を`text/plain; charset=utf-8`として、bodyにはlock fileをserializationしたJSON文字列を設定する。JSON文字列をparseして得られる値は、[後段パイプライン入力lock file](../01-external-interfaces/external-interfaces.md#後段パイプライン)の規格に従う。
+| `GET` | `/api/sessions/{sessionName}/lockfile` | Sessionに属するアップロード済み録画ファイルのlock fileを取得する。 |
 
 ### camera
 
