@@ -1,0 +1,18 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+  - $ref: ../openapi.yaml#/components/parameters/CameraName
+
+delete:
+  operationId: deleteCamera
+  tags: [Cameras]
+  summary: cameraを削除する
+  description: CameraConnectionを削除する。CameraIdentityと名前の使用履歴は残る。
+  responses:
+    '204':
+      description: cameraを削除した
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '409':
+      $ref: ../openapi.yaml#/components/responses/Conflict
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

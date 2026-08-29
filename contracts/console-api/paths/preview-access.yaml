@@ -1,0 +1,20 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+post:
+  operationId: createPreviewAccess
+  tags: [Preview]
+  summary: LiveKitの接続情報を取得する
+  responses:
+    '200':
+      description: LiveKitの接続先と短期アクセストークン
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/preview.yaml#/PreviewAccess
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '409':
+      $ref: ../openapi.yaml#/components/responses/Conflict
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

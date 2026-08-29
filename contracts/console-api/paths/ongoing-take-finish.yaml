@@ -1,0 +1,29 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+post:
+  operationId: finishTake
+  tags: [Takes]
+  summary: 録画を終了する
+  description: OngoingTakeをFinishedTakeへ遷移させ、非同期のアップロード処理を開始する。
+  responses:
+    '202':
+      description: 録画終了を受け付けた
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/take.yaml#/FinishedTake
+    '404':
+      description: Sessionが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/error.yaml#/Error
+    '409':
+      description: OngoingTakeが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/error.yaml#/Error
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

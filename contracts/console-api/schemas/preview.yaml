@@ -1,0 +1,17 @@
+PreviewAccess:
+  type: object
+  required:
+    - url
+    - accessToken
+    - expiresAt
+  properties:
+    url:
+      type: string
+      format: uri
+      description: LiveKit serverの接続先。
+    accessToken:
+      type: string
+      description: LiveKitへ接続するための短期アクセストークン。
+    expiresAt:
+      $ref: ./common.yaml#/Timestamp
+  additionalProperties: false

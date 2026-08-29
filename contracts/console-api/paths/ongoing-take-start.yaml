@@ -1,0 +1,28 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+post:
+  operationId: startTake
+  tags: [Takes]
+  summary: OngoingTakeを作成して録画を開始する
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../schemas/take.yaml#/StartTakeRequest
+  responses:
+    '201':
+      description: 作成したOngoingTake
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/take.yaml#/OngoingTake
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '409':
+      $ref: ../openapi.yaml#/components/responses/Conflict
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

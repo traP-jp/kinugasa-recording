@@ -1,0 +1,24 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: listFinishedTakes
+  tags: [Takes]
+  summary: FinishedTakeの一覧を取得する
+  description: finishedAtの降順、同値の場合はnameの昇順で返す。
+  parameters:
+    - $ref: ../openapi.yaml#/components/parameters/Page
+    - $ref: ../openapi.yaml#/components/parameters/PageSize
+  responses:
+    '200':
+      description: FinishedTakeの一覧
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/take.yaml#/FinishedTakePage
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

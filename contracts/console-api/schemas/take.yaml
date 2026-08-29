@@ -1,0 +1,239 @@
+OngoingTake:
+  type: object
+  required:
+    - id
+    - name
+    - startedAt
+    - cameras
+  properties:
+    id:
+      $ref: ./common.yaml#/Uuid
+    name:
+      $ref: ./common.yaml#/ResourceName
+    startedAt:
+      $ref: ./common.yaml#/Timestamp
+    cameras:
+      type: array
+      minItems: 1
+      items:
+        $ref: '#/RecordingCamera'
+  additionalProperties: false
+
+OngoingTakeResult:
+  oneOf:
+    - $ref: '#/OngoingTakeAbsent'
+    - $ref: '#/OngoingTakePresent'
+  discriminator:
+    propertyName: type
+    mapping:
+      absent: '#/OngoingTakeAbsent'
+      present: '#/OngoingTakePresent'
+
+OngoingTakeAbsent:
+  type: object
+  required:
+    - type
+  properties:
+    type:
+      type: string
+      const: absent
+  additionalProperties: false
+
+OngoingTakePresent:
+  type: object
+  required:
+    - type
+    - ongoingTake
+  properties:
+    type:
+      type: string
+      const: present
+    ongoingTake:
+      $ref: '#/OngoingTake'
+  additionalProperties: false
+
+RecordingCamera:
+  type: object
+  required:
+    - name
+    - state
+    - startedAt
+    - error
+  properties:
+    name:
+      $ref: ./common.yaml#/ResourceName
+    state:
+      type: string
+      enum: [recording, errored]
+    startedAt:
+      $ref: ./common.yaml#/Timestamp
+    error:
+      description: stateがerroredの場合は録画に失敗した事由、それ以外はnull。
+      oneOf:
+        - $ref: ./common.yaml#/ErrorReason
+        - type: "null"
+  additionalProperties: false
+  allOf:
+    - if:
+        properties:
+          state:
+            const: errored
+        required: [state]
+      then:
+        properties:
+          error:
+            $ref: ./common.yaml#/ErrorReason
+      else:
+        properties:
+          error:
+            type: "null"
+
+StartTakeRequest:
+  type: object
+  required:
+    - name
+    - cameraNames
+  properties:
+    name:
+      $ref: ./common.yaml#/ResourceName
+    cameraNames:
+      type: array
+      minItems: 1
+      uniqueItems: true
+      items:
+        $ref: ./common.yaml#/ResourceName
+  additionalProperties: false
+
+FinishedTakeBase:
+  type: object
+  required:
+    - id
+    - name
+    - state
+    - startedAt
+    - finishedAt
+    - error
+  properties:
+    id:
+      $ref: ./common.yaml#/Uuid
+    name:
+      $ref: ./common.yaml#/ResourceName
+    state:
+      type: string
+      enum: [uploading, completed, errored]
+    startedAt:
+      $ref: ./common.yaml#/Timestamp
+    finishedAt:
+      $ref: ./common.yaml#/Timestamp
+    error:
+      description: stateがerroredの場合はtakeの処理に失敗した事由、それ以外はnull。
+      oneOf:
+        - $ref: ./common.yaml#/ErrorReason
+        - type: "null"
+  allOf:
+    - if:
+        properties:
+          state:
+            const: errored
+        required: [state]
+      then:
+        properties:
+          error:
+            $ref: ./common.yaml#/ErrorReason
+      else:
+        properties:
+          error:
+            type: "null"
+
+FinishedTake:
+  allOf:
+    - $ref: '#/FinishedTakeBase'
+  unevaluatedProperties: false
+
+FinishedTakePage:
+  type: object
+  required:
+    - items
+    - pagination
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/FinishedTake'
+    pagination:
+      $ref: ./common.yaml#/Pagination
+  additionalProperties: false
+
+FinishedTakeDetail:
+  allOf:
+    - $ref: '#/FinishedTakeBase'
+    - type: object
+      required:
+        - videoFiles
+      properties:
+        videoFiles:
+          type: array
+          items:
+            $ref: '#/VideoFile'
+  unevaluatedProperties: false
+
+VideoFile:
+  type: object
+  required:
+    - cameraName
+    - state
+    - startedAt
+    - finishedAt
+    - objectKey
+    - hash
+    - error
+  properties:
+    cameraName:
+      $ref: ./common.yaml#/ResourceName
+    state:
+      type: string
+      enum: [uploading, completed, errored]
+    startedAt:
+      $ref: ./common.yaml#/Timestamp
+    finishedAt:
+      $ref: ./common.yaml#/Timestamp
+    objectKey:
+      type: [string, "null"]
+      description: stateがcompletedの場合は保存先、それ以外ではnullの場合がある。
+    hash:
+      description: stateがcompletedの場合はSHA-256ハッシュ、それ以外ではnullの場合がある。
+      oneOf:
+        - $ref: ./common.yaml#/Sha256Hash
+        - type: "null"
+    error:
+      description: stateがerroredの場合は動画ファイルの処理に失敗した事由、それ以外はnull。
+      oneOf:
+        - $ref: ./common.yaml#/ErrorReason
+        - type: "null"
+  additionalProperties: false
+  allOf:
+    - if:
+        properties:
+          state:
+            const: errored
+        required: [state]
+      then:
+        properties:
+          error:
+            $ref: ./common.yaml#/ErrorReason
+      else:
+        properties:
+          error:
+            type: "null"
+    - if:
+        properties:
+          state:
+            const: completed
+        required: [state]
+      then:
+        properties:
+          objectKey:
+            type: string
+            minLength: 1
+          hash:
+            $ref: ./common.yaml#/Sha256Hash

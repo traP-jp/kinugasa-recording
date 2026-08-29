@@ -1,0 +1,114 @@
+openapi: 3.1.0
+info:
+  title: kinugasa-recording console API
+  version: 0.1.0
+  description: |
+    web consoleからconsole serverを操作するためのクラスタ内部REST API。
+    API自体は認証・認可を行わず、アクセス制御はtailnet側の責務とする。
+    この文書は実装前のたたき台であり、詳細は今後の設計で更新する。
+
+servers:
+  - url: /api
+    description: console server
+
+# アクセス制御はtailnet側で行うため、このAPI自体は認証・認可を行わない。
+security: []
+
+tags:
+  - name: Sessions
+    description: 収録作業をまとめるSessionの操作。
+  - name: Cameras
+    description: cameraの登録と接続状態の操作。
+  - name: Takes
+    description: 録画の開始、停止および結果の参照。
+  - name: Preview
+    description: リアルタイムプレビューへのアクセス。
+
+paths:
+  /sessions:
+    $ref: ./paths/sessions.yaml
+  /sessions/{sessionName}:
+    $ref: ./paths/session.yaml
+  /sessions/{sessionName}/cameras:
+    $ref: ./paths/cameras.yaml
+  /sessions/{sessionName}/cameras/{cameraName}:
+    $ref: ./paths/camera.yaml
+  /sessions/{sessionName}/cameras/{cameraName}/connection:
+    $ref: ./paths/camera-connection.yaml
+  /sessions/{sessionName}/ongoing-take:
+    $ref: ./paths/ongoing-take.yaml
+  /sessions/{sessionName}/ongoing-take/start:
+    $ref: ./paths/ongoing-take-start.yaml
+  /sessions/{sessionName}/ongoing-take/finish:
+    $ref: ./paths/ongoing-take-finish.yaml
+  /sessions/{sessionName}/takes:
+    $ref: ./paths/takes.yaml
+  /sessions/{sessionName}/takes/{takeName}:
+    $ref: ./paths/take.yaml
+  /sessions/{sessionName}/preview-access:
+    $ref: ./paths/preview-access.yaml
+
+components:
+  parameters:
+    SessionName:
+      name: sessionName
+      in: path
+      required: true
+      schema:
+        $ref: ./schemas/common.yaml#/ResourceName
+    CameraName:
+      name: cameraName
+      in: path
+      required: true
+      schema:
+        $ref: ./schemas/common.yaml#/ResourceName
+    TakeName:
+      name: takeName
+      in: path
+      required: true
+      schema:
+        $ref: ./schemas/common.yaml#/ResourceName
+    Page:
+      name: page
+      in: query
+      required: false
+      description: 1から始まるページ番号。
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      required: false
+      description: 1ページあたりの要素数。
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: リクエストが不正
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.yaml#/Error
+    NotFound:
+      description: 対象のリソースが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.yaml#/Error
+    Conflict:
+      description: リソース名の重複または現在の状態との競合
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.yaml#/Error
+    InternalServerError:
+      description: サーバー内部エラー
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.yaml#/Error

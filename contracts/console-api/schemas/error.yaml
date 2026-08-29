@@ -1,0 +1,8 @@
+Error:
+  type: object
+  required:
+    - error
+  properties:
+    error:
+      $ref: ./common.yaml#/ErrorReason
+  additionalProperties: false

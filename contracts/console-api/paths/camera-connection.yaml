@@ -1,0 +1,19 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+  - $ref: ../openapi.yaml#/components/parameters/CameraName
+
+get:
+  operationId: getCameraConnection
+  tags: [Cameras]
+  summary: cameraクライアントの接続先と接続状態を取得する
+  responses:
+    '200':
+      description: CameraConnection
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/camera.yaml#/CameraConnection
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

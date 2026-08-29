@@ -1,0 +1,46 @@
+ResourceName:
+  type: string
+  pattern: '^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$'
+  examples:
+    - studio-a
+
+Uuid:
+  type: string
+  format: uuid
+
+Timestamp:
+  type: string
+  format: date-time
+
+ErrorReason:
+  type: string
+  description: 人が読めるエラー事由。
+  minLength: 1
+
+Sha256Hash:
+  type: string
+  description: 動画ファイルのSHA-256ハッシュをBase64でエンコードした文字列。
+  contentEncoding: base64
+  pattern: '^[A-Za-z0-9+/]{43}=$'
+  examples:
+    - 47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
+
+Pagination:
+  type: object
+  required:
+    - page
+    - pageSize
+    - total
+  properties:
+    page:
+      type: integer
+      minimum: 1
+    pageSize:
+      type: integer
+      minimum: 1
+      maximum: 100
+    total:
+      type: integer
+      minimum: 0
+      description: 条件に一致する全要素数。
+  additionalProperties: false

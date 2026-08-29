@@ -1,0 +1,46 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: listCameras
+  tags: [Cameras]
+  summary: 現在のCameraConnectionの一覧を取得する
+  responses:
+    '200':
+      description: CameraConnectionの一覧
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: ../schemas/camera.yaml#/CameraConnection
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError
+
+post:
+  operationId: createCamera
+  tags: [Cameras]
+  summary: cameraを追加する
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../schemas/camera.yaml#/CreateCameraRequest
+  responses:
+    '201':
+      description: 作成したCameraConnection
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/camera.yaml#/CameraConnection
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '409':
+      $ref: ../openapi.yaml#/components/responses/Conflict
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

@@ -1,0 +1,43 @@
+get:
+  operationId: listSessions
+  tags: [Sessions]
+  summary: Sessionの一覧を取得する
+  description: createdAtの降順、同値の場合はnameの昇順で返す。
+  parameters:
+    - $ref: ../openapi.yaml#/components/parameters/Page
+    - $ref: ../openapi.yaml#/components/parameters/PageSize
+  responses:
+    '200':
+      description: Sessionの一覧
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/session.yaml#/SessionPage
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError
+
+post:
+  operationId: createSession
+  tags: [Sessions]
+  summary: Sessionを作成する
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../schemas/session.yaml#/CreateSessionRequest
+  responses:
+    '201':
+      description: 作成したSession
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/session.yaml#/Session
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
+    '409':
+      $ref: ../openapi.yaml#/components/responses/Conflict
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError
