@@ -4,6 +4,8 @@
 
 console serverは、web consoleからシステムを操作するための内部REST APIと、後段パイプラインへ録画ファイルのlock fileを提供するREST APIを提供する。
 
+web console向けREST APIのエンドポイント、リクエスト、レスポンスおよびエラーの詳細は、[console API contract](../../../../contracts/console-api/openapi.yaml)に定義する。
+
 ### Session
 
 | メソッド | パス | 機能 |
@@ -44,20 +46,6 @@ console serverは、web consoleからシステムを操作するための内部R
 | メソッド | パス | 機能 |
 | --- | --- | --- |
 | `POST` | `/api/sessions/{sessionName}/preview-access` | LiveKitの接続先と短期アクセストークンを取得する。 |
-
-- preview accessのレスポンスは、短期アクセストークンの有効期限を`expiresAt`として必ず含める。
-- APIのリソース指定には、内部の識別子ではなくユーザーが指定したnameを使用する。
-- OngoingTakeはSessionごとに最大1つのsingleton resourceとして扱う。
-- Sessionの詳細では、OngoingTakeが存在しない場合、ongoingTakeNameをnullとして返す。
-- OngoingTakeの取得結果は、OngoingTakeの有無を判別できるtagged unionとして返す。OngoingTakeが存在しない場合は正常系として扱い、`200 OK`を返す。Session自体が存在しない場合は`404 Not Found`を返す。
-- OngoingTakeの作成時には、CameraConnectionを持つcameraを1つ以上指定しなければならない。
-- OngoingTakeが存在しない状態で録画終了を要求した場合は、`409 Conflict`を返す。
-- 録画停止後のVideoFileの作成、ハッシュ計算およびアップロードは非同期に実行する。
-- APIがエラーを返す場合は、web consoleで確認できる人が読めるエラー事由を含めなければならない。
-- Session一覧とFinishedTake一覧は、1から始まる`page`と1ページあたりの件数を表す`pageSize`を指定するページ番号方式でページネーションする。`page`のデフォルト値は1、`pageSize`のデフォルト値は20、最大値は100とする。
-- Session一覧は`createdAt`の降順、同値の場合は`name`の昇順で返す。
-- FinishedTake一覧は`finishedAt`の降順、同値の場合は`name`の昇順で返す。
-- その他のAPIはページネーションしない。
 
 ## reconciliation
 

@@ -5,6 +5,7 @@ post:
   operationId: startTake
   tags: [Takes]
   summary: OngoingTakeを作成して録画を開始する
+  description: CameraConnectionを持つcameraを1つ以上指定する必要がある。
   requestBody:
     required: true
     content:
