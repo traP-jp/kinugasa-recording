@@ -86,7 +86,7 @@
 | startedAt | Timestamp | cameraの録画を開始した時刻。 |
 | finishedAt | Timestamp | cameraの録画を終了した時刻。 |
 | objectKey | Option\<ObjectKey\> | オブジェクトストレージ上の保存先。 |
-| hash | Option\<ContentHash\> | 動画ファイルの内容から計算したハッシュ。 |
+| hash | Option\<ContentHash\> | 動画ファイルの内容から計算したSHA-256ハッシュ。 |
 
 ##### 属性の制約
 
