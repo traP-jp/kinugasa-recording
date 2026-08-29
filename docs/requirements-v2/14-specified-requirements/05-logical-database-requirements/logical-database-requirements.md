@@ -40,7 +40,7 @@
 | cameraIdentityId | CameraIdentityId | 対応するCameraIdentityへの参照。CameraConnection間で一意とする。 |
 | url | Option\<Url\> | Kubernetes Serviceの割り当て結果から生成したcameraクライアントの接続先URL。 |
 | status | CameraConnectionStatus | activating、waiting、connected、errorのいずれか。 |
-| error | Option\<CameraConnectionError\> | 接続を拒否した理由。 |
+| error | Option\<ErrorReason\> | 接続を拒否した事由。 |
 
 ##### 属性の制約
 
@@ -64,6 +64,11 @@
 | cameraIdentityId | CameraIdentityId | 録画に使用するCameraConnectionへの参照。 |
 | state | RecordingCameraState | recordingまたはerroredのいずれか。 |
 | startedAt | Timestamp | cameraの録画を開始した時刻。 |
+| error | Option\<ErrorReason\> | 録画に失敗した事由。 |
+
+##### 属性の制約
+
+- stateがerroredであることと、errorが値を持つことは同値とする。
 
 #### FinishedTake
 
@@ -75,6 +80,11 @@
 | state | FinishedTakeState | uploading、completed、erroredのいずれか。 |
 | startedAt | Timestamp | 録画を開始した時刻。 |
 | finishedAt | Timestamp | 録画を終了した時刻。 |
+| error | Option\<ErrorReason\> | takeの処理に失敗した事由。 |
+
+##### 属性の制約
+
+- stateがerroredであることと、errorが値を持つことは同値とする。
 
 #### VideoFile
 
@@ -87,10 +97,12 @@
 | finishedAt | Timestamp | cameraの録画を終了した時刻。 |
 | objectKey | Option\<ObjectKey\> | オブジェクトストレージ上の保存先。 |
 | hash | Option\<ContentHash\> | 動画ファイルの内容から計算したSHA-256ハッシュをBase64でエンコードした文字列。 |
+| error | Option\<ErrorReason\> | 動画ファイルの処理に失敗した事由。 |
 
 ##### 属性の制約
 
 - stateがuploading以外の場合、objectKeyとhashは値を持たなければならない。
+- stateがerroredであることと、errorが値を持つことは同値とする。
 
 #### 名前の制約
 
