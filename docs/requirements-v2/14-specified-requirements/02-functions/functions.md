@@ -37,6 +37,7 @@ console serverは、web consoleからシステムを操作するための内部R
 | --- | --- | --- |
 | `POST` | `/api/sessions/{sessionName}/preview-access` | LiveKitの接続先と短期アクセストークンを取得する。 |
 
+- preview accessのレスポンスは、短期アクセストークンの有効期限を`expiresAt`として必ず含める。
 - APIのリソース指定には、内部の識別子ではなくユーザーが指定したnameを使用する。
 - OngoingTakeはSessionごとに最大1つのsingleton resourceとして扱う。
 - Sessionの詳細では、OngoingTakeが存在しない場合、ongoingTakeNameをnullとして返す。
