@@ -45,6 +45,10 @@ console serverは、web consoleからシステムを操作するための内部R
 - OngoingTakeが存在しない状態で録画終了を要求した場合は、`409 Conflict`を返す。
 - 録画停止後のVideoFileの作成、ハッシュ計算およびアップロードは非同期に実行する。
 - APIがエラーを返す場合は、web consoleで確認できる人が読めるエラー事由を含めなければならない。
+- Session一覧とFinishedTake一覧は、1から始まる`page`と1ページあたりの件数を表す`pageSize`を指定するページ番号方式でページネーションする。`page`のデフォルト値は1、`pageSize`のデフォルト値は20、最大値は100とする。
+- Session一覧は`createdAt`の降順、同値の場合は`name`の昇順で返す。
+- FinishedTake一覧は`finishedAt`の降順、同値の場合は`name`の昇順で返す。
+- その他のAPIはページネーションしない。
 
 ## reconciliation
 
