@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
+	workercommand "github.com/traP-jp/kinugasa-recording/internal/worker/command"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/control"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/state"
@@ -19,6 +20,7 @@ func observeInput(
 	server *media.Server,
 	store *state.Store,
 	client *control.Client,
+	executor *workercommand.Executor,
 	interval time.Duration,
 	logger *slog.Logger,
 ) {
@@ -61,6 +63,11 @@ func observeInput(
 			continue
 		}
 		previousOnline = online
+		if !online {
+			if err := executor.InputDisconnected(); err != nil {
+				logger.Error("persist recording input disconnection", "error", err)
+			}
+		}
 		client.NotifyEvents()
 	}
 }

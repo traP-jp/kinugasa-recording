@@ -82,6 +82,40 @@ func (e *Executor) Execute(
 	}
 }
 
+func (e *Executor) InputDisconnected() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.activeTake == "" {
+		return nil
+	}
+	current, found, err := e.state.RecordingStatus()
+	if err != nil {
+		return fmt.Errorf("load disconnected recording state: %w", err)
+	}
+	if !found {
+		return fmt.Errorf("active recording state is missing")
+	}
+	if err := e.recorder.Abort(); err != nil {
+		return fmt.Errorf("abort disconnected recording: %w", err)
+	}
+	takeID := e.activeTake
+	e.activeTake = ""
+	e.activePath = ""
+	e.completedTake = takeID
+	workerError := &workerv1.WorkerError{
+		Code:      workerv1.ErrorCode_ERROR_CODE_INPUT_DISCONNECTED,
+		Message:   "camera input disconnected while recording",
+		Retryable: false,
+	}
+	return e.appendRecordingEvent(&workerv1.RecordingStatus{
+		TakeId:     takeID,
+		State:      workerv1.RecordingState_RECORDING_STATE_ERROR,
+		StartedAt:  current.StartedAt,
+		FinishedAt: timestamppb.New(e.now().UTC()),
+		Error:      workerError,
+	})
+}
+
 func (e *Executor) start(
 	ctx context.Context,
 	commandID string,

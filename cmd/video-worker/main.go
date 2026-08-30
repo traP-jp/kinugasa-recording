@@ -106,7 +106,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
-	go observeInput(runtimeContext, mediaServer, store, controlClient, config.InputPollInterval, logger)
+	go observeInput(runtimeContext, mediaServer, store, controlClient, executor, config.InputPollInterval, logger)
 	controlDone := make(chan error, 1)
 	go func() { controlDone <- controlClient.Run(runtimeContext) }()
 	mediaDone := make(chan error, 1)

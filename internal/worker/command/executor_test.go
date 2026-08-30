@@ -145,6 +145,26 @@ func TestExecutorPersistsFinalizationFailure(t *testing.T) {
 	}
 }
 
+func TestExecutorAbortsRecordingWhenInputDisconnects(t *testing.T) {
+	store := newExecutorState(t)
+	recorder := &recorderStub{startedAt: executorTestTime}
+	executor := newTestExecutor(t, store, recorder)
+	if _, err := executor.Execute(context.Background(), startRecordingCommand(executorCommandID1, "take-id")); err != nil {
+		t.Fatalf("Execute(start) error = %v", err)
+	}
+	if err := executor.InputDisconnected(); err != nil {
+		t.Fatalf("InputDisconnected() error = %v", err)
+	}
+	if recorder.abortCalls.Load() != 1 {
+		t.Fatalf("recorder abort calls = %d, want 1", recorder.abortCalls.Load())
+	}
+	status := recordingStatus(t, store)
+	if status.State != workerv1.RecordingState_RECORDING_STATE_ERROR ||
+		status.Error.Code != workerv1.ErrorCode_ERROR_CODE_INPUT_DISCONNECTED {
+		t.Fatalf("recording status after disconnect = %+v", status)
+	}
+}
+
 type recorderStub struct {
 	startCalls  atomic.Int32
 	finishCalls atomic.Int32
