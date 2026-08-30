@@ -18,3 +18,10 @@
 - 各VideoFileをデコードし、表示順のframeごとにpresentation timestampを取得する。
 - presentation timestampが単調増加していることを確認し、隣接frame間の時間差からframe落ちの回数を算出する。
 - frame落ちの回数をcameraごとに検証結果へ記録する。frame落ちは時間軸ドリフトとは別に評価し、合否の閾値は設けない。
+
+## video worker container正常終了後のupload継続
+
+- video worker Podの作成時に1つのPersistentVolumeClaimが作成され、takeの開始時には追加のPersistentVolumeClaimが作成されないことを確認する。
+- 録画を終了してvideo uploader containerによるuploadを開始した後、同じPod内のvideo worker containerを正常終了させる。
+- video worker containerが再起動されず、同じPod内でvideo uploader containerとshared volumeが残り、uploadが中断されずにcompletedへ遷移することを確認する。
+- video worker Podとshared volumeがuploadの完了前には削除されず、volume上のすべての録画ファイルがcompletedまたはerroredになり、video uploader containerが終了した後に削除されることを確認する。

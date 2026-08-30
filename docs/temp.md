@@ -22,7 +22,7 @@ video gatewayからcameraごとのvideo workerへのRTP中継、LiveKitへの中
 - 各workerが接続状態、拒否理由、開始・終了時刻、進捗、エラーを通知する方法とpayload
 - video workerがUUIDを「通知」する先、対応するCameraConnectionを特定する方法、プロトコル、再送・重複時の扱い
 - RTPのtransport（UDP/TCP）、宛先割当、payload type、SSRC、clock rate、RTCPの有無、音声payload、timestampの基準
-- gateway/worker間およびworker/uploader間のreadiness、timeout、heartbeat、graceful shutdown契約
+- gateway/worker間のreadiness、timeout、heartbeat、graceful shutdown契約、およびworkerが確定した録画ファイルをuploaderへ通知する方法
 - LiveKitのroom、participant、trackとSession/CameraIdentityの対応、およびpublish方式
 - console server停止中にもworkerが継続するために、命令と状態をどこへ永続化し、再接続時にどう再同期するか
 
@@ -47,7 +47,7 @@ RIST Main Profile、H.264、30 fps、およびvideo gatewayに`ristreceiver`を�
 - moov atom、trailer、各trackの必須metadataなど、正常な成果物と判定する条件
 - objectへ付与するcontent type、metadata/tag、および既存objectとの衝突時の扱い
 - camera切断、worker crash、停止timeoutなどで生じた部分ファイルを保存するか破棄するか
-- 録画中のローカル保存場所、容量予約、容量不足時の動作、upload後の削除条件
+- shared volumeの容量予約、容量不足時の動作、upload完了後の録画ファイルとvolumeの具体的な削除手順
 
 ### 4. 録画開始・停止と同期方式
 
@@ -94,7 +94,7 @@ RIST Main Profile、H.264、30 fps、およびvideo gatewayに`ristreceiver`を�
 Kubernetes Operatorであることは決まっているが、reconcile対象と生成物の契約がない。
 
 - DBを正とするoperatorがwatch/reconcileする対象。CRDを使用するか、使用するならschemaとDBとの正の所在
-- Session/camera/takeごとに生成するDeployment/Pod/Job/Service/PVC等と所有関係
+- Session/camera/takeごとに生成するDeployment/Pod/Job/Service等と所有関係。video worker Podごとに1つのPVCを事前作成し、workerとuploaderを同じPod内の別containerにすることは決まっている
 - gatewayとcameraごとのworkerの配置単位、namespace、resource naming、labels/annotations、owner references
 - Service type、port割当、外部IP/hostの取得方法、割当失敗・変更時のURL更新
 - image、command/args、設定値、Secret/ConfigMap、resource request/limit、security context
@@ -118,7 +118,7 @@ console API自体は認証・認可を行わず、tailnetでアクセス制御�
 
 - APIを到達可能にするtailnetのACL、利用者・service identity、操作権限
 - CSRF/CORS方針と、browserからconsole APIへ到達させる構成
-- RIST、gateway―worker、worker―uploader間通信の暗号化・相互認証の要否
+- RIST、gateway―worker間通信の暗号化・相互認証、およびshared volumeに対する両containerのアクセス制御
 - camera URLを知る第三者の接続を許すか、cameraごとのcredentialとrotation/revoke
 - LiveKit短期tokenのTTL、subject、room/track権限、一度きりか、更新方法
 - Kubernetes Secretの生成・配布・rotation、ログやUIでのsecret masking
