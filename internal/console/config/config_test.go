@@ -14,7 +14,7 @@ func TestFromEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromEnvironment() error = %v", err)
 	}
-	if config.ListenAddress != ":8080" || config.ShutdownWait != 5*time.Second {
+	if config.ListenAddress != ":8080" || config.GRPCAddress != ":9090" || config.ShutdownWait != 5*time.Second {
 		t.Fatalf("FromEnvironment() = %+v", config)
 	}
 }

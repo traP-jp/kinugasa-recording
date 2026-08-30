@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,10 +13,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
+
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/api"
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/config"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
+	"github.com/traP-jp/kinugasa-recording/internal/console/workercontrol"
 	"github.com/traP-jp/kinugasa-recording/internal/operator"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -49,6 +54,20 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return err
 	}
 	repository := postgres.New(pool)
+	grpcListener, err := net.Listen("tcp", serverConfig.GRPCAddress)
+	if err != nil {
+		return fmt.Errorf("listen for worker gRPC: %w", err)
+	}
+	defer func() { _ = grpcListener.Close() }()
+	grpcServer := grpc.NewServer(
+		grpc.MaxRecvMsgSize(4<<20),
+		grpc.MaxSendMsgSize(4<<20),
+	)
+	workerRegistry := workercontrol.NewRegistry()
+	workerv1.RegisterConsoleVideoWorkerServiceServer(
+		grpcServer,
+		workercontrol.NewServer(repository, workerRegistry),
+	)
 	operatorConfig, err := config.OperatorFromEnvironment()
 	if err != nil {
 		return fmt.Errorf("load operator configuration: %w", err)
@@ -82,6 +101,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger.Info("console server listening", "address", serverConfig.ListenAddress)
 		serveError <- server.ListenAndServe()
 	}()
+	grpcServeError := make(chan error, 1)
+	go func() {
+		logger.Info("worker control gRPC listening", "address", serverConfig.GRPCAddress)
+		grpcServeError <- grpcServer.Serve(grpcListener)
+	}()
 	var operatorError <-chan error
 	if operatorManager != nil {
 		operatorErrors := make(chan error, 1)
@@ -98,6 +122,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if !errors.Is(err, http.ErrServerClosed) {
 			componentError = fmt.Errorf("serve HTTP: %w", err)
 		}
+	case err := <-grpcServeError:
+		if !errors.Is(err, grpc.ErrServerStopped) {
+			componentError = fmt.Errorf("serve worker gRPC: %w", err)
+		}
 	case err := <-operatorError:
 		if err != nil {
 			componentError = fmt.Errorf("run Kubernetes operator: %w", err)
@@ -109,6 +137,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer cancelShutdown()
 	if err := server.Shutdown(shutdownContext); err != nil {
 		componentError = errors.Join(componentError, fmt.Errorf("shut down HTTP server: %w", err))
+	}
+	if err := stopGRPC(shutdownContext, grpcServer); err != nil {
+		componentError = errors.Join(componentError, err)
 	}
 	return componentError
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
@@ -21,6 +22,7 @@ const (
 	workerTestWorkerID2 = "019c250e-5a60-7770-afad-af8697c0b37a"
 	workerTestEventID1  = "019c250e-60c4-7747-b886-bd17d9c72588"
 	workerTestEventID2  = "019c250e-67d7-755d-a00a-e11e891f6228"
+	workerTestCommandID = "019c250e-6cf6-7db7-837f-10e37742097f"
 )
 
 func TestWorkerRegistrationAndEventsAreTransactional(t *testing.T) {
@@ -165,6 +167,60 @@ func TestRegisterWorkerRejectsMismatchedIdentity(t *testing.T) {
 
 	if err := store.RegisterWorker(context.Background(), hello, now); !errors.Is(err, repository.ErrWorkerIdentityMismatch) {
 		t.Fatalf("RegisterWorker() error = %v, want ErrWorkerIdentityMismatch", err)
+	}
+}
+
+func TestSaveCommandResultIsIdempotent(t *testing.T) {
+	pool := resetDatabase(t)
+	store := New(pool)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 31, 2, 0, 0, 0, time.UTC)
+	createWorkerDomainState(t, store, now)
+	if err := store.RegisterWorker(ctx, workerHello(workerTestWorkerID1, now), now); err != nil {
+		t.Fatalf("RegisterWorker() error = %v", err)
+	}
+	command := &workerv1.WorkerCommand{
+		CommandId: workerTestCommandID,
+		IssuedAt:  timestamppb.New(now),
+		Command: &workerv1.WorkerCommand_FinishRecording{FinishRecording: &workerv1.FinishRecording{
+			TakeId: workerTestTakeID,
+		}},
+	}
+	encodedCommand, err := proto.Marshal(command)
+	if err != nil {
+		t.Fatalf("marshal command: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO worker_commands (
+			command_id, camera_identity_id, take_id, issued_at, payload
+		) VALUES ($1, $2, $3, $4, $5)`,
+		workerTestCommandID, workerTestCameraID, workerTestTakeID, now, encodedCommand,
+	); err != nil {
+		t.Fatalf("insert worker command: %v", err)
+	}
+	result := &workerv1.CommandResult{
+		CommandId:   workerTestCommandID,
+		Status:      workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED,
+		CompletedAt: timestamppb.New(now.Add(time.Second)),
+	}
+	if err := store.SaveCommandResult(ctx, workerTestWorkerID1, result); err != nil {
+		t.Fatalf("SaveCommandResult() error = %v", err)
+	}
+	if err := store.SaveCommandResult(ctx, workerTestWorkerID1, proto.Clone(result).(*workerv1.CommandResult)); err != nil {
+		t.Fatalf("SaveCommandResult(duplicate) error = %v", err)
+	}
+	var commandStatus string
+	if err := pool.QueryRow(ctx, `
+		SELECT status FROM worker_commands WHERE command_id = $1`, workerTestCommandID,
+	).Scan(&commandStatus); err != nil {
+		t.Fatalf("query command status: %v", err)
+	}
+	if commandStatus != "applied" {
+		t.Fatalf("command status = %q, want applied", commandStatus)
+	}
+	result.Status = workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_ALREADY_APPLIED
+	if err := store.SaveCommandResult(ctx, workerTestWorkerID1, result); !errors.Is(err, repository.ErrWorkerCommandMismatch) {
+		t.Fatalf("SaveCommandResult(different) error = %v, want ErrWorkerCommandMismatch", err)
 	}
 }
 

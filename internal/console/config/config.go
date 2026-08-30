@@ -8,12 +8,14 @@ import (
 
 const (
 	defaultListenAddress   = ":8080"
+	defaultGRPCAddress     = ":9090"
 	defaultShutdownTimeout = 10 * time.Second
 )
 
 type Config struct {
 	DatabaseURL   string
 	ListenAddress string
+	GRPCAddress   string
 	ShutdownWait  time.Duration
 }
 
@@ -21,6 +23,7 @@ func FromEnvironment() (Config, error) {
 	config := Config{
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
 		ListenAddress: valueOrDefault(os.Getenv("LISTEN_ADDRESS"), defaultListenAddress),
+		GRPCAddress:   valueOrDefault(os.Getenv("GRPC_LISTEN_ADDRESS"), defaultGRPCAddress),
 		ShutdownWait:  defaultShutdownTimeout,
 	}
 	if config.DatabaseURL == "" {
