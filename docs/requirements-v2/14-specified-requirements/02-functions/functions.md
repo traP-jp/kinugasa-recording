@@ -53,6 +53,10 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 - video worker containerが正常終了した場合もPodを終了してはならず、video uploader containerは進行中または未開始のuploadを継続する。正常終了したvideo worker containerを再起動してはならない。
 - video worker Podとshared volumeは、そのvolume上にあるすべての録画ファイルのuploadがcompletedまたはerroredになり、video uploader containerが終了するまで削除してはならない。
 
+## console server - video worker間通信
+
+console serverとvideo worker間のcommand、event、状態同期および障害時の再送規則は、[console-server - video-worker gRPC contract](../../../../contracts/console-video-worker/README.md)に定義する。
+
 ## reconciliation
 
 - console serverは、DBに永続化されたドメイン状態を正としてKubernetes上のリソースをreconcileする。

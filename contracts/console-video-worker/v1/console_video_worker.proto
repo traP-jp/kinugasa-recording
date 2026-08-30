@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+package kinugasa.recording.console_video_worker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1;console_video_workerv1";
+
+// ConsoleVideoWorkerService is implemented by console-server. A video-worker
+// opens one Control stream at startup and keeps it open for its process
+// lifetime.
+service ConsoleVideoWorkerService {
+  rpc Control(stream WorkerMessage) returns (stream ConsoleMessage);
+}
+
+message WorkerMessage {
+  oneof payload {
+    WorkerHello hello = 1;
+    WorkerEvent event = 2;
+    CommandResult command_result = 3;
+  }
+}
+
+message ConsoleMessage {
+  oneof payload {
+    WorkerRegistered registered = 1;
+    WorkerEventsAcknowledged events_acknowledged = 2;
+    WorkerCommand command = 3;
+  }
+}
+
+// WorkerHello must be the first message on every Control stream. The snapshot
+// lets console-server converge after either endpoint has restarted.
+message WorkerHello {
+  // UUID generated once at video-worker process startup.
+  string worker_id = 1;
+
+  // Immutable database identifiers injected into the Pod by console-server.
+  string session_id = 2;
+  string camera_identity_id = 3;
+
+  google.protobuf.Timestamp observed_at = 4;
+  WorkerSnapshot snapshot = 5;
+
+  // The snapshot includes the effects of every event from this worker through
+  // this sequence number. The sequence starts at 1 for each worker_id.
+  uint64 last_event_sequence = 6;
+}
+
+message WorkerRegistered {
+  string worker_id = 1;
+  google.protobuf.Timestamp registered_at = 2;
+}
+
+message WorkerSnapshot {
+  InputStatus input = 1;
+
+  // Absent when this worker has never handled a take, or after the latest
+  // terminal recording event has been acknowledged.
+  RecordingStatus recording = 2;
+}
+
+message InputStatus {
+  InputState state = 1;
+
+  // Present if and only if state is INPUT_STATE_ERROR.
+  WorkerError error = 2;
+}
+
+enum InputState {
+  INPUT_STATE_UNSPECIFIED = 0;
+  INPUT_STATE_WAITING = 1;
+  INPUT_STATE_CONNECTED = 2;
+  INPUT_STATE_ERROR = 3;
+}
+
+message RecordingStatus {
+  string take_id = 1;
+  RecordingState state = 2;
+
+  // Set after the first frame has been committed to the recording pipeline.
+  google.protobuf.Timestamp started_at = 3;
+
+  // Set only for a terminal state.
+  google.protobuf.Timestamp finished_at = 4;
+
+  // Set only for RECORDING_STATE_FINISHED. The file has been flushed, closed,
+  // and made visible to video-uploader before this status is emitted.
+  FinalizedFile finalized_file = 5;
+
+  // Present if and only if state is RECORDING_STATE_ERROR.
+  WorkerError error = 6;
+}
+
+enum RecordingState {
+  RECORDING_STATE_UNSPECIFIED = 0;
+  RECORDING_STATE_STARTING = 1;
+  RECORDING_STATE_RECORDING = 2;
+  RECORDING_STATE_FINALIZING = 3;
+  RECORDING_STATE_FINISHED = 4;
+  RECORDING_STATE_ERROR = 5;
+}
+
+message FinalizedFile {
+  // Slash-separated path relative to the shared-volume mount. It must equal
+  // the path in the corresponding StartRecording command.
+  string relative_path = 1;
+
+  // The v1 recording artifact is an MP4 file.
+  string media_type = 2;
+}
+
+message WorkerEvent {
+  // UUID that stays unchanged when this event is replayed.
+  string event_id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+
+  // Strictly increasing and gap-free within one worker_id.
+  uint64 sequence = 3;
+
+  oneof event {
+    InputStatus input_status_changed = 4;
+    RecordingStatus recording_status_changed = 5;
+  }
+}
+
+message WorkerEventsAcknowledged {
+  // Events are acknowledged only after their effects have been committed by
+  // console-server. Unknown and already acknowledged IDs are harmless.
+  repeated string event_ids = 1;
+}
+
+message WorkerCommand {
+  // UUID used as the idempotency key for the lifetime of the shared volume.
+  string command_id = 1;
+  google.protobuf.Timestamp issued_at = 2;
+
+  oneof command {
+    StartRecording start_recording = 3;
+    FinishRecording finish_recording = 4;
+    Shutdown shutdown = 5;
+  }
+}
+
+message StartRecording {
+  string take_id = 1;
+
+  // Slash-separated path relative to the shared-volume mount. It must be a
+  // normalized path, must not contain a component equal to "..", and must not
+  // be absolute.
+  string relative_path = 2;
+}
+
+message FinishRecording {
+  string take_id = 1;
+}
+
+message Shutdown {
+  // Operator-facing reason recorded in logs. It is not a credential and must
+  // not contain secrets.
+  string reason = 1;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandResultStatus status = 2;
+  google.protobuf.Timestamp completed_at = 3;
+
+  // Present for COMMAND_RESULT_STATUS_REJECTED and
+  // COMMAND_RESULT_STATUS_FAILED; absent otherwise.
+  WorkerError error = 4;
+}
+
+enum CommandResultStatus {
+  COMMAND_RESULT_STATUS_UNSPECIFIED = 0;
+  COMMAND_RESULT_STATUS_APPLIED = 1;
+  COMMAND_RESULT_STATUS_ALREADY_APPLIED = 2;
+  COMMAND_RESULT_STATUS_REJECTED = 3;
+  COMMAND_RESULT_STATUS_FAILED = 4;
+}
+
+message WorkerError {
+  ErrorCode code = 1;
+
+  // Operator-facing detail. It must not contain credentials or raw media.
+  string message = 2;
+  bool retryable = 3;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INVALID_COMMAND = 1;
+  ERROR_CODE_INPUT_UNAVAILABLE = 2;
+  ERROR_CODE_UNSUPPORTED_VIDEO_CODEC = 3;
+  ERROR_CODE_UNSUPPORTED_FRAME_RATE = 4;
+  ERROR_CODE_INPUT_DISCONNECTED = 5;
+  ERROR_CODE_RECORDING_ALREADY_ACTIVE = 6;
+  ERROR_CODE_TAKE_MISMATCH = 7;
+  ERROR_CODE_MEDIA_PIPELINE_FAILURE = 8;
+  ERROR_CODE_STORAGE_FAILURE = 9;
+  ERROR_CODE_FINALIZATION_FAILURE = 10;
+  ERROR_CODE_INTERNAL = 11;
+  ERROR_CODE_RECORDING_INTERRUPTED = 12;
+}
