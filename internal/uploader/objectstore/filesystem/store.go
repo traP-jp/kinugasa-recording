@@ -23,7 +23,7 @@ func New(root string) (*Store, error) {
 	return &Store{root: absolute}, nil
 }
 
-func (s *Store) Put(ctx context.Context, key string, source io.Reader, size int64, _ string) error {
+func (s *Store) Put(ctx context.Context, key string, source io.Reader, size int64, _, _ string) error {
 	target, err := storage.ResolvePath(s.root, key)
 	if err != nil {
 		return err

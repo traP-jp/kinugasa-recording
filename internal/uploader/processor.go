@@ -20,7 +20,7 @@ type Queue interface {
 }
 
 type ObjectStore interface {
-	Put(context.Context, string, io.Reader, int64, string) error
+	Put(context.Context, string, io.Reader, int64, string, string) error
 }
 
 type Processor struct {
@@ -108,7 +108,7 @@ func (p *Processor) upload(ctx context.Context, manifest *uploadqueue.Manifest) 
 	}
 	verificationHash := sha256.New()
 	reader := io.TeeReader(io.LimitReader(file, size+1), verificationHash)
-	if err := p.objects.Put(ctx, objectKey, reader, size, "video/mp4"); err != nil {
+	if err := p.objects.Put(ctx, objectKey, reader, size, digest, "video/mp4"); err != nil {
 		return fmt.Errorf("put recording object: %w", err)
 	}
 	if hex.EncodeToString(verificationHash.Sum(nil)) != digest {

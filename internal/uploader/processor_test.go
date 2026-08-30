@@ -86,7 +86,7 @@ func TestProcessorRetriesThenPersistsTerminalFailure(t *testing.T) {
 
 type failingObjectStore struct{}
 
-func (failingObjectStore) Put(context.Context, string, io.Reader, int64, string) error {
+func (failingObjectStore) Put(context.Context, string, io.Reader, int64, string, string) error {
 	return errors.New("temporary object store failure")
 }
 
