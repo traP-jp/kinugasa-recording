@@ -231,6 +231,29 @@ func (r *Recorder) Active() bool {
 	return r.active != nil
 }
 
+func (r *Recorder) Abort() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == nil {
+		return nil
+	}
+	current := r.active
+	_ = current.command.Process.Kill()
+	waitError := <-current.done
+	r.active = nil
+	removeError := os.Remove(current.temporaryPath)
+	if removeError != nil && !errors.Is(removeError, os.ErrNotExist) {
+		return fmt.Errorf("remove aborted recording: %w", removeError)
+	}
+	if waitError != nil {
+		var exitError *exec.ExitError
+		if !errors.As(waitError, &exitError) {
+			return fmt.Errorf("abort FFmpeg recording: %w", waitError)
+		}
+	}
+	return nil
+}
+
 func (r *Recorder) prepareTarget(relativePath string) (string, error) {
 	targetPath, err := storage.ResolvePath(r.config.SharedVolume, relativePath)
 	if err != nil {

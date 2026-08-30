@@ -211,3 +211,32 @@ func TestCommandResultIsImmutable(t *testing.T) {
 		t.Fatal("SaveCommandResult(different result) error = nil")
 	}
 }
+
+func TestRecordingStatusReturnsACopy(t *testing.T) {
+	store, err := Open(t.TempDir(), workerID1, stateTestTime)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	if _, found, err := store.RecordingStatus(); err != nil || found {
+		t.Fatalf("RecordingStatus(initial) found/error = %v/%v", found, err)
+	}
+	status := &workerv1.RecordingStatus{
+		TakeId: "take-id",
+		State:  workerv1.RecordingState_RECORDING_STATE_STARTING,
+	}
+	if err := store.SetRecordingStatus(status); err != nil {
+		t.Fatalf("SetRecordingStatus() error = %v", err)
+	}
+	loaded, found, err := store.RecordingStatus()
+	if err != nil || !found || !proto.Equal(loaded, status) {
+		t.Fatalf("RecordingStatus() = %+v, %v, %v", loaded, found, err)
+	}
+	loaded.TakeId = "changed"
+	reloaded, _, err := store.RecordingStatus()
+	if err != nil {
+		t.Fatalf("RecordingStatus(reload) error = %v", err)
+	}
+	if reloaded.TakeId != "take-id" {
+		t.Fatalf("stored recording was mutated: %+v", reloaded)
+	}
+}

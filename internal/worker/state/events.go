@@ -28,6 +28,19 @@ func (s *Store) SetRecordingStatus(status *workerv1.RecordingStatus) error {
 	return nil
 }
 
+func (s *Store) RecordingStatus() (*workerv1.RecordingStatus, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.state.Recording) == 0 {
+		return nil, false, nil
+	}
+	status := &workerv1.RecordingStatus{}
+	if err := proto.Unmarshal(s.state.Recording, status); err != nil {
+		return nil, false, fmt.Errorf("unmarshal recording status: %w", err)
+	}
+	return status, true, nil
+}
+
 func (s *Store) AppendEvent(event *workerv1.WorkerEvent) (*workerv1.WorkerEvent, error) {
 	if event == nil {
 		return nil, fmt.Errorf("event must be set")
