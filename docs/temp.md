@@ -30,7 +30,7 @@ video gatewayからcameraごとのvideo workerへのRTP中継、LiveKitへの中
 
 RIST Main Profile、H.264、30 fps、およびvideo gatewayに`ristreceiver`を使うことまでは指定されている（`requirements-v2/14-specified-requirements/01-external-interfaces/external-interfaces.md`、`requirements-v2/14-specified-requirements/06-design-constraints/design-constraints.md`）が、受信可能なbitstreamを確定できない。
 
-- RISTのURL形式、listen/connect mode、具体的なMain Profile設定、暗号化・認証・secretの有無
+- RISTのURL形式、listen/connect mode、具体的なMain Profile設定
 - RIST上のcontainer/encapsulationとprogram/stream選択規則
 - H.264 profile/level、解像度、pixel format、bitrate、GOP/B-frame、VFR可否
 - 「30 fps」の許容差、判定に使う期間、接続後いつまでに拒否するか
@@ -112,13 +112,9 @@ Kubernetes Operatorであることは決まっているが、reconcile対象と�
 - 一時障害と永久障害の分類、最大試行回数、手動retry APIの要否
 - completed/errored後のローカルファイルと未完multipart uploadのcleanup
 
-### 9. 認証・認可・通信保護
+### 9. 外部アクセスとsecret管理
 
-console API自体は認証・認可を行わず、tailnetでアクセス制御する方針である（`contracts/console-api/openapi.yaml`）。ただし、具体的な信頼境界と他の通信の保護が不足している。
-
-- APIを到達可能にするtailnetのACL、利用者・service identity、操作権限
 - CSRF/CORS方針と、browserからconsole APIへ到達させる構成
-- RIST、gateway―worker間通信の暗号化・相互認証、およびshared volumeに対する両containerのアクセス制御
 - camera URLを知る第三者の接続を許すか、cameraごとのcredentialとrotation/revoke
 - LiveKit短期tokenのTTL、subject、room/track権限、一度きりか、更新方法
 - Kubernetes Secretの生成・配布・rotation、ログやUIでのsecret masking
@@ -209,7 +205,7 @@ drift検証には明示的なTBDが残っている（`requirements-v2/14-specifi
 5. Session、CameraConnection、Take、VideoFileの全状態遷移とtransaction境界は何か。
 6. Kubernetes上に作るresource、その所有関係、Service公開方式は何か。
 7. DB、LiveKit、object storage、Kubernetes、MediaMTX、libristの対応versionと設定は何か。
-8. tailnetを含む信頼境界、token/secret管理、各service間通信の保護方式は何か。
+8. camera credential、LiveKit token、Kubernetes Secretおよび外部公開するService/APIの管理方式は何か。
 9. 想定最大camera数・解像度・bitrate・録画時間と、受け入れ可能な同期差・frame落ち・復旧時間は何か。
 
 この9点が決まるまでは、型やコンポーネント境界を仮定したprototypeは可能でも、相互運用可能な本実装とその完了判定は確定できない。

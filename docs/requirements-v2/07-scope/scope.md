@@ -17,3 +17,4 @@
 - camera間のフレーム単位の同期
 - cameraクライアントの開発
 - 後段処理の実装
+- application container内でのシステム内部通信に対する認証・認可の実装（Istioへ委譲する）
