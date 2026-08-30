@@ -49,6 +49,11 @@ func TestQueuePublishesAndUpdatesManifestDurably(t *testing.T) {
 	if err != nil || len(manifests) != 1 || !manifests[0].Terminal() {
 		t.Fatalf("List(restart) = %+v, %v", manifests, err)
 	}
+	reportedAt := finishedAt.Add(time.Minute)
+	manifest.ReportedAt = &reportedAt
+	if err := reopened.Save(manifest); err != nil {
+		t.Fatalf("Save(report acknowledgement) error = %v", err)
+	}
 	manifest.Error = "changed terminal result"
 	if err := reopened.Save(manifest); err == nil {
 		t.Fatal("Save(changed terminal manifest) error = nil")

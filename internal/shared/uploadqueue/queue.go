@@ -136,8 +136,13 @@ func (q *Queue) Save(manifest Manifest) error {
 	if !immutableEqual(existing, manifest) {
 		return fmt.Errorf("upload manifest identity fields are immutable")
 	}
-	if existing.Terminal() && existing != manifest {
-		return fmt.Errorf("terminal upload manifest is immutable")
+	if existing.Terminal() {
+		if !sameTerminalResult(existing, manifest) {
+			return fmt.Errorf("terminal upload result is immutable")
+		}
+		if existing.ReportedAt != nil && (manifest.ReportedAt == nil || !existing.ReportedAt.Equal(*manifest.ReportedAt)) {
+			return fmt.Errorf("upload report acknowledgement is immutable")
+		}
 	}
 	return q.write(path, manifest)
 }
@@ -265,6 +270,12 @@ func immutableEqual(left, right Manifest) bool {
 		left.CameraIdentityID == right.CameraIdentityID && left.TakeID == right.TakeID &&
 		left.RelativePath == right.RelativePath && left.MediaType == right.MediaType &&
 		left.StartedAt.Equal(right.StartedAt) && left.FinishedAt.Equal(right.FinishedAt)
+}
+
+func sameTerminalResult(left, right Manifest) bool {
+	return immutableEqual(left, right) && left.State == right.State && left.Attempts == right.Attempts &&
+		left.ObjectKey == right.ObjectKey && left.SHA256 == right.SHA256 && left.Size == right.Size &&
+		left.Error == right.Error
 }
 
 func syncDirectory(path string) error {

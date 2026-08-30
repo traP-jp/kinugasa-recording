@@ -78,6 +78,9 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
 	)
 	uploaderEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
+	uploaderEnvironment = append(uploaderEnvironment,
+		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
+	)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
