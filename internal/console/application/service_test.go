@@ -202,6 +202,10 @@ func (r *repositoryStub) DeleteCamera(context.Context, string, string) error {
 	return nil
 }
 
+func (r *repositoryStub) ActivateCameraConnection(context.Context, string, string) error {
+	return nil
+}
+
 func (r *repositoryStub) CreateTake(_ context.Context, request repository.StartTakeRequest) error {
 	r.startTake = request
 	return nil

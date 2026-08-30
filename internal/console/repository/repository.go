@@ -50,4 +50,5 @@ type Repository interface {
 	ListCameras(context.Context, string) ([]Camera, error)
 	GetCamera(context.Context, string, string) (Camera, error)
 	DeleteCamera(context.Context, string, string) error
+	ActivateCameraConnection(context.Context, string, string) error
 }

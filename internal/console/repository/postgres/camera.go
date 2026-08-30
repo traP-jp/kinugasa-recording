@@ -176,6 +176,27 @@ func (s *Store) DeleteCamera(ctx context.Context, sessionName, cameraName string
 	return nil
 }
 
+func (s *Store) ActivateCameraConnection(ctx context.Context, cameraID, cameraURL string) error {
+	commandTag, err := s.pool.Exec(ctx, `
+		UPDATE camera_connections SET url = $2, status = 'waiting', error = NULL
+		WHERE camera_identity_id = $1 AND status = 'activating'`, cameraID, cameraURL)
+	if err != nil {
+		return fmt.Errorf("activate camera connection: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		var exists bool
+		if err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM camera_connections WHERE camera_identity_id = $1)`, cameraID,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("find camera connection for activation: %w", err)
+		}
+		if !exists {
+			return repository.ErrNotFound
+		}
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(...any) error
 }

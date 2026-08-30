@@ -36,16 +36,21 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 	if err != nil {
 		return OperatorConfig{}, fmt.Errorf("VIDEO_WORKER_RTCP_PORT: %w", err)
 	}
+	ristPort, err := portOrDefault(os.Getenv("VIDEO_GATEWAY_RIST_PORT"), 9000)
+	if err != nil {
+		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_RIST_PORT: %w", err)
+	}
 	volumeSize, err := resource.ParseQuantity(valueOrDefault(os.Getenv("SHARED_VOLUME_SIZE"), "100Gi"))
 	if err != nil || volumeSize.Sign() <= 0 {
 		return OperatorConfig{}, fmt.Errorf("SHARED_VOLUME_SIZE must be a positive Kubernetes quantity")
 	}
 
+	gatewayImage := os.Getenv("VIDEO_GATEWAY_IMAGE")
 	workerImage := os.Getenv("VIDEO_WORKER_IMAGE")
 	uploaderImage := os.Getenv("VIDEO_UPLOADER_IMAGE")
 	consoleGRPCAddress := os.Getenv("CONSOLE_GRPC_ADDRESS")
-	if workerImage == "" || uploaderImage == "" || consoleGRPCAddress == "" {
-		return OperatorConfig{}, fmt.Errorf("VIDEO_WORKER_IMAGE, VIDEO_UPLOADER_IMAGE, and CONSOLE_GRPC_ADDRESS are required")
+	if gatewayImage == "" || workerImage == "" || uploaderImage == "" || consoleGRPCAddress == "" {
+		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_IMAGE, VIDEO_WORKER_IMAGE, VIDEO_UPLOADER_IMAGE, and CONSOLE_GRPC_ADDRESS are required")
 	}
 	return OperatorConfig{
 		Enabled: true,
@@ -55,6 +60,7 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 			MetricsAddress:     valueOrDefault(os.Getenv("OPERATOR_METRICS_ADDRESS"), ":8081"),
 			HealthProbeAddress: valueOrDefault(os.Getenv("OPERATOR_HEALTH_ADDRESS"), ":8082"),
 			CameraConnection: cameraconnection.Config{
+				GatewayImage:          gatewayImage,
 				WorkerImage:           workerImage,
 				UploaderImage:         uploaderImage,
 				ConsoleGRPCAddress:    consoleGRPCAddress,
@@ -64,6 +70,7 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 				SharedVolumeMountPath: os.Getenv("SHARED_VOLUME_MOUNT_PATH"),
 				RTPPort:               rtpPort,
 				RTCPPort:              rtcpPort,
+				RISTPort:              ristPort,
 			},
 		},
 	}, nil

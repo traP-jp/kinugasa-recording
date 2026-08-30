@@ -47,8 +47,8 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if err := fakeClient.Get(context.Background(), request.NamespacedName, &service); err != nil {
 		t.Fatalf("get Service: %v", err)
 	}
-	if service.Spec.ClusterIP != corev1.ClusterIPNone || len(service.Spec.Ports) != 2 {
-		t.Fatalf("RTP Service = %+v", service.Spec)
+	if service.Spec.Type != corev1.ServiceTypeLoadBalancer || len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Name != "rist" {
+		t.Fatalf("RIST Service = %+v", service.Spec)
 	}
 	assertControlledBy(t, &service, connection)
 
@@ -59,19 +59,20 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if pod.Spec.RestartPolicy != corev1.RestartPolicyOnFailure {
 		t.Fatalf("restartPolicy = %q, want OnFailure", pod.Spec.RestartPolicy)
 	}
-	if len(pod.Spec.InitContainers) != 0 || len(pod.Spec.Containers) != 2 {
+	if len(pod.Spec.InitContainers) != 0 || len(pod.Spec.Containers) != 3 {
 		t.Fatalf("Pod containers = %d regular, %d init", len(pod.Spec.Containers), len(pod.Spec.InitContainers))
 	}
-	if pod.Spec.Containers[0].Name != workerContainer || pod.Spec.Containers[1].Name != uploaderContainer {
-		t.Fatalf("Pod containers = %q, %q", pod.Spec.Containers[0].Name, pod.Spec.Containers[1].Name)
+	if pod.Spec.Containers[0].Name != gatewayContainer || pod.Spec.Containers[1].Name != workerContainer ||
+		pod.Spec.Containers[2].Name != uploaderContainer {
+		t.Fatalf("Pod containers = %q, %q, %q", pod.Spec.Containers[0].Name, pod.Spec.Containers[1].Name, pod.Spec.Containers[2].Name)
 	}
-	if len(pod.Spec.Volumes) != 1 || pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != connection.Name {
+	if len(pod.Spec.Volumes) != 2 || pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != connection.Name ||
+		pod.Spec.Volumes[1].EmptyDir == nil {
 		t.Fatalf("Pod volumes = %+v", pod.Spec.Volumes)
 	}
-	for _, container := range pod.Spec.Containers {
-		if len(container.VolumeMounts) != 1 || container.VolumeMounts[0].Name != sharedVolumeName {
-			t.Fatalf("container %q volume mounts = %+v", container.Name, container.VolumeMounts)
-		}
+	if len(pod.Spec.Containers[0].VolumeMounts) != 1 || len(pod.Spec.Containers[1].VolumeMounts) != 2 ||
+		len(pod.Spec.Containers[2].VolumeMounts) != 1 {
+		t.Fatalf("Pod container volume mounts = %+v", pod.Spec.Containers)
 	}
 	assertControlledBy(t, &pod, connection)
 
@@ -96,6 +97,15 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	}
 	if len(pods.Items) != 1 {
 		t.Fatalf("Pod count after second reconcile = %d, want 1", len(pods.Items))
+	}
+}
+
+func TestCameraURLForLoadBalancerService(t *testing.T) {
+	service := &corev1.Service{Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
+		Ingress: []corev1.LoadBalancerIngress{{Hostname: "camera.example.com"}},
+	}}}
+	if got := cameraURLForService(service, 9000); got != "rist://camera.example.com:9000" {
+		t.Fatalf("cameraURLForService() = %q", got)
 	}
 }
 
@@ -192,6 +202,7 @@ func deletingConnection() *recordingv1alpha1.CameraConnection {
 
 func testConfig() Config {
 	return Config{
+		GatewayImage:        "registry.example/video-gateway:test",
 		WorkerImage:         "registry.example/video-worker:test",
 		UploaderImage:       "registry.example/video-uploader:test",
 		ConsoleGRPCAddress:  "console-server.recording.svc:9090",

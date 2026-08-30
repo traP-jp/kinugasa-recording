@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"time"
 
@@ -84,7 +85,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	connection.Status.ObservedGeneration = connection.Generation
 	connection.Status.WorkerPodName = connection.Name
 	connection.Status.PVCName = connection.Name
-	if connection.Status.Phase == "" {
+	var service corev1.Service
+	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &service); err != nil {
+		return r.resourceFailure(ctx, &connection, fmt.Errorf("load RIST Service status: %w", err))
+	}
+	if cameraURL := cameraURLForService(&service, config.RISTPort); cameraURL != "" {
+		connection.Status.CameraURL = cameraURL
+		connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
+	} else {
+		connection.Status.CameraURL = ""
 		connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseActivating
 	}
 	meta.SetStatusCondition(&connection.Status.Conditions, metav1.Condition{
@@ -92,7 +101,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: connection.Generation,
 		Reason:             "Provisioned",
-		Message:            "worker Pod, RTP Service, and shared PVC are present",
+		Message:            "gateway and worker Pod, RIST Service, and shared PVC are present",
 	})
 	if !reflect.DeepEqual(base.Status, connection.Status) {
 		if err := r.Status().Patch(ctx, &connection, client.MergeFrom(base)); err != nil {
@@ -100,6 +109,20 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func cameraURLForService(service *corev1.Service, port int32) string {
+	if len(service.Status.LoadBalancer.Ingress) == 0 {
+		return ""
+	}
+	address := service.Status.LoadBalancer.Ingress[0].IP
+	if address == "" {
+		address = service.Status.LoadBalancer.Ingress[0].Hostname
+	}
+	if address == "" {
+		return ""
+	}
+	return "rist://" + net.JoinHostPort(address, fmt.Sprintf("%d", port))
 }
 
 func (r *Reconciler) ensurePVC(ctx context.Context, connection *recordingv1alpha1.CameraConnection, config Config) error {
@@ -138,6 +161,8 @@ func (r *Reconciler) ensureService(ctx context.Context, connection *recordingv1a
 	if err := r.Get(ctx, key, &existing); err == nil {
 		base := existing.DeepCopy()
 		existing.Labels = desired.Labels
+		existing.Spec.Type = desired.Spec.Type
+		existing.Spec.ExternalTrafficPolicy = desired.Spec.ExternalTrafficPolicy
 		existing.Spec.Selector = desired.Spec.Selector
 		existing.Spec.Ports = desired.Spec.Ports
 		existing.Spec.PublishNotReadyAddresses = true

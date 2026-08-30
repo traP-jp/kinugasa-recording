@@ -18,6 +18,7 @@ const defaultSyncInterval = 30 * time.Second
 
 type CameraSource interface {
 	ListCameraResources(context.Context) ([]repository.CameraResource, error)
+	ActivateCameraConnection(context.Context, string, string) error
 }
 
 type Synchronizer struct {
@@ -70,8 +71,14 @@ func (s *Synchronizer) Sync(ctx context.Context) error {
 	for _, camera := range desiredCameras {
 		name := resourceName(camera)
 		desired[name] = camera
-		if err := s.ensureResource(ctx, name, camera); err != nil {
+		resource, err := s.ensureResource(ctx, name, camera)
+		if err != nil {
 			return err
+		}
+		if resource.Status.CameraURL != "" {
+			if err := s.Source.ActivateCameraConnection(ctx, string(camera.Identity.ID), resource.Status.CameraURL); err != nil {
+				return fmt.Errorf("activate camera connection %q: %w", name, err)
+			}
 		}
 	}
 
@@ -95,13 +102,13 @@ func (s *Synchronizer) ensureResource(
 	ctx context.Context,
 	name string,
 	camera repository.CameraResource,
-) error {
+) (*recordingv1alpha1.CameraConnection, error) {
 	key := client.ObjectKey{Namespace: s.Namespace, Name: name}
 	var existing recordingv1alpha1.CameraConnection
 	if err := s.Client.Get(ctx, key, &existing); err == nil {
-		return nil
+		return &existing, nil
 	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("get CameraConnection %q: %w", name, err)
+		return nil, fmt.Errorf("get CameraConnection %q: %w", name, err)
 	}
 
 	connection := &recordingv1alpha1.CameraConnection{
@@ -114,9 +121,9 @@ func (s *Synchronizer) ensureResource(
 		},
 	}
 	if err := s.Client.Create(ctx, connection); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("create CameraConnection %q: %w", name, err)
+		return nil, fmt.Errorf("create CameraConnection %q: %w", name, err)
 	}
-	return nil
+	return connection, nil
 }
 
 func resourceName(camera repository.CameraResource) string {

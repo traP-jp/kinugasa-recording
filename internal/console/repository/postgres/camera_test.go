@@ -59,6 +59,14 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 	if len(resources) != 1 || resources[0].SessionName != session.Name || resources[0].Identity.ID != identity.ID {
 		t.Fatalf("ListCameraResources() = %+v", resources)
 	}
+	if err := store.ActivateCameraConnection(ctx, string(identity.ID), "rist://camera.example.com:9000"); err != nil {
+		t.Fatalf("ActivateCameraConnection() error = %v", err)
+	}
+	activated, err := store.GetCamera(ctx, session.Name, identity.Name)
+	if err != nil || activated.Connection.Status != domain.CameraConnectionStatusWaiting ||
+		activated.Connection.URL != "rist://camera.example.com:9000" {
+		t.Fatalf("activated camera = %+v, %v", activated, err)
+	}
 
 	if err := store.DeleteCamera(ctx, session.Name, identity.Name); err != nil {
 		t.Fatalf("DeleteCamera() error = %v", err)

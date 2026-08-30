@@ -17,7 +17,9 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 	stale := &recordingv1alpha1.CameraConnection{
 		ObjectMeta: metav1.ObjectMeta{Name: "camera-stale", Namespace: "recording"},
 	}
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stale).Build()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
+		WithObjects(stale).Build()
 	source := &cameraSourceStub{resources: []repository.CameraResource{{
 		Camera: repository.Camera{
 			Identity: domain.CameraIdentity{
@@ -45,6 +47,11 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 		connection.Spec.SessionName != "session-1" || connection.Spec.CameraName != "camera-1" {
 		t.Fatalf("CameraConnection = %+v", connection)
 	}
+	connection.Status.CameraURL = "rist://camera.example.com:9000"
+	connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
+	if err := fakeClient.Status().Update(context.Background(), &connection); err != nil {
+		t.Fatalf("update CameraConnection status: %v", err)
+	}
 
 	if err := synchronizer.Sync(context.Background()); err != nil {
 		t.Fatalf("second Sync() error = %v", err)
@@ -56,11 +63,21 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 	if len(resources.Items) != 1 {
 		t.Fatalf("CameraConnection count after second sync = %d, want 1", len(resources.Items))
 	}
+	if source.activatedID != "019c240e-3eb4-72d6-a6fa-adfe1df795c8" || source.activatedURL != "rist://camera.example.com:9000" {
+		t.Fatalf("activated camera = %q, %q", source.activatedID, source.activatedURL)
+	}
 }
 
 type cameraSourceStub struct {
-	resources []repository.CameraResource
-	err       error
+	resources    []repository.CameraResource
+	err          error
+	activatedID  string
+	activatedURL string
+}
+
+func (s *cameraSourceStub) ActivateCameraConnection(_ context.Context, cameraID, cameraURL string) error {
+	s.activatedID, s.activatedURL = cameraID, cameraURL
+	return s.err
 }
 
 func (s *cameraSourceStub) ListCameraResources(context.Context) ([]repository.CameraResource, error) {
