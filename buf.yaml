@@ -1,5 +1,6 @@
 version: v2
 modules:
+  - path: contracts/console-video-uploader
   - path: contracts/console-video-worker
 lint:
   use:

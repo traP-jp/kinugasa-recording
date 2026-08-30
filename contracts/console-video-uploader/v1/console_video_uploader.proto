@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package kinugasa.recording.console_video_uploader.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1;console_video_uploaderv1";
+
+service ConsoleVideoUploaderService {
+  rpc ReportUpload(UploadReport) returns (UploadReportAcknowledged);
+}
+
+message UploadReport {
+  string session_id = 1;
+  string camera_identity_id = 2;
+  string take_id = 3;
+  string relative_path = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp finished_at = 6;
+  UploadState state = 7;
+  string object_key = 8;
+  bytes sha256 = 9;
+  int64 size = 10;
+  string error = 11;
+  google.protobuf.Timestamp observed_at = 12;
+}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  UPLOAD_STATE_COMPLETED = 1;
+  UPLOAD_STATE_ERRORED = 2;
+}
+
+message UploadReportAcknowledged {
+  string take_id = 1;
+  string camera_identity_id = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+}
