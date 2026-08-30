@@ -19,10 +19,12 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             buf
+            ffmpeg
             go
             golangci-lint
             gopls
             kubectl
+            mediamtx
             nodejs
             pnpm
             postgresql
