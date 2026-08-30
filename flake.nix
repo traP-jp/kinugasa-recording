@@ -17,7 +17,18 @@
 
       perSystem = {pkgs, ...}: {
         devShells.default = pkgs.mkShell {
-          packages = [];
+          packages = with pkgs; [
+            buf
+            go
+            golangci-lint
+            gopls
+            kubectl
+            nodejs
+            pnpm
+            protobuf
+            protoc-gen-go
+            protoc-gen-go-grpc
+          ];
         };
       };
     };
