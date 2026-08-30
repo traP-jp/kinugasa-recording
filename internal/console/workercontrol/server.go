@@ -57,6 +57,17 @@ func (s *Server) Control(stream workerv1.ConsoleVideoWorkerService_ControlServer
 	}); err != nil {
 		return err
 	}
+	pendingCommands, err := s.repository.PendingWorkerCommands(stream.Context(), hello.WorkerId)
+	if err != nil {
+		return workerRepositoryStatus("load pending worker commands", err)
+	}
+	for _, command := range pendingCommands {
+		if err := stream.Send(&workerv1.ConsoleMessage{
+			Payload: &workerv1.ConsoleMessage_Command{Command: command},
+		}); err != nil {
+			return err
+		}
+	}
 
 	incoming := receiveWorkerMessages(stream)
 	for {

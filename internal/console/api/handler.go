@@ -23,6 +23,9 @@ type Service interface {
 	ListCameras(context.Context, string) ([]repository.Camera, error)
 	GetCamera(context.Context, string, string) (repository.Camera, error)
 	DeleteCamera(context.Context, string, string) error
+	StartTake(context.Context, string, string, []string) (application.OngoingTakeView, error)
+	GetOngoingTake(context.Context, string) (*application.OngoingTakeView, error)
+	FinishTake(context.Context, string) (domain.FinishedTake, error)
 }
 
 type Handler struct {
@@ -44,6 +47,9 @@ func NewHandler(service Service, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{sessionName}/cameras", handler.createCamera)
 	mux.HandleFunc("DELETE /api/sessions/{sessionName}/cameras/{cameraName}", handler.deleteCamera)
 	mux.HandleFunc("GET /api/sessions/{sessionName}/cameras/{cameraName}/connection", handler.getCameraConnection)
+	mux.HandleFunc("GET /api/sessions/{sessionName}/ongoing-take", handler.getOngoingTake)
+	mux.HandleFunc("POST /api/sessions/{sessionName}/ongoing-take/start", handler.startTake)
+	mux.HandleFunc("POST /api/sessions/{sessionName}/ongoing-take/finish", handler.finishTake)
 	return mux
 }
 

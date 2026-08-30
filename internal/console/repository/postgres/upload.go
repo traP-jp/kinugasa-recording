@@ -112,16 +112,17 @@ func sameUploadResult(
 }
 
 func convergeFinishedTake(ctx context.Context, tx pgx.Tx, takeID, sessionID string) error {
-	var uploading, errored int
+	var expected, total, uploading, errored int
 	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FILTER (WHERE state = 'uploading'),
+		SELECT (SELECT count(*) FROM recording_cameras WHERE take_id = $1 AND session_id = $2),
+		       count(*),
+		       count(*) FILTER (WHERE state = 'uploading'),
 		       count(*) FILTER (WHERE state = 'errored')
-		FROM video_files
-		WHERE take_id = $1 AND session_id = $2`, takeID, sessionID,
-	).Scan(&uploading, &errored); err != nil {
+		FROM video_files WHERE take_id = $1 AND session_id = $2`, takeID, sessionID,
+	).Scan(&expected, &total, &uploading, &errored); err != nil {
 		return fmt.Errorf("summarize take uploads: %w", err)
 	}
-	if uploading != 0 {
+	if expected == 0 || total != expected || uploading != 0 {
 		return nil
 	}
 	if errored != 0 {

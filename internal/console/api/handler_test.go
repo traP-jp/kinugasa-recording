@@ -144,6 +144,47 @@ func TestRepositoryErrorsMapToContractStatuses(t *testing.T) {
 	}
 }
 
+func TestTakeEndpoints(t *testing.T) {
+	now := time.Date(2026, 8, 31, 13, 0, 0, 0, time.UTC)
+	view := application.OngoingTakeView{
+		Take: domain.OngoingTake{
+			ID: "019c2949-b039-739f-953b-3e4236cf44c5", Name: "take-1", StartedAt: now,
+			Cameras: []domain.RecordingCamera{{
+				CameraIdentityID: "019c2949-b9c5-748a-8477-0a0af012b26c",
+				State:            domain.RecordingCameraStateRecording, StartedAt: now,
+			}},
+		},
+		CameraNames: map[domain.CameraIdentityID]string{"019c2949-b9c5-748a-8477-0a0af012b26c": "camera-1"},
+	}
+	service := &serviceStub{
+		startTake: func(_ context.Context, sessionName, takeName string, cameraNames []string) (application.OngoingTakeView, error) {
+			if sessionName != "session-1" || takeName != "take-1" || len(cameraNames) != 1 {
+				t.Fatalf("StartTake(%q, %q, %v)", sessionName, takeName, cameraNames)
+			}
+			return view, nil
+		},
+		getOngoingTake: func(context.Context, string) (*application.OngoingTakeView, error) { return &view, nil },
+		finishTake: func(context.Context, string) (domain.FinishedTake, error) {
+			return domain.FinishedTake{ID: view.Take.ID, Name: view.Take.Name, State: domain.FinishedTakeStateUploading,
+				StartedAt: now, FinishedAt: now.Add(time.Minute)}, nil
+		},
+	}
+	handler := NewHandler(service, discardLogger())
+	startResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/ongoing-take/start",
+		`{"name":"take-1","cameraNames":["camera-1"]}`)
+	if startResponse.Code != http.StatusCreated {
+		t.Fatalf("start status = %d, body = %s", startResponse.Code, startResponse.Body.String())
+	}
+	getResponse := request(t, handler, http.MethodGet, "/api/sessions/session-1/ongoing-take", "")
+	if getResponse.Code != http.StatusOK || !strings.Contains(getResponse.Body.String(), `"type":"present"`) {
+		t.Fatalf("get ongoing response = %d %s", getResponse.Code, getResponse.Body.String())
+	}
+	finishResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/ongoing-take/finish", "")
+	if finishResponse.Code != http.StatusAccepted || !strings.Contains(finishResponse.Body.String(), `"state":"uploading"`) {
+		t.Fatalf("finish response = %d %s", finishResponse.Code, finishResponse.Body.String())
+	}
+}
+
 func request(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -167,13 +208,16 @@ func discardLogger() *slog.Logger {
 }
 
 type serviceStub struct {
-	createSession func(context.Context, string) (domain.Session, error)
-	listSessions  func(context.Context, application.PageRequest) (application.SessionPage, error)
-	getSession    func(context.Context, string) (repository.SessionDetail, error)
-	createCamera  func(context.Context, string, string) (repository.Camera, error)
-	listCameras   func(context.Context, string) ([]repository.Camera, error)
-	getCamera     func(context.Context, string, string) (repository.Camera, error)
-	deleteCamera  func(context.Context, string, string) error
+	createSession  func(context.Context, string) (domain.Session, error)
+	listSessions   func(context.Context, application.PageRequest) (application.SessionPage, error)
+	getSession     func(context.Context, string) (repository.SessionDetail, error)
+	createCamera   func(context.Context, string, string) (repository.Camera, error)
+	listCameras    func(context.Context, string) ([]repository.Camera, error)
+	getCamera      func(context.Context, string, string) (repository.Camera, error)
+	deleteCamera   func(context.Context, string, string) error
+	startTake      func(context.Context, string, string, []string) (application.OngoingTakeView, error)
+	getOngoingTake func(context.Context, string) (*application.OngoingTakeView, error)
+	finishTake     func(context.Context, string) (domain.FinishedTake, error)
 }
 
 func (s *serviceStub) CreateSession(ctx context.Context, name string) (domain.Session, error) {
@@ -202,4 +246,16 @@ func (s *serviceStub) GetCamera(ctx context.Context, sessionName, cameraName str
 
 func (s *serviceStub) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
 	return s.deleteCamera(ctx, sessionName, cameraName)
+}
+
+func (s *serviceStub) StartTake(ctx context.Context, sessionName, takeName string, cameraNames []string) (application.OngoingTakeView, error) {
+	return s.startTake(ctx, sessionName, takeName, cameraNames)
+}
+
+func (s *serviceStub) GetOngoingTake(ctx context.Context, sessionName string) (*application.OngoingTakeView, error) {
+	return s.getOngoingTake(ctx, sessionName)
+}
+
+func (s *serviceStub) FinishTake(ctx context.Context, sessionName string) (domain.FinishedTake, error) {
+	return s.finishTake(ctx, sessionName)
 }

@@ -19,4 +19,5 @@ type WorkerControlRepository interface {
 	RegisterWorker(context.Context, *workerv1.WorkerHello, time.Time) error
 	ApplyWorkerEvent(context.Context, string, *workerv1.WorkerEvent) error
 	SaveCommandResult(context.Context, string, *workerv1.CommandResult) error
+	PendingWorkerCommands(context.Context, string) ([]*workerv1.WorkerCommand, error)
 }

@@ -103,3 +103,62 @@ func newCameraConnectionResponse(camera repository.Camera) cameraConnectionRespo
 		Error:  cameraError,
 	}
 }
+
+type startTakeRequest struct {
+	Name        string   `json:"name"`
+	CameraNames []string `json:"cameraNames"`
+}
+
+type recordingCameraResponse struct {
+	Name      string                      `json:"name"`
+	State     domain.RecordingCameraState `json:"state"`
+	StartedAt time.Time                   `json:"startedAt"`
+	Error     *string                     `json:"error"`
+}
+
+type ongoingTakeResponse struct {
+	ID        string                    `json:"id"`
+	Name      string                    `json:"name"`
+	StartedAt time.Time                 `json:"startedAt"`
+	Cameras   []recordingCameraResponse `json:"cameras"`
+}
+
+func newOngoingTakeResponse(view application.OngoingTakeView) ongoingTakeResponse {
+	cameras := make([]recordingCameraResponse, len(view.Take.Cameras))
+	for index, camera := range view.Take.Cameras {
+		var cameraError *string
+		if camera.Error != "" {
+			cameraError = &camera.Error
+		}
+		cameras[index] = recordingCameraResponse{
+			Name: view.CameraNames[camera.CameraIdentityID], State: camera.State,
+			StartedAt: camera.StartedAt, Error: cameraError,
+		}
+	}
+	return ongoingTakeResponse{ID: string(view.Take.ID), Name: view.Take.Name, StartedAt: view.Take.StartedAt, Cameras: cameras}
+}
+
+type ongoingTakeResultResponse struct {
+	Type        string               `json:"type"`
+	OngoingTake *ongoingTakeResponse `json:"ongoingTake,omitempty"`
+}
+
+type finishedTakeResponse struct {
+	ID         string                   `json:"id"`
+	Name       string                   `json:"name"`
+	State      domain.FinishedTakeState `json:"state"`
+	StartedAt  time.Time                `json:"startedAt"`
+	FinishedAt time.Time                `json:"finishedAt"`
+	Error      *string                  `json:"error"`
+}
+
+func newFinishedTakeResponse(take domain.FinishedTake) finishedTakeResponse {
+	var takeError *string
+	if take.Error != "" {
+		takeError = &take.Error
+	}
+	return finishedTakeResponse{
+		ID: string(take.ID), Name: take.Name, State: take.State,
+		StartedAt: take.StartedAt, FinishedAt: take.FinishedAt, Error: takeError,
+	}
+}

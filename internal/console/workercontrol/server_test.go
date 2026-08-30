@@ -141,6 +141,32 @@ func TestRegistryDeliversCommandToCurrentStream(t *testing.T) {
 	}
 }
 
+func TestControlReplaysPendingCommandsAfterRegistration(t *testing.T) {
+	command := &workerv1.WorkerCommand{
+		CommandId: controlCommandID,
+		IssuedAt:  timestamppb.Now(),
+		Command:   &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{Reason: "pending"}},
+	}
+	repository := &workerRepositoryStub{pending: []*workerv1.WorkerCommand{command}}
+	_, client := newTestControlServer(t, repository)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := client.Control(ctx)
+	if err != nil {
+		t.Fatalf("Control() error = %v", err)
+	}
+	if err := stream.Send(workerHelloMessage(controlWorkerID1)); err != nil {
+		t.Fatalf("Send(hello) error = %v", err)
+	}
+	if registered, err := stream.Recv(); err != nil || registered.GetRegistered() == nil {
+		t.Fatalf("Recv(registered) = %+v, %v", registered, err)
+	}
+	replayed, err := stream.Recv()
+	if err != nil || !proto.Equal(replayed.GetCommand(), command) {
+		t.Fatalf("Recv(pending command) = %+v, %v", replayed, err)
+	}
+}
+
 func newTestControlServer(
 	t *testing.T,
 	repository *workerRepositoryStub,
@@ -198,6 +224,7 @@ type workerRepositoryStub struct {
 	mu              sync.Mutex
 	appliedWorkerID string
 	appliedEvent    *workerv1.WorkerEvent
+	pending         []*workerv1.WorkerCommand
 }
 
 func (r *workerRepositoryStub) RegisterWorker(context.Context, *workerv1.WorkerHello, time.Time) error {
@@ -214,4 +241,8 @@ func (r *workerRepositoryStub) ApplyWorkerEvent(_ context.Context, workerID stri
 
 func (r *workerRepositoryStub) SaveCommandResult(context.Context, string, *workerv1.CommandResult) error {
 	return nil
+}
+
+func (r *workerRepositoryStub) PendingWorkerCommands(context.Context, string) ([]*workerv1.WorkerCommand, error) {
+	return r.pending, nil
 }

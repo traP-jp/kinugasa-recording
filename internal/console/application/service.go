@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
 )
@@ -15,17 +18,32 @@ var ErrInvalidArgument = errors.New("application: invalid argument")
 type IDGenerator func() (string, error)
 
 type Service struct {
-	repository repository.Repository
+	repository dataRepository
+	dispatcher commandDispatcher
 	now        func() time.Time
 	newID      IDGenerator
 }
 
-func New(repository repository.Repository) *Service {
+type dataRepository interface {
+	repository.Repository
+	repository.TakeRepository
+}
+
+type commandDispatcher interface {
+	Enqueue(cameraID string, command *workerv1.WorkerCommand) bool
+}
+
+func New(repository dataRepository) *Service {
 	return &Service{
 		repository: repository,
 		now:        time.Now,
 		newID:      domain.NewID,
 	}
+}
+
+func (s *Service) WithCommandDispatcher(dispatcher commandDispatcher) *Service {
+	s.dispatcher = dispatcher
+	return s
 }
 
 // WithRuntime replaces nondeterministic runtime dependencies. It is intended
@@ -139,4 +157,141 @@ func (s *Service) GetCamera(ctx context.Context, sessionName, cameraName string)
 
 func (s *Service) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
 	return s.repository.DeleteCamera(ctx, sessionName, cameraName)
+}
+
+type OngoingTakeView struct {
+	Take        domain.OngoingTake
+	CameraNames map[domain.CameraIdentityID]string
+}
+
+func (s *Service) StartTake(
+	ctx context.Context,
+	sessionName, takeName string,
+	cameraNames []string,
+) (OngoingTakeView, error) {
+	if len(cameraNames) == 0 {
+		return OngoingTakeView{}, fmt.Errorf("%w: cameraNames must not be empty", ErrInvalidArgument)
+	}
+	session, err := s.repository.GetSession(ctx, sessionName)
+	if err != nil {
+		return OngoingTakeView{}, err
+	}
+	takeID, err := s.newID()
+	if err != nil {
+		return OngoingTakeView{}, err
+	}
+	now := s.now().UTC()
+	take := domain.OngoingTake{
+		ID: domain.TakeID(takeID), SessionID: session.Session.ID, Name: takeName, StartedAt: now,
+	}
+	request := repository.StartTakeRequest{Take: take, CameraNames: append([]string(nil), cameraNames...)}
+	view := OngoingTakeView{Take: take, CameraNames: make(map[domain.CameraIdentityID]string, len(cameraNames))}
+	seen := make(map[string]struct{}, len(cameraNames))
+	for _, cameraName := range cameraNames {
+		if _, duplicate := seen[cameraName]; duplicate {
+			return OngoingTakeView{}, fmt.Errorf("%w: cameraNames must be unique", ErrInvalidArgument)
+		}
+		seen[cameraName] = struct{}{}
+		camera, err := s.repository.GetCamera(ctx, sessionName, cameraName)
+		if err != nil {
+			return OngoingTakeView{}, err
+		}
+		if camera.Connection.Status != domain.CameraConnectionStatusConnected {
+			return OngoingTakeView{}, repository.ErrConflict
+		}
+		commandID, err := s.newID()
+		if err != nil {
+			return OngoingTakeView{}, err
+		}
+		recordingCamera := domain.RecordingCamera{
+			OngoingTakeID: take.ID, CameraIdentityID: camera.Identity.ID,
+			State: domain.RecordingCameraStateRecording, StartedAt: now,
+		}
+		view.Take.Cameras = append(view.Take.Cameras, recordingCamera)
+		request.Take.Cameras = append(request.Take.Cameras, recordingCamera)
+		view.CameraNames[camera.Identity.ID] = cameraName
+		request.Commands = append(request.Commands, repository.CameraCommand{
+			CameraIdentityID: string(camera.Identity.ID),
+			Command: &workerv1.WorkerCommand{
+				CommandId: commandID, IssuedAt: timestamppb.New(now),
+				Command: &workerv1.WorkerCommand_StartRecording{StartRecording: &workerv1.StartRecording{
+					TakeId:       string(take.ID),
+					RelativePath: fmt.Sprintf("recording/%s/%s/%s/video.mp4", sessionName, takeName, cameraName),
+				}},
+			},
+		})
+	}
+	if err := view.Take.Validate(); err != nil {
+		return OngoingTakeView{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+	}
+	request.Take = view.Take
+	if err := s.repository.CreateTake(ctx, request); err != nil {
+		return OngoingTakeView{}, err
+	}
+	s.dispatch(request.Commands)
+	return view, nil
+}
+
+func (s *Service) GetOngoingTake(ctx context.Context, sessionName string) (*OngoingTakeView, error) {
+	take, err := s.repository.GetOngoingTake(ctx, sessionName)
+	if err != nil || take == nil {
+		return nil, err
+	}
+	cameras, err := s.repository.ListCameras(ctx, sessionName)
+	if err != nil {
+		return nil, err
+	}
+	view := &OngoingTakeView{Take: *take, CameraNames: make(map[domain.CameraIdentityID]string, len(cameras))}
+	for _, camera := range cameras {
+		view.CameraNames[camera.Identity.ID] = camera.Identity.Name
+	}
+	return view, nil
+}
+
+func (s *Service) FinishTake(ctx context.Context, sessionName string) (domain.FinishedTake, error) {
+	if _, err := s.repository.GetSession(ctx, sessionName); err != nil {
+		return domain.FinishedTake{}, err
+	}
+	ongoing, err := s.repository.GetOngoingTake(ctx, sessionName)
+	if err != nil {
+		return domain.FinishedTake{}, err
+	}
+	if ongoing == nil {
+		return domain.FinishedTake{}, repository.ErrConflict
+	}
+	now := s.now().UTC()
+	request := repository.FinishTakeRequest{SessionName: sessionName, FinishedAt: now}
+	for _, camera := range ongoing.Cameras {
+		if camera.State == domain.RecordingCameraStateErrored {
+			continue
+		}
+		commandID, err := s.newID()
+		if err != nil {
+			return domain.FinishedTake{}, err
+		}
+		request.Commands = append(request.Commands, repository.CameraCommand{
+			CameraIdentityID: string(camera.CameraIdentityID),
+			Command: &workerv1.WorkerCommand{
+				CommandId: commandID, IssuedAt: timestamppb.New(now),
+				Command: &workerv1.WorkerCommand_FinishRecording{FinishRecording: &workerv1.FinishRecording{
+					TakeId: string(ongoing.ID),
+				}},
+			},
+		})
+	}
+	finished, err := s.repository.FinishTake(ctx, request)
+	if err != nil {
+		return domain.FinishedTake{}, err
+	}
+	s.dispatch(request.Commands)
+	return finished, nil
+}
+
+func (s *Service) dispatch(commands []repository.CameraCommand) {
+	if s.dispatcher == nil {
+		return
+	}
+	for _, command := range commands {
+		s.dispatcher.Enqueue(command.CameraIdentityID, command.Command)
+	}
 }
