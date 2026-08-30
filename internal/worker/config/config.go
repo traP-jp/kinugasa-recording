@@ -18,6 +18,8 @@ type Config struct {
 	MediaAPIAddress   string
 	MediaPath         string
 	GatewayStatusURL  string
+	LiveKitWHIPURL    string
+	LiveKitWHIPToken  string
 	RTPSDP            string
 	InputPollInterval time.Duration
 }
@@ -35,6 +37,8 @@ func FromEnvironment() (Config, error) {
 		MediaAPIAddress:   valueOrDefault(os.Getenv("KINUGASA_MEDIA_API_ADDRESS"), "127.0.0.1:9997"),
 		MediaPath:         valueOrDefault(os.Getenv("KINUGASA_MEDIA_PATH"), "camera"),
 		GatewayStatusURL:  valueOrDefault(os.Getenv("KINUGASA_GATEWAY_STATUS_URL"), "http://127.0.0.1:9080/status"),
+		LiveKitWHIPURL:    os.Getenv("KINUGASA_LIVEKIT_WHIP_URL"),
+		LiveKitWHIPToken:  os.Getenv("KINUGASA_LIVEKIT_WHIP_TOKEN"),
 		InputPollInterval: 250 * time.Millisecond,
 	}
 	if config.SessionID == "" {
@@ -45,6 +49,9 @@ func FromEnvironment() (Config, error) {
 	}
 	if config.ConsoleAddress == "" {
 		return Config{}, fmt.Errorf("KINUGASA_CONSOLE_GRPC_ADDRESS is required")
+	}
+	if config.LiveKitWHIPURL == "" || config.LiveKitWHIPToken == "" {
+		return Config{}, fmt.Errorf("KINUGASA_LIVEKIT_WHIP_URL and KINUGASA_LIVEKIT_WHIP_TOKEN are required")
 	}
 	config.RTPSDP = valueOrDefault(os.Getenv("KINUGASA_RTP_SDP"), defaultRTPSDP)
 	if value := os.Getenv("KINUGASA_INPUT_POLL_INTERVAL"); value != "" {

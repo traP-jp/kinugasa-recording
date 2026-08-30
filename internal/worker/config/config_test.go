@@ -10,6 +10,8 @@ func TestFromEnvironment(t *testing.T) {
 	t.Setenv("KINUGASA_SESSION_ID", "session-id")
 	t.Setenv("KINUGASA_CAMERA_IDENTITY_ID", "camera-id")
 	t.Setenv("KINUGASA_CONSOLE_GRPC_ADDRESS", "console:9090")
+	t.Setenv("KINUGASA_LIVEKIT_WHIP_URL", "https://ingress.example.com/whip")
+	t.Setenv("KINUGASA_LIVEKIT_WHIP_TOKEN", "stream-key")
 	t.Setenv("KINUGASA_INPUT_POLL_INTERVAL", "100ms")
 	config, err := FromEnvironment()
 	if err != nil {
