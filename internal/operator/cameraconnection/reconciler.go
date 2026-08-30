@@ -31,6 +31,12 @@ type Reconciler struct {
 	Config Config
 }
 
+// +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections,verbs=create;delete;get;list;watch;patch;update
+// +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections/status,verbs=get;patch;update
+// +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims;pods;services,verbs=create;delete;get;list;patch;update;watch
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=create;get;list;patch;update;watch
+
 func (r *Reconciler) SetupWithManager(manager ctrl.Manager) error {
 	if err := r.Config.withDefaults().validate(); err != nil {
 		return fmt.Errorf("validate camera connection controller config: %w", err)

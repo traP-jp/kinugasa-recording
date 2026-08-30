@@ -52,6 +52,13 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 	if got.Connection.CameraIdentityID != identity.ID {
 		t.Fatalf("GetCamera() camera identity = %q, want %q", got.Connection.CameraIdentityID, identity.ID)
 	}
+	resources, err := store.ListCameraResources(ctx)
+	if err != nil {
+		t.Fatalf("ListCameraResources() error = %v", err)
+	}
+	if len(resources) != 1 || resources[0].SessionName != session.Name || resources[0].Identity.ID != identity.ID {
+		t.Fatalf("ListCameraResources() = %+v", resources)
+	}
 
 	if err := store.DeleteCamera(ctx, session.Name, identity.Name); err != nil {
 		t.Fatalf("DeleteCamera() error = %v", err)
@@ -67,6 +74,13 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 	}
 	if identities != 1 {
 		t.Fatalf("camera identity count = %d, want 1", identities)
+	}
+	resources, err = store.ListCameraResources(ctx)
+	if err != nil {
+		t.Fatalf("ListCameraResources(after delete) error = %v", err)
+	}
+	if len(resources) != 0 {
+		t.Fatalf("ListCameraResources(after delete) = %+v, want empty", resources)
 	}
 
 	identity.ID = "019c240e-4a04-73e3-8328-a32a246b8c47"

@@ -36,6 +36,11 @@ type Camera struct {
 	Connection domain.CameraConnection
 }
 
+type CameraResource struct {
+	Camera
+	SessionName string
+}
+
 type Repository interface {
 	CreateSession(context.Context, domain.Session) error
 	ListSessions(context.Context, PageRequest) (SessionPage, error)

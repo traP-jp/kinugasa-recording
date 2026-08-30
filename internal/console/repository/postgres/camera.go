@@ -99,6 +99,48 @@ func (s *Store) ListCameras(ctx context.Context, sessionName string) ([]reposito
 	return result, nil
 }
 
+func (s *Store) ListCameraResources(ctx context.Context) ([]repository.CameraResource, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT camera_identities.id, camera_identities.session_id,
+		       camera_identities.name, camera_identities.created_at,
+		       coalesce(camera_connections.url, ''), camera_connections.status,
+		       coalesce(camera_connections.error, ''),
+		       coalesce(camera_connections.video_worker_id::text, ''),
+		       sessions.name
+		FROM camera_identities
+		JOIN sessions ON sessions.id = camera_identities.session_id
+		JOIN camera_connections ON camera_connections.camera_identity_id = camera_identities.id
+		ORDER BY camera_identities.id`)
+	if err != nil {
+		return nil, fmt.Errorf("list camera resources: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]repository.CameraResource, 0)
+	for rows.Next() {
+		var resource repository.CameraResource
+		if err := rows.Scan(
+			&resource.Identity.ID,
+			&resource.Identity.SessionID,
+			&resource.Identity.Name,
+			&resource.Identity.CreatedAt,
+			&resource.Connection.URL,
+			&resource.Connection.Status,
+			&resource.Connection.Error,
+			&resource.Connection.VideoWorkerID,
+			&resource.SessionName,
+		); err != nil {
+			return nil, fmt.Errorf("scan camera resource: %w", err)
+		}
+		resource.Connection.CameraIdentityID = resource.Identity.ID
+		result = append(result, resource)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate camera resources: %w", err)
+	}
+	return result, nil
+}
+
 func (s *Store) GetCamera(ctx context.Context, sessionName, cameraName string) (repository.Camera, error) {
 	row := s.pool.QueryRow(ctx, `
 		SELECT camera_identities.id, camera_identities.session_id,

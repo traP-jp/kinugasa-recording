@@ -16,6 +16,8 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/config"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
+	"github.com/traP-jp/kinugasa-recording/internal/operator"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func main() {
@@ -46,8 +48,23 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
-
 	repository := postgres.New(pool)
+	operatorConfig, err := config.OperatorFromEnvironment()
+	if err != nil {
+		return fmt.Errorf("load operator configuration: %w", err)
+	}
+	var operatorManager ctrl.Manager
+	if operatorConfig.Enabled {
+		kubeConfig, err := ctrl.GetConfig()
+		if err != nil {
+			return fmt.Errorf("load Kubernetes configuration: %w", err)
+		}
+		operatorManager, err = operator.NewManager(kubeConfig, operatorConfig.Manager, repository, logger)
+		if err != nil {
+			return err
+		}
+	}
+
 	service := application.New(repository)
 	server := &http.Server{
 		Addr:              serverConfig.ListenAddress,
@@ -58,24 +75,40 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	runtimeContext, cancelRuntime := context.WithCancel(ctx)
+	defer cancelRuntime()
 	serveError := make(chan error, 1)
 	go func() {
 		logger.Info("console server listening", "address", serverConfig.ListenAddress)
 		serveError <- server.ListenAndServe()
 	}()
+	var operatorError <-chan error
+	if operatorManager != nil {
+		operatorErrors := make(chan error, 1)
+		operatorError = operatorErrors
+		go func() {
+			logger.Info("Kubernetes operator starting", "namespace", operatorConfig.Manager.Namespace)
+			operatorErrors <- operatorManager.Start(runtimeContext)
+		}()
+	}
 
+	var componentError error
 	select {
 	case err := <-serveError:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+		if !errors.Is(err, http.ErrServerClosed) {
+			componentError = fmt.Errorf("serve HTTP: %w", err)
 		}
-		return fmt.Errorf("serve HTTP: %w", err)
+	case err := <-operatorError:
+		if err != nil {
+			componentError = fmt.Errorf("run Kubernetes operator: %w", err)
+		}
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), serverConfig.ShutdownWait)
-		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("shut down HTTP server: %w", err)
-		}
-		return nil
 	}
+	cancelRuntime()
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), serverConfig.ShutdownWait)
+	defer cancelShutdown()
+	if err := server.Shutdown(shutdownContext); err != nil {
+		componentError = errors.Join(componentError, fmt.Errorf("shut down HTTP server: %w", err))
+	}
+	return componentError
 }
