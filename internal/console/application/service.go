@@ -18,11 +18,14 @@ var ErrInvalidArgument = errors.New("application: invalid argument")
 type IDGenerator func() (string, error)
 
 type Service struct {
-	repository   dataRepository
-	dispatcher   commandDispatcher
-	objectBucket string
-	now          func() time.Time
-	newID        IDGenerator
+	repository      dataRepository
+	dispatcher      commandDispatcher
+	objectBucket    string
+	previewURL      string
+	previewTokenTTL time.Duration
+	previewIssuer   PreviewTokenIssuer
+	now             func() time.Time
+	newID           IDGenerator
 }
 
 type dataRepository interface {

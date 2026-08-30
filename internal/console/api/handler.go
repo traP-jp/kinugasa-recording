@@ -29,6 +29,7 @@ type Service interface {
 	ListFinishedTakes(context.Context, string, application.PageRequest) (application.FinishedTakePage, error)
 	GetFinishedTake(context.Context, string, string) (repository.FinishedTakeDetail, error)
 	GetLockfile(context.Context, string) (application.Lockfile, error)
+	CreatePreviewAccess(context.Context, string) (application.PreviewAccess, error)
 }
 
 type Handler struct {
@@ -56,6 +57,7 @@ func NewHandler(service Service, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/sessions/{sessionName}/takes", handler.listFinishedTakes)
 	mux.HandleFunc("GET /api/sessions/{sessionName}/takes/{takeName}", handler.getFinishedTake)
 	mux.HandleFunc("GET /api/sessions/{sessionName}/lockfile", handler.getLockfile)
+	mux.HandleFunc("POST /api/sessions/{sessionName}/preview-access", handler.createPreviewAccess)
 	return mux
 }
 

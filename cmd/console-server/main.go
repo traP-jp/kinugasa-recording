@@ -20,6 +20,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/api"
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/config"
+	"github.com/traP-jp/kinugasa-recording/internal/console/preview"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
 	"github.com/traP-jp/kinugasa-recording/internal/console/uploadreport"
 	"github.com/traP-jp/kinugasa-recording/internal/console/workercontrol"
@@ -55,6 +56,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
+	previewIssuer, err := preview.NewIssuer(serverConfig.LiveKitAPIKey, serverConfig.LiveKitSecret)
+	if err != nil {
+		return fmt.Errorf("configure preview tokens: %w", err)
+	}
 	repository := postgres.New(pool)
 	grpcListener, err := net.Listen("tcp", serverConfig.GRPCAddress)
 	if err != nil {
@@ -89,7 +94,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	service := application.New(repository).
 		WithCommandDispatcher(workerRegistry).
-		WithObjectBucket(serverConfig.ObjectBucket)
+		WithObjectBucket(serverConfig.ObjectBucket).
+		WithPreviewAccess(serverConfig.LiveKitURL, serverConfig.PreviewTTL, previewIssuer)
 	server := &http.Server{
 		Addr:              serverConfig.ListenAddress,
 		Handler:           api.NewHandler(service, logger),

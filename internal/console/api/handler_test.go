@@ -199,6 +199,11 @@ func TestTakeEndpoints(t *testing.T) {
 				},
 			}}, nil
 		},
+		createPreviewAccess: func(context.Context, string) (application.PreviewAccess, error) {
+			return application.PreviewAccess{
+				URL: "wss://livekit.example.com", AccessToken: "preview-token", ExpiresAt: now.Add(5 * time.Minute),
+			}, nil
+		},
 	}
 	handler := NewHandler(service, discardLogger())
 	startResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/ongoing-take/start",
@@ -228,6 +233,10 @@ func TestTakeEndpoints(t *testing.T) {
 		!strings.Contains(lockfileResponse.Body.String(), `"schemaVersion":"1.0"`) {
 		t.Fatalf("lockfile response = %d %s %s", lockfileResponse.Code, lockfileResponse.Header().Get("Content-Type"), lockfileResponse.Body.String())
 	}
+	previewResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/preview-access", "")
+	if previewResponse.Code != http.StatusOK || !strings.Contains(previewResponse.Body.String(), `"accessToken":"preview-token"`) {
+		t.Fatalf("preview response = %d %s", previewResponse.Code, previewResponse.Body.String())
+	}
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -253,19 +262,20 @@ func discardLogger() *slog.Logger {
 }
 
 type serviceStub struct {
-	createSession     func(context.Context, string) (domain.Session, error)
-	listSessions      func(context.Context, application.PageRequest) (application.SessionPage, error)
-	getSession        func(context.Context, string) (repository.SessionDetail, error)
-	createCamera      func(context.Context, string, string) (repository.Camera, error)
-	listCameras       func(context.Context, string) ([]repository.Camera, error)
-	getCamera         func(context.Context, string, string) (repository.Camera, error)
-	deleteCamera      func(context.Context, string, string) error
-	startTake         func(context.Context, string, string, []string) (application.OngoingTakeView, error)
-	getOngoingTake    func(context.Context, string) (*application.OngoingTakeView, error)
-	finishTake        func(context.Context, string) (domain.FinishedTake, error)
-	listFinishedTakes func(context.Context, string, application.PageRequest) (application.FinishedTakePage, error)
-	getFinishedTake   func(context.Context, string, string) (repository.FinishedTakeDetail, error)
-	getLockfile       func(context.Context, string) (application.Lockfile, error)
+	createSession       func(context.Context, string) (domain.Session, error)
+	listSessions        func(context.Context, application.PageRequest) (application.SessionPage, error)
+	getSession          func(context.Context, string) (repository.SessionDetail, error)
+	createCamera        func(context.Context, string, string) (repository.Camera, error)
+	listCameras         func(context.Context, string) ([]repository.Camera, error)
+	getCamera           func(context.Context, string, string) (repository.Camera, error)
+	deleteCamera        func(context.Context, string, string) error
+	startTake           func(context.Context, string, string, []string) (application.OngoingTakeView, error)
+	getOngoingTake      func(context.Context, string) (*application.OngoingTakeView, error)
+	finishTake          func(context.Context, string) (domain.FinishedTake, error)
+	listFinishedTakes   func(context.Context, string, application.PageRequest) (application.FinishedTakePage, error)
+	getFinishedTake     func(context.Context, string, string) (repository.FinishedTakeDetail, error)
+	getLockfile         func(context.Context, string) (application.Lockfile, error)
+	createPreviewAccess func(context.Context, string) (application.PreviewAccess, error)
 }
 
 func (s *serviceStub) CreateSession(ctx context.Context, name string) (domain.Session, error) {
@@ -318,4 +328,8 @@ func (s *serviceStub) GetFinishedTake(ctx context.Context, sessionName, takeName
 
 func (s *serviceStub) GetLockfile(ctx context.Context, sessionName string) (application.Lockfile, error) {
 	return s.getLockfile(ctx, sessionName)
+}
+
+func (s *serviceStub) CreatePreviewAccess(ctx context.Context, sessionName string) (application.PreviewAccess, error) {
+	return s.createPreviewAccess(ctx, sessionName)
 }

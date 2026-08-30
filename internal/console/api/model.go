@@ -12,6 +12,12 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type previewAccessResponse struct {
+	URL         string    `json:"url"`
+	AccessToken string    `json:"accessToken"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
 type createResourceRequest struct {
 	Name string `json:"name"`
 }

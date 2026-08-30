@@ -130,6 +130,34 @@ func TestGetLockfileFormatsCompletedObjects(t *testing.T) {
 	}
 }
 
+func TestCreatePreviewAccessUsesActiveSessionRoom(t *testing.T) {
+	now := time.Date(2026, 8, 31, 16, 0, 0, 0, time.UTC)
+	repo := &repositoryStub{session: repository.SessionDetail{Session: domain.Session{
+		ID: "019c293a-f80d-7c30-9f9a-466492fa9320", Name: "session-1", State: domain.SessionStateActive,
+	}}}
+	issuer := &previewIssuerStub{token: "preview-token"}
+	service := New(repo).WithRuntime(func() time.Time { return now }, func() (string, error) {
+		return "019c2957-101c-7c7e-8224-4ee46f972662", nil
+	}).WithPreviewAccess("wss://livekit.example.com", 5*time.Minute, issuer)
+	access, err := service.CreatePreviewAccess(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("CreatePreviewAccess() error = %v", err)
+	}
+	if access.AccessToken != "preview-token" || !access.ExpiresAt.Equal(now.Add(5*time.Minute)) ||
+		issuer.room != "session-1" || issuer.identity != "preview-019c2957-101c-7c7e-8224-4ee46f972662" {
+		t.Fatalf("preview access/issue = %+v / %+v", access, issuer)
+	}
+}
+
+func TestCreatePreviewAccessRejectsInactiveSession(t *testing.T) {
+	repo := &repositoryStub{session: repository.SessionDetail{Session: domain.Session{
+		State: domain.SessionStateInactive,
+	}}}
+	if _, err := New(repo).CreatePreviewAccess(context.Background(), "session-1"); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("CreatePreviewAccess() error = %v, want conflict", err)
+	}
+}
+
 type repositoryStub struct {
 	createdSession  domain.Session
 	createdCamera   repository.Camera
@@ -188,6 +216,18 @@ type dispatcherStub struct{ commands []*workerv1.WorkerCommand }
 func (d *dispatcherStub) Enqueue(_ string, command *workerv1.WorkerCommand) bool {
 	d.commands = append(d.commands, command)
 	return true
+}
+
+type previewIssuerStub struct {
+	token    string
+	room     string
+	identity string
+	validFor time.Duration
+}
+
+func (i *previewIssuerStub) Issue(room, identity string, validFor time.Duration) (string, error) {
+	i.room, i.identity, i.validFor = room, identity, validFor
+	return i.token, nil
 }
 
 func (r *repositoryStub) FinishTake(_ context.Context, request repository.FinishTakeRequest) (domain.FinishedTake, error) {
