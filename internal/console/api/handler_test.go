@@ -184,11 +184,20 @@ func TestTakeEndpoints(t *testing.T) {
 					VideoFiles: []domain.VideoFile{{
 						FinishedTakeID: view.Take.ID, CameraIdentityID: "019c2949-b9c5-748a-8477-0a0af012b26c",
 						State: domain.VideoFileStateCompleted, StartedAt: now, FinishedAt: now.Add(time.Minute),
-						ObjectKey: "objects/video.mp4", Hash: &hash, Size: &size,
+						ObjectKey: "recording/session-1/take-1/camera-1/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
+						Hash:      &hash, Size: &size,
 					}},
 				},
 				CameraNames: map[domain.CameraIdentityID]string{"019c2949-b9c5-748a-8477-0a0af012b26c": "camera-1"},
 			}, nil
+		},
+		getLockfile: func(context.Context, string) (application.Lockfile, error) {
+			return application.Lockfile{SchemaVersion: "1.0", Bucket: "recordings", Objects: map[string]application.LockfileObject{
+				"recording/session-1/take-1/camera-1/video.mp4": {
+					Key:    "recording/session-1/take-1/camera-1/" + strings.Repeat("0", 64) + "-video.mp4",
+					SHA256: strings.Repeat("0", 64), Size: 42,
+				},
+			}}, nil
 		},
 	}
 	handler := NewHandler(service, discardLogger())
@@ -213,6 +222,11 @@ func TestTakeEndpoints(t *testing.T) {
 	if detailResponse.Code != http.StatusOK || !strings.Contains(detailResponse.Body.String(), `"cameraName":"camera-1"`) ||
 		!strings.Contains(detailResponse.Body.String(), `"hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="`) {
 		t.Fatalf("get take response = %d %s", detailResponse.Code, detailResponse.Body.String())
+	}
+	lockfileResponse := request(t, handler, http.MethodGet, "/api/sessions/session-1/lockfile", "")
+	if lockfileResponse.Code != http.StatusOK || lockfileResponse.Header().Get("Content-Type") != "text/plain; charset=utf-8" ||
+		!strings.Contains(lockfileResponse.Body.String(), `"schemaVersion":"1.0"`) {
+		t.Fatalf("lockfile response = %d %s %s", lockfileResponse.Code, lockfileResponse.Header().Get("Content-Type"), lockfileResponse.Body.String())
 	}
 }
 
@@ -251,6 +265,7 @@ type serviceStub struct {
 	finishTake        func(context.Context, string) (domain.FinishedTake, error)
 	listFinishedTakes func(context.Context, string, application.PageRequest) (application.FinishedTakePage, error)
 	getFinishedTake   func(context.Context, string, string) (repository.FinishedTakeDetail, error)
+	getLockfile       func(context.Context, string) (application.Lockfile, error)
 }
 
 func (s *serviceStub) CreateSession(ctx context.Context, name string) (domain.Session, error) {
@@ -299,4 +314,8 @@ func (s *serviceStub) ListFinishedTakes(ctx context.Context, sessionName string,
 
 func (s *serviceStub) GetFinishedTake(ctx context.Context, sessionName, takeName string) (repository.FinishedTakeDetail, error) {
 	return s.getFinishedTake(ctx, sessionName, takeName)
+}
+
+func (s *serviceStub) GetLockfile(ctx context.Context, sessionName string) (application.Lockfile, error) {
+	return s.getLockfile(ctx, sessionName)
 }

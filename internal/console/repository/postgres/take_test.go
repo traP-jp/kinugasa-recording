@@ -113,8 +113,9 @@ func TestTakeCommandsAreCommittedWithDesiredState(t *testing.T) {
 		SessionId: takeTestSessionID, CameraIdentityId: takeTestCameraID, TakeId: takeTestTakeID,
 		RelativePath: "recording/session-1/take-1/camera-1/video.mp4",
 		StartedAt:    timestamppb.New(mediaStartedAt), FinishedAt: timestamppb.New(mediaFinishedAt),
-		State: upv1.UploadState_UPLOAD_STATE_COMPLETED, ObjectKey: "objects/hash-video.mp4",
-		Sha256: make([]byte, 32), Size: 42, ObservedAt: timestamppb.New(mediaFinishedAt.Add(time.Second)),
+		State:     upv1.UploadState_UPLOAD_STATE_COMPLETED,
+		ObjectKey: "recording/session-1/take-1/camera-1/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
+		Sha256:    make([]byte, 32), Size: 42, ObservedAt: timestamppb.New(mediaFinishedAt.Add(time.Second)),
 	}
 	if err := store.ApplyUploadReport(ctx, report); err != nil {
 		t.Fatalf("ApplyUploadReport() error = %v", err)
@@ -131,6 +132,10 @@ func TestTakeCommandsAreCommittedWithDesiredState(t *testing.T) {
 	if err != nil || len(detail.Take.VideoFiles) != 1 || detail.Take.VideoFiles[0].Hash == nil ||
 		detail.CameraNames[takeTestCameraID] != "camera-1" {
 		t.Fatalf("GetFinishedTake() = %+v, %v", detail, err)
+	}
+	objects, err := store.ListLockfileObjects(ctx, "session-1")
+	if err != nil || len(objects) != 1 || objects[0].LogicalPath != "recording/session-1/take-1/camera-1/video.mp4" || objects[0].Size != 42 {
+		t.Fatalf("ListLockfileObjects() = %+v, %v", objects, err)
 	}
 }
 
@@ -209,6 +214,9 @@ func TestFinishedTakeReadsRequireExistingResources(t *testing.T) {
 	}
 	if _, err := store.GetFinishedTake(ctx, "missing", "take-1"); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("GetFinishedTake() error = %v", err)
+	}
+	if _, err := store.ListLockfileObjects(ctx, "missing"); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ListLockfileObjects() error = %v", err)
 	}
 }
 

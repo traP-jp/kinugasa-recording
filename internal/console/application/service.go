@@ -18,15 +18,17 @@ var ErrInvalidArgument = errors.New("application: invalid argument")
 type IDGenerator func() (string, error)
 
 type Service struct {
-	repository dataRepository
-	dispatcher commandDispatcher
-	now        func() time.Time
-	newID      IDGenerator
+	repository   dataRepository
+	dispatcher   commandDispatcher
+	objectBucket string
+	now          func() time.Time
+	newID        IDGenerator
 }
 
 type dataRepository interface {
 	repository.Repository
 	repository.TakeRepository
+	repository.LockfileRepository
 }
 
 type commandDispatcher interface {
@@ -43,6 +45,11 @@ func New(repository dataRepository) *Service {
 
 func (s *Service) WithCommandDispatcher(dispatcher commandDispatcher) *Service {
 	s.dispatcher = dispatcher
+	return s
+}
+
+func (s *Service) WithObjectBucket(bucket string) *Service {
+	s.objectBucket = bucket
 	return s
 }
 
@@ -309,6 +316,35 @@ func (s *Service) ListFinishedTakes(ctx context.Context, sessionName string, req
 
 func (s *Service) GetFinishedTake(ctx context.Context, sessionName, takeName string) (repository.FinishedTakeDetail, error) {
 	return s.repository.GetFinishedTake(ctx, sessionName, takeName)
+}
+
+type LockfileObject struct {
+	Key    string `json:"key"`
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+type Lockfile struct {
+	SchemaVersion string                    `json:"schemaVersion"`
+	Bucket        string                    `json:"bucket"`
+	Objects       map[string]LockfileObject `json:"objects"`
+}
+
+func (s *Service) GetLockfile(ctx context.Context, sessionName string) (Lockfile, error) {
+	if s.objectBucket == "" {
+		return Lockfile{}, errors.New("object bucket is not configured")
+	}
+	stored, err := s.repository.ListLockfileObjects(ctx, sessionName)
+	if err != nil {
+		return Lockfile{}, err
+	}
+	lockfile := Lockfile{SchemaVersion: "1.0", Bucket: s.objectBucket, Objects: make(map[string]LockfileObject, len(stored))}
+	for _, object := range stored {
+		lockfile.Objects[object.LogicalPath] = LockfileObject{
+			Key: object.ObjectKey, SHA256: object.Hash.Hex(), Size: object.Size,
+		}
+	}
+	return lockfile, nil
 }
 
 func (s *Service) dispatch(commands []repository.CameraCommand) {

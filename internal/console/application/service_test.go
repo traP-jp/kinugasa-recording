@@ -113,14 +113,32 @@ func TestFinishTakeOnlyDispatchesToRecordingCameras(t *testing.T) {
 	}
 }
 
+func TestGetLockfileFormatsCompletedObjects(t *testing.T) {
+	hash := domain.ContentHash{0xab}
+	repo := &repositoryStub{lockfileObjects: []repository.LockfileObject{{
+		LogicalPath: "recording/session-1/take-1/camera-1/video.mp4",
+		ObjectKey:   "recording/session-1/take-1/camera-1/ab00000000000000000000000000000000000000000000000000000000000000-video.mp4",
+		Hash:        hash, Size: 42,
+	}}}
+	lockfile, err := New(repo).WithObjectBucket("recordings").GetLockfile(context.Background(), "session-1")
+	if err != nil {
+		t.Fatalf("GetLockfile() error = %v", err)
+	}
+	object := lockfile.Objects["recording/session-1/take-1/camera-1/video.mp4"]
+	if lockfile.SchemaVersion != "1.0" || lockfile.Bucket != "recordings" || object.SHA256 != hash.Hex() || object.Size != 42 {
+		t.Fatalf("GetLockfile() = %+v", lockfile)
+	}
+}
+
 type repositoryStub struct {
-	createdSession domain.Session
-	createdCamera  repository.Camera
-	session        repository.SessionDetail
-	cameras        map[string]repository.Camera
-	startTake      repository.StartTakeRequest
-	finishTake     repository.FinishTakeRequest
-	ongoingTake    *domain.OngoingTake
+	createdSession  domain.Session
+	createdCamera   repository.Camera
+	session         repository.SessionDetail
+	cameras         map[string]repository.Camera
+	startTake       repository.StartTakeRequest
+	finishTake      repository.FinishTakeRequest
+	ongoingTake     *domain.OngoingTake
+	lockfileObjects []repository.LockfileObject
 }
 
 func (r *repositoryStub) CreateSession(_ context.Context, session domain.Session) error {
@@ -183,4 +201,8 @@ func (r *repositoryStub) ListFinishedTakes(context.Context, string, repository.P
 
 func (r *repositoryStub) GetFinishedTake(context.Context, string, string) (repository.FinishedTakeDetail, error) {
 	return repository.FinishedTakeDetail{}, nil
+}
+
+func (r *repositoryStub) ListLockfileObjects(context.Context, string) ([]repository.LockfileObject, error) {
+	return r.lockfileObjects, nil
 }

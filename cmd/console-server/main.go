@@ -87,7 +87,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		}
 	}
 
-	service := application.New(repository).WithCommandDispatcher(workerRegistry)
+	service := application.New(repository).
+		WithCommandDispatcher(workerRegistry).
+		WithObjectBucket(serverConfig.ObjectBucket)
 	server := &http.Server{
 		Addr:              serverConfig.ListenAddress,
 		Handler:           api.NewHandler(service, logger),

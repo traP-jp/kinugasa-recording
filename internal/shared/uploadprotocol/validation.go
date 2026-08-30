@@ -1,7 +1,9 @@
 package uploadprotocol
 
 import (
+	"encoding/hex"
 	"fmt"
+	"path"
 	"strings"
 
 	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
@@ -34,6 +36,10 @@ func ValidateReport(report *upv1.UploadReport) error {
 	case upv1.UploadState_UPLOAD_STATE_COMPLETED:
 		if report.ObjectKey == "" || len(report.Sha256) != 32 || report.Size < 0 || report.Error != "" {
 			return fmt.Errorf("completed upload report metadata is invalid")
+		}
+		expectedKey := path.Join(path.Dir(report.RelativePath), hex.EncodeToString(report.Sha256)+"-video.mp4")
+		if report.ObjectKey != expectedKey {
+			return fmt.Errorf("completed upload report object key does not match its path and SHA-256")
 		}
 	case upv1.UploadState_UPLOAD_STATE_ERRORED:
 		if strings.TrimSpace(report.Error) == "" {

@@ -151,7 +151,7 @@ func TestWorkerRegistrationAndEventsAreTransactional(t *testing.T) {
 		StartedAt:        timestamppb.New(now),
 		FinishedAt:       timestamppb.New(now.Add(time.Minute)),
 		State:            upv1.UploadState_UPLOAD_STATE_COMPLETED,
-		ObjectKey:        "recordings/take-1/hash-video.mp4",
+		ObjectKey:        "recordings/take-1/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
 		Sha256:           make([]byte, 32),
 		Size:             42,
 		ObservedAt:       timestamppb.New(now.Add(2 * time.Minute)),

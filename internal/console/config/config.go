@@ -14,6 +14,7 @@ const (
 
 type Config struct {
 	DatabaseURL   string
+	ObjectBucket  string
 	ListenAddress string
 	GRPCAddress   string
 	ShutdownWait  time.Duration
@@ -22,12 +23,13 @@ type Config struct {
 func FromEnvironment() (Config, error) {
 	config := Config{
 		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		ObjectBucket:  os.Getenv("KINUGASA_S3_BUCKET"),
 		ListenAddress: valueOrDefault(os.Getenv("LISTEN_ADDRESS"), defaultListenAddress),
 		GRPCAddress:   valueOrDefault(os.Getenv("GRPC_LISTEN_ADDRESS"), defaultGRPCAddress),
 		ShutdownWait:  defaultShutdownTimeout,
 	}
-	if config.DatabaseURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	if config.DatabaseURL == "" || config.ObjectBucket == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL and KINUGASA_S3_BUCKET are required")
 	}
 	if value := os.Getenv("SHUTDOWN_TIMEOUT"); value != "" {
 		duration, err := time.ParseDuration(value)

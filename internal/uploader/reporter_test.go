@@ -35,8 +35,8 @@ func TestReporterPersistsAcknowledgement(t *testing.T) {
 	manifests, _ := queue.List()
 	manifest := manifests[0]
 	manifest.State = uploadqueue.StateCompleted
-	manifest.ObjectKey = "recording/session/take/camera/hash-video.mp4"
 	manifest.SHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	manifest.ObjectKey = "recording/session/take/camera/" + manifest.SHA256 + "-video.mp4"
 	manifest.Size = 5
 	if err := queue.Save(manifest); err != nil {
 		t.Fatal(err)

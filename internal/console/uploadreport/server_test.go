@@ -50,7 +50,8 @@ func validReport() *upv1.UploadReport {
 		RelativePath: "recording/session/take/camera/video.mp4",
 		StartedAt:    timestamppb.New(now), FinishedAt: timestamppb.New(now.Add(time.Minute)),
 		State:     upv1.UploadState_UPLOAD_STATE_COMPLETED,
-		ObjectKey: "recording/session/take/camera/hash-video.mp4", Sha256: make([]byte, 32), Size: 42,
+		ObjectKey: "recording/session/take/camera/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
+		Sha256:    make([]byte, 32), Size: 42,
 		ObservedAt: timestamppb.New(now.Add(2 * time.Minute)),
 	}
 }
