@@ -26,7 +26,7 @@ type probeStream struct {
 
 func probe(ctx context.Context, config Config) (probeResult, *Status) {
 	command := exec.CommandContext(ctx, config.FFprobePath,
-		"-v", "error", "-show_streams", "-of", "json", config.ristURL(),
+		"-v", "error", "-rist_profile", "main", "-show_streams", "-of", "json", config.ristURL(),
 	)
 	output, err := command.Output()
 	if err != nil {

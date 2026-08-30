@@ -51,5 +51,5 @@ func (c Config) validate() error {
 }
 
 func (c Config) ristURL() string {
-	return "rist://" + c.RISTAddress + "?listen=1&profile=main"
+	return "rist://@" + c.RISTAddress
 }

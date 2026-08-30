@@ -67,7 +67,8 @@ func relay(
 	logger *slog.Logger,
 ) error {
 	arguments := []string{
-		"-nostdin", "-hide_banner", "-loglevel", "warning", "-progress", "pipe:1", "-i", config.ristURL(),
+		"-nostdin", "-hide_banner", "-loglevel", "warning", "-progress", "pipe:1",
+		"-rist_profile", "main", "-i", config.ristURL(),
 		"-map", "0:v:0", "-c:v", "copy", "-an", "-f", "rtp", config.VideoRTPURL,
 	}
 	if probe.HasAudio {
