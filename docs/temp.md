@@ -16,13 +16,13 @@
 
 ### 1. サービス間インターフェース
 
-video gatewayからvideo hubへのRTP中継、LiveKitへの中継、uploaderによるアップロードという役割だけが記述されている（`requirements-v2/08-product-perspective/product-perspective.md`）。次の契約が必要である。
+video gatewayからcameraごとのvideo workerへのRTP中継、LiveKitへの中継、uploaderによるアップロードという役割だけが記述されている（`requirements-v2/08-product-perspective/product-perspective.md`）。次の契約が必要である。
 
-- console serverがgateway、hub、uploaderへ作成・開始・停止を指示する方法
+- console serverがgateway、各worker、uploaderへ作成・開始・停止を指示する方法
 - 各workerが接続状態、拒否理由、開始・終了時刻、進捗、エラーを通知する方法とpayload
-- video hubがUUIDを「通知」する先、プロトコル、再送・重複時の扱い
+- video workerがUUIDを「通知」する先、対応するCameraConnectionを特定する方法、プロトコル、再送・重複時の扱い
 - RTPのtransport（UDP/TCP）、宛先割当、payload type、SSRC、clock rate、RTCPの有無、音声payload、timestampの基準
-- gateway/hub間およびhub/uploader間のreadiness、timeout、heartbeat、graceful shutdown契約
+- gateway/worker間およびworker/uploader間のreadiness、timeout、heartbeat、graceful shutdown契約
 - LiveKitのroom、participant、trackとSession/CameraIdentityの対応、およびpublish方式
 - console server停止中にもworkerが継続するために、命令と状態をどこへ永続化し、再接続時にどう再同期するか
 
@@ -46,14 +46,14 @@ RIST Main Profile、H.264、30 fps、およびvideo gatewayに`ristreceiver`を�
 - MP4のprofile（通常MP4またはfragmented MP4）、映像・音声codecをcopyするかtranscodeするか、time base
 - moov atom、trailer、各trackの必須metadataなど、正常な成果物と判定する条件
 - objectへ付与するcontent type、metadata/tag、および既存objectとの衝突時の扱い
-- camera切断、hub crash、停止timeoutなどで生じた部分ファイルを保存するか破棄するか
+- camera切断、worker crash、停止timeoutなどで生じた部分ファイルを保存するか破棄するか
 - 録画中のローカル保存場所、容量予約、容量不足時の動作、upload後の削除条件
 
 ### 4. 録画開始・停止と同期方式
 
 「数秒オーダーの誤差を許容した同期」（`requirements-v2/07-scope/scope.md`）とdrift目標はあるが、実装可能な正常系の定義がない。
 
-- 同期の基準となるclock（camera timestamp、RTP timestamp、hubのmonotonic clock、wall clockなど）
+- 同期の基準となるclock（camera timestamp、RTP timestamp、各workerのmonotonic clock、wall clockなど）
 - `startedAt`/`finishedAt`をどのコンポーネントのどのevent時刻とするか
 - take開始要求後、各cameraが実際に録画を始める条件とtimeout
 - cameraごとの開始・終了差の許容値。「数秒オーダー」の具体的上限
@@ -66,14 +66,14 @@ RIST Main Profile、H.264、30 fps、およびvideo gatewayに`ristreceiver`を�
 
 エンティティと一部の遷移は定義されている（`requirements-v2/14-specified-requirements/05-logical-database-requirements/logical-database-requirements.md`）が、次が欠けている。
 
-- Sessionの初期state、`active`/`inactive`の意味、遷移trigger、hub起動・停止との関係。stateを変更するAPIもない
-- 「必要に応じて」配置するvideo hubの必要条件、起動・停止条件
+- Sessionの初期state、`active`/`inactive`の意味、遷移trigger、worker起動・停止との関係。stateを変更するAPIもない
+- CameraConnectionの作成・削除に対してvideo workerを起動・停止する正確な条件
 - CameraConnectionの各status間の許可遷移と、`error`から再接続成功した際の遷移
 - camera追加・削除中のKubernetes失敗、Service割当timeout、gateway crash時の状態
 - OngoingTake作成時、指定されたcameraをRecordingCameraへsnapshotする時点と順序
 - RecordingCameraが全て`errored`になった場合もOngoingTakeを継続するか
 - 正常停止とエラー停止それぞれでRecordingCameraをVideoFileへ変換する規則
-- hub crashで直接errored FinishedTakeになる場合にVideoFileを作るか、部分録画をuploadするか
+- worker crashでerroredになったRecordingCameraにVideoFileを作るか、部分録画をuploadするか
 - uploaderのretry中、永久失敗、process crash、再起動後の状態遷移
 - FinishedTake/VideoFileの状態更新を原子的に行う規則
 - Session、FinishedTake、CameraIdentityを削除・保持する期間。Session削除APIは存在しない
@@ -95,7 +95,7 @@ Kubernetes Operatorであることは決まっているが、reconcile対象と�
 
 - DBを正とするoperatorがwatch/reconcileする対象。CRDを使用するか、使用するならschemaとDBとの正の所在
 - Session/camera/takeごとに生成するDeployment/Pod/Job/Service/PVC等と所有関係
-- gatewayとhubの配置単位、namespace、resource naming、labels/annotations、owner references
+- gatewayとcameraごとのworkerの配置単位、namespace、resource naming、labels/annotations、owner references
 - Service type、port割当、外部IP/hostの取得方法、割当失敗・変更時のURL更新
 - image、command/args、設定値、Secret/ConfigMap、resource request/limit、security context
 - rollout/restart policy、readiness/liveness/startup probe、grace period、Job完了・回収条件
@@ -118,7 +118,7 @@ console API自体は認証・認可を行わず、tailnetでアクセス制御�
 
 - APIを到達可能にするtailnetのACL、利用者・service identity、操作権限
 - CSRF/CORS方針と、browserからconsole APIへ到達させる構成
-- RIST、gateway―hub、worker間通信の暗号化・相互認証の要否
+- RIST、gateway―worker、worker―uploader間通信の暗号化・相互認証の要否
 - camera URLを知る第三者の接続を許すか、cameraごとのcredentialとrotation/revoke
 - LiveKit短期tokenのTTL、subject、room/track権限、一度きりか、更新方法
 - Kubernetes Secretの生成・配布・rotation、ログやUIでのsecret masking
@@ -131,10 +131,10 @@ DBを正として復元する方針はある（`requirements-v2/14-specified-req
 - desired stateとobserved stateの項目、および各リソースのreconcile結果をDBへ反映する規則
 - Kubernetes API、DB、LiveKit、object storageが停止した際のtimeout/retry/backoff
 - console server再起動中に進んだ録画・upload eventの欠落防止、順序逆転、重複排除
-- hub停止を「予期しない」と判定する条件。意図したrollout/node drain/OOM/evictionの区別
+- worker停止を「予期しない」と判定する条件。意図したrollout/node drain/OOM/evictionの区別と、対応するcameraの状態への反映
 - gateway/uploader/LiveKit停止時のドメイン状態と自動復旧範囲
 - DB更新とKubernetes操作の間でcrashした場合の補償処理
-- 孤児Pod/Service/PVC/object、古いvideoHubId、割当変更後の古いURLのcleanup
+- 孤児Pod/Service/PVC/object、古いvideoWorkerId、割当変更後の古いURLのcleanup
 - 復旧不能時の手動操作（retry/cancel/force-finish）が必要か。そのAPI/UI
 
 ### 11. web consoleの操作仕様
@@ -193,7 +193,7 @@ drift検証には明示的なTBDが残っている（`requirements-v2/14-specifi
 - network jitterの分布、範囲、相関、投入tool/設定、再現用seed
 - drift推定の解析区間、前処理、信頼区間、試行回数、集約方法と合否判定
 - frame落ち検出時の30 fpsに対する許容差、PTS不連続・wrap・VFRの扱い
-- camera拒否、切断、hub crash、console再起動、upload失敗・再開を検証する具体的scenario
+- camera拒否、切断、worker crash、console再起動、upload失敗・再開を検証する具体的scenario
 - API schema/contract test、DB不変条件、reconciliation、UI/browser、securityの受け入れ基準
 - test用端末・network・Kubernetes・LiveKit・object storageの固定version/構成
 - 各要求を一意に参照するrequirement IDと、その要求を証明するtestへの対応表
@@ -202,7 +202,7 @@ drift検証には明示的なTBDが残っている（`requirements-v2/14-specifi
 
 実装の手戻りを避けるため、少なくとも次の順で意思決定が必要である。
 
-1. camera入力のwire formatと、gateway―hub間RTP契約は何か。
+1. camera入力のwire formatと、gateway―worker間RTP契約は何か。
 2. console serverと各workerのcommand/event protocol、および停止中の状態同期方法は何か。
 3. MP4の生成方式と、切断・crash時の部分ファイルをどう扱うか。
 4. take開始時の非接続camera、途中切断・再接続、および全camera失敗をどう扱うか。

@@ -21,7 +21,6 @@
 | id | SessionId | Sessionの識別子。 |
 | name | SessionName | ユーザーが指定するSessionの名前。 |
 | state | SessionState | activeまたはinactiveのいずれか。 |
-| videoHubId | Option\<VideoHubId\> | 現在動作しているvideo hub processが起動時に生成したUUID。 |
 | createdAt | Timestamp | Sessionを作成した時刻。 |
 
 #### CameraIdentity
@@ -41,6 +40,7 @@
 | url | Option\<Url\> | Kubernetes Serviceの割り当て結果から生成したcameraクライアントの接続先URL。 |
 | status | CameraConnectionStatus | activating、waiting、connected、errorのいずれか。 |
 | error | Option\<ErrorReason\> | 接続を拒否した事由。 |
+| videoWorkerId | Option\<VideoWorkerId\> | 対応するcameraを現在処理しているvideo worker processが起動時に生成したUUID。 |
 
 ##### 属性の制約
 
@@ -150,14 +150,14 @@ stateDiagram-v2
 
     [*] --> Ongoing : 録画開始
     Ongoing --> Uploading : 録画正常終了 / VideoFileの作成とアップロードを開始
-    Ongoing --> Errored : video hubの予期しない停止などによるエラー終了
+    Ongoing --> Errored : システム全体の復旧不能な障害などによるエラー終了
     Uploading --> Completed : 全VideoFileがcompleted
     Uploading --> Errored : 全アップロード終了 [1つ以上errored]
 ```
 
 ### 制約
 
-- SessionのstateとvideoHubIdの有無は独立し、両者の間に不変条件を設けない。
+- CameraConnectionのstatusとvideoWorkerIdの有無は独立し、両者の間に不変条件を設けない。
 - RecordingCameraはCameraConnectionが存在する間だけ存在でき、RecordingCameraが存在する間はCameraConnectionを削除してはならない。
 - OngoingTake、FinishedTake、RecordingCamera、VideoFile、CameraConnectionおよびCameraIdentityの関係は同一のSession内で完結し、Sessionをまたいでcameraを貸し借りしてはならない。
 - 同一のOngoingTakeとCameraIdentityの組に対応するRecordingCamera、および同一のFinishedTakeとCameraIdentityの組に対応するVideoFileは、それぞれ1つ以下とする。

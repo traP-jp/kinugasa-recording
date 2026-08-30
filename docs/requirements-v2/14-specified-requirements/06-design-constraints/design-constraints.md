@@ -6,5 +6,5 @@ kinugasa-recording v2は、Kubernetes Operatorとして動作しなければな�
 
 - バックエンドの実装には、原則としてGoを使用する。
 - web consoleの実装には、TypeScriptおよびReactを使用する。
-- video hubには、MediaMTXを使用する。
+- video workerには、MediaMTXを使用する。
 - video gatewayには、libristの`ristreceiver`を使用する。

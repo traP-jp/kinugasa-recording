@@ -49,6 +49,6 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 
 - console serverは、DBに永続化されたドメイン状態を正としてKubernetes上のリソースをreconcileする。
 - console serverの起動時および再起動時には、DBから状態を復元して全リソースをreconcileする。
-- console serverが停止している間も、video gateway、video hubおよびvideo uploaderは処理を継続する。console serverの停止だけを理由にOngoingTakeを終了してはならない。
-- video hubの予期しない停止を検出した場合、対応するOngoingTakeがあればerroredなFinishedTakeへ遷移させる。その他のドメイン状態は維持したままvideo hubを再起動する。
-- 再起動したvideo hubが新しいUUIDを通知した場合、対応するSessionのvideoHubIdを更新する。
+- console serverが停止している間も、video gateway、video workerおよびvideo uploaderは処理を継続する。console serverの停止だけを理由にOngoingTakeを終了してはならない。
+- video workerの予期しない停止を検出した場合、対応するRecordingCameraがあればそのRecordingCameraだけをerroredとし、OngoingTakeおよび他のRecordingCameraを継続する。その他のドメイン状態は維持したままvideo workerを再起動する。
+- 再起動したvideo workerが新しいUUIDを通知した場合、対応するCameraConnectionのvideoWorkerIdを更新する。

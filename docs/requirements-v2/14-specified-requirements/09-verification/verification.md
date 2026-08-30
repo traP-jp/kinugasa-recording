@@ -3,6 +3,7 @@
 ## camera間の時間軸ドリフト
 
 - iOSまたはiPadOSを搭載した2台の物理端末をcameraとして使用し、各端末で[Moblin](https://github.com/eerimoq/moblin)を動作させる。
+- 各cameraの映像は、それぞれ独立したvideo worker containerで処理する。
 - 実空間の被写体を用いた検証環境を用意し、各端末からH.264形式、30 fpsの映像を10分間送信する。
 - 周期の異なる2つのメトロノームを、両方のcameraから同時に撮影できる位置に配置する。
 - 各入力へ独立してネットワークジッタを付加する。ジッタ条件はTBDとし、packet lossは付加しない。
