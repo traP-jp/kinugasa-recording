@@ -2,6 +2,7 @@ package cameraconnection
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	recordingv1alpha1 "github.com/traP-jp/kinugasa-recording/api/v1alpha1"
+	livekitingress "github.com/traP-jp/kinugasa-recording/internal/livekit/ingress"
 )
 
 func TestReconcileCreatesWorkerResources(t *testing.T) {
@@ -51,6 +53,15 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 		t.Fatalf("RIST Service = %+v", service.Spec)
 	}
 	assertControlledBy(t, &service, connection)
+	var previewSecret corev1.Secret
+	if err := fakeClient.Get(context.Background(), request.NamespacedName, &previewSecret); err != nil {
+		t.Fatalf("get preview Secret: %v", err)
+	}
+	if string(previewSecret.Data[previewIngressIDKey]) != "IN_test" ||
+		string(previewSecret.Data[previewTokenKey]) != "stream-key" {
+		t.Fatalf("preview Secret data = %q", previewSecret.Data)
+	}
+	assertControlledBy(t, &previewSecret, connection)
 
 	var pod corev1.Pod
 	if err := fakeClient.Get(context.Background(), request.NamespacedName, &pod); err != nil {
@@ -73,6 +84,10 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if len(pod.Spec.Containers[0].VolumeMounts) != 1 || len(pod.Spec.Containers[1].VolumeMounts) != 2 ||
 		len(pod.Spec.Containers[2].VolumeMounts) != 1 {
 		t.Fatalf("Pod container volume mounts = %+v", pod.Spec.Containers)
+	}
+	if !hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_URL", previewURLKey) ||
+		!hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_TOKEN", previewTokenKey) {
+		t.Fatalf("worker preview environment = %+v", pod.Spec.Containers[1].Env)
 	}
 	assertControlledBy(t, &pod, connection)
 
@@ -132,6 +147,41 @@ func TestDeletionWaitsForUploader(t *testing.T) {
 	var retained corev1.PersistentVolumeClaim
 	if err := fakeClient.Get(context.Background(), request.NamespacedName, &retained); err != nil {
 		t.Fatalf("PVC was removed before uploader completed: %v", err)
+	}
+}
+
+func TestDeletionReleasesPreviewBeforeUploaderCompletes(t *testing.T) {
+	scheme := testScheme(t)
+	connection := deletingConnection()
+	pod := desiredPod(connection, testConfig())
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: connection.Name, Namespace: connection.Namespace},
+		Data:       map[string][]byte{previewIngressIDKey: []byte("IN_delete")},
+	}
+	if err := controllerutil.SetControllerReference(connection, secret, scheme); err != nil {
+		t.Fatal(err)
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
+		WithObjects(connection, pod, secret).
+		Build()
+	previewIngress := &previewIngressStub{}
+	reconciler := testReconciler(fakeClient, scheme)
+	reconciler.PreviewIngress = previewIngress
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(connection)}
+
+	result, err := reconciler.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if result.RequeueAfter != 5*time.Second || len(previewIngress.deleted) != 1 ||
+		previewIngress.deleted[0] != "IN_delete" {
+		t.Fatalf("result/deleted = %+v / %q", result, previewIngress.deleted)
+	}
+	var removed corev1.Secret
+	if err := fakeClient.Get(context.Background(), request.NamespacedName, &removed); !apierrors.IsNotFound(err) {
+		t.Fatalf("preview Secret still exists or Get failed: %v", err)
 	}
 }
 
@@ -212,7 +262,40 @@ func testConfig() Config {
 }
 
 func testReconciler(fakeClient client.Client, scheme *runtime.Scheme) *Reconciler {
-	return &Reconciler{Client: fakeClient, Scheme: scheme, Config: testConfig()}
+	return &Reconciler{
+		Client: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{},
+	}
+}
+
+type previewIngressStub struct {
+	deleted []string
+}
+
+func (s *previewIngressStub) Create(
+	_ context.Context,
+	room, participantIdentity, name string,
+) (livekitingress.Endpoint, error) {
+	if room == "" || participantIdentity == "" || name == "" {
+		return livekitingress.Endpoint{}, fmt.Errorf("incomplete ingress identity")
+	}
+	return livekitingress.Endpoint{
+		IngressID: "IN_test", URL: "https://ingress.example.com/whip", StreamKey: "stream-key",
+	}, nil
+}
+
+func (s *previewIngressStub) Delete(_ context.Context, ingressID string) error {
+	s.deleted = append(s.deleted, ingressID)
+	return nil
+}
+
+func hasSecretEnvironment(environment []corev1.EnvVar, name, key string) bool {
+	for _, variable := range environment {
+		if variable.Name == name && variable.ValueFrom != nil && variable.ValueFrom.SecretKeyRef != nil &&
+			variable.ValueFrom.SecretKeyRef.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {

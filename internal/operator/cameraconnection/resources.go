@@ -82,6 +82,8 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
 		corev1.EnvVar{Name: "KINUGASA_RTP_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RTPPort)},
 		corev1.EnvVar{Name: "KINUGASA_RTP_SDP", Value: workerRTPSDP(config)},
+		secretEnvironment("KINUGASA_LIVEKIT_WHIP_URL", connection.Name, previewURLKey),
+		secretEnvironment("KINUGASA_LIVEKIT_WHIP_TOKEN", connection.Name, previewTokenKey),
 	)
 	gatewayEnvironment := []corev1.EnvVar{
 		{Name: "KINUGASA_RIST_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RISTPort)},
@@ -161,6 +163,16 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 		}
 	}
 	return pod
+}
+
+func secretEnvironment(name, secretName, key string) corev1.EnvVar {
+	return corev1.EnvVar{
+		Name: name,
+		ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: secretName},
+			Key:                  key,
+		}},
+	}
 }
 
 func workerRTPSDP(config Config) string {

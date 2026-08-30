@@ -24,6 +24,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
 	"github.com/traP-jp/kinugasa-recording/internal/console/uploadreport"
 	"github.com/traP-jp/kinugasa-recording/internal/console/workercontrol"
+	livekitingress "github.com/traP-jp/kinugasa-recording/internal/livekit/ingress"
 	"github.com/traP-jp/kinugasa-recording/internal/operator"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -60,6 +61,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure preview tokens: %w", err)
 	}
+	previewIngress, err := livekitingress.NewClient(
+		serverConfig.LiveKitURL, serverConfig.LiveKitAPIKey, serverConfig.LiveKitSecret, nil,
+	)
+	if err != nil {
+		return fmt.Errorf("configure LiveKit ingress: %w", err)
+	}
 	repository := postgres.New(pool)
 	grpcListener, err := net.Listen("tcp", serverConfig.GRPCAddress)
 	if err != nil {
@@ -86,7 +93,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("load Kubernetes configuration: %w", err)
 		}
-		operatorManager, err = operator.NewManager(kubeConfig, operatorConfig.Manager, repository, logger)
+		operatorManager, err = operator.NewManager(kubeConfig, operatorConfig.Manager, repository, previewIngress, logger)
 		if err != nil {
 			return err
 		}

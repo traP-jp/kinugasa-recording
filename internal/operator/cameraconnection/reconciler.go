@@ -28,23 +28,29 @@ const (
 
 type Reconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Config Config
+	Scheme         *runtime.Scheme
+	Config         Config
+	PreviewIngress PreviewIngress
 }
 
 // +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections,verbs=create;delete;get;list;watch;patch;update
 // +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims;pods;services,verbs=create;delete;get;list;patch;update;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=create;get;list;patch;update;watch
 
 func (r *Reconciler) SetupWithManager(manager ctrl.Manager) error {
 	if err := r.Config.withDefaults().validate(); err != nil {
 		return fmt.Errorf("validate camera connection controller config: %w", err)
 	}
+	if r.PreviewIngress == nil {
+		return fmt.Errorf("LiveKit preview ingress is not configured")
+	}
 	return ctrl.NewControllerManagedBy(manager).
 		For(&recordingv1alpha1.CameraConnection{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&corev1.Secret{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Pod{}).
 		Complete(r)
@@ -77,6 +83,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if err := r.ensureService(ctx, &connection, config); err != nil {
 		return r.resourceFailure(ctx, &connection, err)
 	}
+	if err := r.ensurePreviewSecret(ctx, &connection); err != nil {
+		return r.resourceFailure(ctx, &connection, err)
+	}
 	if err := r.ensurePod(ctx, &connection, config); err != nil {
 		return r.resourceFailure(ctx, &connection, err)
 	}
@@ -101,7 +110,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: connection.Generation,
 		Reason:             "Provisioned",
-		Message:            "gateway and worker Pod, RIST Service, and shared PVC are present",
+		Message:            "gateway and worker Pod, RIST Service, preview ingress, and shared PVC are present",
 	})
 	if !reflect.DeepEqual(base.Status, connection.Status) {
 		if err := r.Status().Patch(ctx, &connection, client.MergeFrom(base)); err != nil {
@@ -219,6 +228,9 @@ func (r *Reconciler) reconcileDeletion(
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(connection, FinalizerName) {
 		return ctrl.Result{}, nil
+	}
+	if err := r.releasePreview(ctx, connection); err != nil {
+		return ctrl.Result{}, err
 	}
 	var pod corev1.Pod
 	err := r.Get(ctx, client.ObjectKeyFromObject(connection), &pod)

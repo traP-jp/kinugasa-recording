@@ -29,6 +29,7 @@ func NewManager(
 	kubeConfig *rest.Config,
 	config Config,
 	cameraSource cameraconnection.CameraSource,
+	previewIngress cameraconnection.PreviewIngress,
 	logger *slog.Logger,
 ) (ctrl.Manager, error) {
 	scheme := runtime.NewScheme()
@@ -59,9 +60,10 @@ func NewManager(
 		return nil, fmt.Errorf("create operator manager: %w", err)
 	}
 	if err := (&cameraconnection.Reconciler{
-		Client: manager.GetClient(),
-		Scheme: manager.GetScheme(),
-		Config: config.CameraConnection,
+		Client:         manager.GetClient(),
+		Scheme:         manager.GetScheme(),
+		Config:         config.CameraConnection,
+		PreviewIngress: previewIngress,
 	}).SetupWithManager(manager); err != nil {
 		return nil, fmt.Errorf("set up CameraConnection controller: %w", err)
 	}

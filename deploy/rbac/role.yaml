@@ -9,6 +9,7 @@ rules:
   resources:
   - persistentvolumeclaims
   - pods
+  - secrets
   - services
   verbs:
   - create
