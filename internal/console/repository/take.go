@@ -25,8 +25,20 @@ type FinishTakeRequest struct {
 	Commands    []CameraCommand
 }
 
+type FinishedTakePage struct {
+	Items []domain.FinishedTake
+	Total int64
+}
+
+type FinishedTakeDetail struct {
+	Take        domain.FinishedTake
+	CameraNames map[domain.CameraIdentityID]string
+}
+
 type TakeRepository interface {
 	CreateTake(context.Context, StartTakeRequest) error
 	GetOngoingTake(context.Context, string) (*domain.OngoingTake, error)
 	FinishTake(context.Context, FinishTakeRequest) (domain.FinishedTake, error)
+	ListFinishedTakes(context.Context, string, PageRequest) (FinishedTakePage, error)
+	GetFinishedTake(context.Context, string, string) (FinishedTakeDetail, error)
 }

@@ -40,3 +40,28 @@ func (h *Handler) finishTake(response http.ResponseWriter, request *http.Request
 	}
 	writeJSON(response, http.StatusAccepted, newFinishedTakeResponse(take))
 }
+
+func (h *Handler) listFinishedTakes(response http.ResponseWriter, request *http.Request) {
+	pageRequest, err := pagination(request)
+	if err != nil {
+		h.writeError(response, request, err)
+		return
+	}
+	page, err := h.service.ListFinishedTakes(request.Context(), request.PathValue("sessionName"), pageRequest)
+	if err != nil {
+		h.writeError(response, request, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, newFinishedTakePageResponse(page))
+}
+
+func (h *Handler) getFinishedTake(response http.ResponseWriter, request *http.Request) {
+	detail, err := h.service.GetFinishedTake(
+		request.Context(), request.PathValue("sessionName"), request.PathValue("takeName"),
+	)
+	if err != nil {
+		h.writeError(response, request, err)
+		return
+	}
+	writeJSON(response, http.StatusOK, newFinishedTakeDetailResponse(detail))
+}

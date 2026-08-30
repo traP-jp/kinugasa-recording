@@ -123,6 +123,15 @@ func TestTakeCommandsAreCommittedWithDesiredState(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT state FROM takes WHERE id = $1`, takeTestTakeID).Scan(&takeState); err != nil || takeState != "completed" {
 		t.Fatalf("converged take state = %q, %v", takeState, err)
 	}
+	page, err := store.ListFinishedTakes(ctx, "session-1", repository.PageRequest{Page: 1, PageSize: 20})
+	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].State != domain.FinishedTakeStateCompleted {
+		t.Fatalf("ListFinishedTakes() = %+v, %v", page, err)
+	}
+	detail, err := store.GetFinishedTake(ctx, "session-1", "take-1")
+	if err != nil || len(detail.Take.VideoFiles) != 1 || detail.Take.VideoFiles[0].Hash == nil ||
+		detail.CameraNames[takeTestCameraID] != "camera-1" {
+		t.Fatalf("GetFinishedTake() = %+v, %v", detail, err)
+	}
 }
 
 func TestFinishTakeConvergesErroredRecordings(t *testing.T) {
@@ -189,6 +198,17 @@ func TestCreateTakeRollsBackWhenCameraIsNotConnected(t *testing.T) {
 	var count int
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM takes`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("rolled back take count = %d, %v", count, err)
+	}
+}
+
+func TestFinishedTakeReadsRequireExistingResources(t *testing.T) {
+	store := New(resetDatabase(t))
+	ctx := context.Background()
+	if _, err := store.ListFinishedTakes(ctx, "missing", repository.PageRequest{Page: 1, PageSize: 20}); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("ListFinishedTakes() error = %v", err)
+	}
+	if _, err := store.GetFinishedTake(ctx, "missing", "take-1"); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("GetFinishedTake() error = %v", err)
 	}
 }
 

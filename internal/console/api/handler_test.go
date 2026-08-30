@@ -168,6 +168,28 @@ func TestTakeEndpoints(t *testing.T) {
 			return domain.FinishedTake{ID: view.Take.ID, Name: view.Take.Name, State: domain.FinishedTakeStateUploading,
 				StartedAt: now, FinishedAt: now.Add(time.Minute)}, nil
 		},
+		listFinishedTakes: func(context.Context, string, application.PageRequest) (application.FinishedTakePage, error) {
+			return application.FinishedTakePage{Items: []domain.FinishedTake{{
+				ID: view.Take.ID, Name: view.Take.Name, State: domain.FinishedTakeStateCompleted,
+				StartedAt: now, FinishedAt: now.Add(time.Minute),
+			}}, Page: 1, PageSize: 20, Total: 1}, nil
+		},
+		getFinishedTake: func(context.Context, string, string) (repository.FinishedTakeDetail, error) {
+			hash := domain.ContentHash{}
+			size := int64(42)
+			return repository.FinishedTakeDetail{
+				Take: domain.FinishedTake{
+					ID: view.Take.ID, Name: view.Take.Name, State: domain.FinishedTakeStateCompleted,
+					StartedAt: now, FinishedAt: now.Add(time.Minute),
+					VideoFiles: []domain.VideoFile{{
+						FinishedTakeID: view.Take.ID, CameraIdentityID: "019c2949-b9c5-748a-8477-0a0af012b26c",
+						State: domain.VideoFileStateCompleted, StartedAt: now, FinishedAt: now.Add(time.Minute),
+						ObjectKey: "objects/video.mp4", Hash: &hash, Size: &size,
+					}},
+				},
+				CameraNames: map[domain.CameraIdentityID]string{"019c2949-b9c5-748a-8477-0a0af012b26c": "camera-1"},
+			}, nil
+		},
 	}
 	handler := NewHandler(service, discardLogger())
 	startResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/ongoing-take/start",
@@ -182,6 +204,15 @@ func TestTakeEndpoints(t *testing.T) {
 	finishResponse := request(t, handler, http.MethodPost, "/api/sessions/session-1/ongoing-take/finish", "")
 	if finishResponse.Code != http.StatusAccepted || !strings.Contains(finishResponse.Body.String(), `"state":"uploading"`) {
 		t.Fatalf("finish response = %d %s", finishResponse.Code, finishResponse.Body.String())
+	}
+	listResponse := request(t, handler, http.MethodGet, "/api/sessions/session-1/takes", "")
+	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), `"total":1`) {
+		t.Fatalf("list takes response = %d %s", listResponse.Code, listResponse.Body.String())
+	}
+	detailResponse := request(t, handler, http.MethodGet, "/api/sessions/session-1/takes/take-1", "")
+	if detailResponse.Code != http.StatusOK || !strings.Contains(detailResponse.Body.String(), `"cameraName":"camera-1"`) ||
+		!strings.Contains(detailResponse.Body.String(), `"hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="`) {
+		t.Fatalf("get take response = %d %s", detailResponse.Code, detailResponse.Body.String())
 	}
 }
 
@@ -208,16 +239,18 @@ func discardLogger() *slog.Logger {
 }
 
 type serviceStub struct {
-	createSession  func(context.Context, string) (domain.Session, error)
-	listSessions   func(context.Context, application.PageRequest) (application.SessionPage, error)
-	getSession     func(context.Context, string) (repository.SessionDetail, error)
-	createCamera   func(context.Context, string, string) (repository.Camera, error)
-	listCameras    func(context.Context, string) ([]repository.Camera, error)
-	getCamera      func(context.Context, string, string) (repository.Camera, error)
-	deleteCamera   func(context.Context, string, string) error
-	startTake      func(context.Context, string, string, []string) (application.OngoingTakeView, error)
-	getOngoingTake func(context.Context, string) (*application.OngoingTakeView, error)
-	finishTake     func(context.Context, string) (domain.FinishedTake, error)
+	createSession     func(context.Context, string) (domain.Session, error)
+	listSessions      func(context.Context, application.PageRequest) (application.SessionPage, error)
+	getSession        func(context.Context, string) (repository.SessionDetail, error)
+	createCamera      func(context.Context, string, string) (repository.Camera, error)
+	listCameras       func(context.Context, string) ([]repository.Camera, error)
+	getCamera         func(context.Context, string, string) (repository.Camera, error)
+	deleteCamera      func(context.Context, string, string) error
+	startTake         func(context.Context, string, string, []string) (application.OngoingTakeView, error)
+	getOngoingTake    func(context.Context, string) (*application.OngoingTakeView, error)
+	finishTake        func(context.Context, string) (domain.FinishedTake, error)
+	listFinishedTakes func(context.Context, string, application.PageRequest) (application.FinishedTakePage, error)
+	getFinishedTake   func(context.Context, string, string) (repository.FinishedTakeDetail, error)
 }
 
 func (s *serviceStub) CreateSession(ctx context.Context, name string) (domain.Session, error) {
@@ -258,4 +291,12 @@ func (s *serviceStub) GetOngoingTake(ctx context.Context, sessionName string) (*
 
 func (s *serviceStub) FinishTake(ctx context.Context, sessionName string) (domain.FinishedTake, error) {
 	return s.finishTake(ctx, sessionName)
+}
+
+func (s *serviceStub) ListFinishedTakes(ctx context.Context, sessionName string, request application.PageRequest) (application.FinishedTakePage, error) {
+	return s.listFinishedTakes(ctx, sessionName, request)
+}
+
+func (s *serviceStub) GetFinishedTake(ctx context.Context, sessionName, takeName string) (repository.FinishedTakeDetail, error) {
+	return s.getFinishedTake(ctx, sessionName, takeName)
 }

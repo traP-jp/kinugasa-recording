@@ -164,6 +164,13 @@ type OngoingTakeView struct {
 	CameraNames map[domain.CameraIdentityID]string
 }
 
+type FinishedTakePage struct {
+	Items    []domain.FinishedTake
+	Page     int
+	PageSize int
+	Total    int64
+}
+
 func (s *Service) StartTake(
 	ctx context.Context,
 	sessionName, takeName string,
@@ -285,6 +292,23 @@ func (s *Service) FinishTake(ctx context.Context, sessionName string) (domain.Fi
 	}
 	s.dispatch(request.Commands)
 	return finished, nil
+}
+
+func (s *Service) ListFinishedTakes(ctx context.Context, sessionName string, request PageRequest) (FinishedTakePage, error) {
+	if err := request.validate(); err != nil {
+		return FinishedTakePage{}, err
+	}
+	page, err := s.repository.ListFinishedTakes(ctx, sessionName, repository.PageRequest{
+		Page: request.Page, PageSize: request.PageSize,
+	})
+	if err != nil {
+		return FinishedTakePage{}, err
+	}
+	return FinishedTakePage{Items: page.Items, Page: request.Page, PageSize: request.PageSize, Total: page.Total}, nil
+}
+
+func (s *Service) GetFinishedTake(ctx context.Context, sessionName, takeName string) (repository.FinishedTakeDetail, error) {
+	return s.repository.GetFinishedTake(ctx, sessionName, takeName)
 }
 
 func (s *Service) dispatch(commands []repository.CameraCommand) {

@@ -176,3 +176,11 @@ func (r *repositoryStub) FinishTake(_ context.Context, request repository.Finish
 	r.finishTake = request
 	return domain.FinishedTake{}, nil
 }
+
+func (r *repositoryStub) ListFinishedTakes(context.Context, string, repository.PageRequest) (repository.FinishedTakePage, error) {
+	return repository.FinishedTakePage{}, nil
+}
+
+func (r *repositoryStub) GetFinishedTake(context.Context, string, string) (repository.FinishedTakeDetail, error) {
+	return repository.FinishedTakeDetail{}, nil
+}

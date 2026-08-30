@@ -162,3 +162,59 @@ func newFinishedTakeResponse(take domain.FinishedTake) finishedTakeResponse {
 		StartedAt: take.StartedAt, FinishedAt: take.FinishedAt, Error: takeError,
 	}
 }
+
+type finishedTakePageResponse struct {
+	Items      []finishedTakeResponse `json:"items"`
+	Pagination paginationResponse     `json:"pagination"`
+}
+
+func newFinishedTakePageResponse(page application.FinishedTakePage) finishedTakePageResponse {
+	items := make([]finishedTakeResponse, len(page.Items))
+	for index, take := range page.Items {
+		items[index] = newFinishedTakeResponse(take)
+	}
+	return finishedTakePageResponse{Items: items, Pagination: paginationResponse{
+		Page: page.Page, PageSize: page.PageSize, Total: page.Total,
+	}}
+}
+
+type videoFileResponse struct {
+	CameraName string                `json:"cameraName"`
+	State      domain.VideoFileState `json:"state"`
+	StartedAt  time.Time             `json:"startedAt"`
+	FinishedAt time.Time             `json:"finishedAt"`
+	ObjectKey  *string               `json:"objectKey"`
+	Hash       *string               `json:"hash"`
+	Error      *string               `json:"error"`
+}
+
+type finishedTakeDetailResponse struct {
+	finishedTakeResponse
+	VideoFiles []videoFileResponse `json:"videoFiles"`
+}
+
+func newFinishedTakeDetailResponse(detail repository.FinishedTakeDetail) finishedTakeDetailResponse {
+	files := make([]videoFileResponse, len(detail.Take.VideoFiles))
+	for index, file := range detail.Take.VideoFiles {
+		var objectKey, hash, errorReason *string
+		if file.ObjectKey != "" {
+			objectKey = &file.ObjectKey
+		}
+		if file.Hash != nil {
+			encoded := file.Hash.Base64()
+			hash = &encoded
+		}
+		if file.Error != "" {
+			errorReason = &file.Error
+		}
+		files[index] = videoFileResponse{
+			CameraName: detail.CameraNames[file.CameraIdentityID], State: file.State,
+			StartedAt: file.StartedAt, FinishedAt: file.FinishedAt,
+			ObjectKey: objectKey, Hash: hash, Error: errorReason,
+		}
+	}
+	return finishedTakeDetailResponse{
+		finishedTakeResponse: newFinishedTakeResponse(detail.Take),
+		VideoFiles:           files,
+	}
+}
