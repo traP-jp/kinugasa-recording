@@ -1,0 +1,206 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: cameraconnections.recording.kinugasa.trap.jp
+spec:
+  group: recording.kinugasa.trap.jp
+  names:
+    kind: CameraConnection
+    listKind: CameraConnectionList
+    plural: cameraconnections
+    shortNames:
+    - krcamera
+    singular: cameraconnection
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.cameraName
+      name: Camera
+      type: string
+    - jsonPath: .status.workerPodName
+      name: Worker
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CameraConnectionSpec identifies the durable domain objects for which the
+              operator must provision one worker Pod and one shared PVC. Names are copied
+              here because Kubernetes object names are not the authoritative user-facing
+              resource names.
+            properties:
+              cameraIdentityID:
+                description: CameraIdentityID is the immutable database identifier
+                  of the camera.
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                type: string
+                x-kubernetes-validations:
+                - message: cameraIdentityID is immutable
+                  rule: self == oldSelf
+              cameraName:
+                description: CameraName is the immutable user-facing camera name.
+                pattern: ^[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?$
+                type: string
+                x-kubernetes-validations:
+                - message: cameraName is immutable
+                  rule: self == oldSelf
+              sessionID:
+                description: SessionID is the immutable database identifier of the
+                  owning Session.
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                type: string
+                x-kubernetes-validations:
+                - message: sessionID is immutable
+                  rule: self == oldSelf
+              sessionName:
+                description: SessionName is the user-facing Session name used in recording
+                  paths.
+                pattern: ^[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?$
+                type: string
+                x-kubernetes-validations:
+                - message: sessionName is immutable
+                  rule: self == oldSelf
+            required:
+            - cameraIdentityID
+            - cameraName
+            - sessionID
+            - sessionName
+            type: object
+          status:
+            properties:
+              cameraURL:
+                description: CameraURL is assigned after the gateway endpoint has
+                  been provisioned.
+                format: uri
+                type: string
+              conditions:
+                description: Conditions contain detailed reconciliation progress and
+                  failures.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              error:
+                description: Error is present exactly when Phase is Error.
+                maxLength: 4096
+                minLength: 1
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the latest spec generation reconciled
+                  into status.
+                format: int64
+                type: integer
+              phase:
+                description: Phase mirrors the CameraConnection state stored by console-server.
+                enum:
+                - Activating
+                - Waiting
+                - Connected
+                - Error
+                type: string
+              pvcName:
+                type: string
+              videoWorkerID:
+                description: VideoWorkerID identifies the currently running video-worker
+                  process.
+                pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+                type: string
+              workerPodName:
+                description: WorkerPodName and PVCName expose the resources selected
+                  by the operator.
+                type: string
+            type: object
+            x-kubernetes-validations:
+            - message: error must be present exactly when phase is Error
+              rule: '!has(self.phase) || ((self.phase == ''Error'') == has(self.error))'
+            - message: cameraURL must be present unless phase is Activating
+              rule: '!has(self.phase) || self.phase == ''Activating'' || has(self.cameraURL)'
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
