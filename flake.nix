@@ -25,6 +25,7 @@
             kubectl
             nodejs
             pnpm
+            postgresql
             protobuf
             protoc-gen-go
             protoc-gen-go-grpc
