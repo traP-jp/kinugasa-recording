@@ -1,6 +1,6 @@
 # 設計上の制約
 
-kinugasa-recording v2は、Kubernetes Operatorとして動作しなければならない。
+kinugasa-recording v2は、CustomResourceDefinition（CRD）で定義したKubernetesカスタムリソースを使用するOperatorとして動作しなければならない。
 
 ## 実装技術
 
