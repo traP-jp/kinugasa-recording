@@ -21,6 +21,7 @@ const (
 	executorCommandID3 = "019c27ca-b9a2-7a41-b217-66a7769f3544"
 	executorCommandID4 = "019c27ca-c1df-797a-b1ac-52b06ff9ef84"
 	executorCommandID5 = "019c27ca-ca5a-761c-b033-a357158aa027"
+	executorCommandID6 = "019c27ca-cea0-78b4-b59a-ec06963e475b"
 	executorEventID1   = "019c27ca-d246-7fd8-b213-93c73825e97c"
 	executorEventID2   = "019c27ca-da9a-7910-9fc8-d00095d83475"
 )
@@ -68,6 +69,10 @@ func TestExecutorRunsRecordingStateMachineIdempotently(t *testing.T) {
 	if recorder.finishCalls.Load() != 1 {
 		t.Fatalf("recorder finish calls = %d, want 1", recorder.finishCalls.Load())
 	}
+	uploads := executor.uploads.(*uploadQueueStub)
+	if uploads.publishCalls.Load() != 1 {
+		t.Fatalf("upload manifest publish calls = %d, want 1", uploads.publishCalls.Load())
+	}
 	status = recordingStatus(t, store)
 	if status.State != workerv1.RecordingState_RECORDING_STATE_FINISHED ||
 		status.FinalizedFile.RelativePath != "recordings/take-id/video.mp4" {
@@ -86,6 +91,13 @@ func TestExecutorRunsRecordingStateMachineIdempotently(t *testing.T) {
 	result, err = executor.Execute(context.Background(), finishRecordingCommand(executorCommandID5, "take-id"))
 	if err != nil || result.Status != workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_ALREADY_APPLIED {
 		t.Fatalf("Execute(duplicate desired finish) = %+v, %v", result, err)
+	}
+	result, err = executor.Execute(context.Background(), shutdownCommand(executorCommandID6))
+	if err != nil || result.Status != workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED {
+		t.Fatalf("Execute(shutdown after finish) = %+v, %v", result, err)
+	}
+	if uploads.completeCalls.Load() != 1 {
+		t.Fatalf("worker completion marker calls = %d, want 1", uploads.completeCalls.Load())
 	}
 }
 
@@ -201,7 +213,7 @@ func newExecutorState(t *testing.T) *workerstate.Store {
 
 func newTestExecutor(t *testing.T, store *workerstate.Store, recorder Recorder) *Executor {
 	t.Helper()
-	executor, err := NewExecutor(store, recorder)
+	executor, err := NewExecutor(store, recorder, &uploadQueueStub{})
 	if err != nil {
 		t.Fatalf("NewExecutor() error = %v", err)
 	}
@@ -216,6 +228,21 @@ func newTestExecutor(t *testing.T, store *workerstate.Store, recorder Recorder) 
 		return value, nil
 	}
 	return executor
+}
+
+type uploadQueueStub struct {
+	publishCalls  atomic.Int32
+	completeCalls atomic.Int32
+}
+
+func (q *uploadQueueStub) Publish(string, string, time.Time, time.Time) error {
+	q.publishCalls.Add(1)
+	return nil
+}
+
+func (q *uploadQueueStub) MarkWorkerComplete() error {
+	q.completeCalls.Add(1)
+	return nil
 }
 
 func recordingStatus(t *testing.T, store *workerstate.Store) *workerv1.RecordingStatus {

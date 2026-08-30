@@ -26,10 +26,16 @@ type Recorder interface {
 	Abort() error
 }
 
+type UploadQueue interface {
+	Publish(takeID, relativePath string, startedAt, finishedAt time.Time) error
+	MarkWorkerComplete() error
+}
+
 type Executor struct {
 	mu            sync.Mutex
 	state         StateStore
 	recorder      Recorder
+	uploads       UploadQueue
 	now           func() time.Time
 	newEventID    func() (string, error)
 	activeTake    string
@@ -37,16 +43,20 @@ type Executor struct {
 	completedTake string
 }
 
-func NewExecutor(state StateStore, recorder Recorder) (*Executor, error) {
+func NewExecutor(state StateStore, recorder Recorder, uploads UploadQueue) (*Executor, error) {
 	if state == nil {
 		return nil, fmt.Errorf("worker state store must be set")
 	}
 	if recorder == nil {
 		return nil, fmt.Errorf("recording process must be set")
 	}
+	if uploads == nil {
+		return nil, fmt.Errorf("upload queue must be set")
+	}
 	executor := &Executor{
 		state:      state,
 		recorder:   recorder,
+		uploads:    uploads,
 		now:        time.Now,
 		newEventID: uuidV7,
 	}
@@ -76,7 +86,7 @@ func (e *Executor) Execute(
 	case *workerv1.WorkerCommand_FinishRecording:
 		return e.finish(ctx, command.CommandId, payload.FinishRecording)
 	case *workerv1.WorkerCommand_Shutdown:
-		return e.shutdown(command.CommandId), nil
+		return e.shutdown(command.CommandId)
 	default:
 		return nil, fmt.Errorf("unsupported worker command")
 	}
@@ -244,6 +254,14 @@ func (e *Executor) finish(
 	if finalized.RelativePath != expectedPath {
 		return nil, fmt.Errorf("finalized recording path does not match active recording")
 	}
+	if err := e.uploads.Publish(
+		finish.TakeId,
+		finalized.RelativePath,
+		finalized.StartedAt,
+		finalized.FinishedAt,
+	); err != nil {
+		return nil, fmt.Errorf("publish upload manifest: %w", err)
+	}
 	if err := e.appendRecordingEvent(&workerv1.RecordingStatus{
 		TakeId:     finish.TakeId,
 		State:      workerv1.RecordingState_RECORDING_STATE_FINISHED,
@@ -259,15 +277,18 @@ func (e *Executor) finish(
 	return e.result(commandID, workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED, nil), nil
 }
 
-func (e *Executor) shutdown(commandID string) *workerv1.CommandResult {
+func (e *Executor) shutdown(commandID string) (*workerv1.CommandResult, error) {
 	if e.activeTake != "" {
 		return e.rejected(
 			commandID,
 			workerv1.ErrorCode_ERROR_CODE_RECORDING_ALREADY_ACTIVE,
 			"cannot shut down while recording",
-		)
+		), nil
 	}
-	return e.result(commandID, workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED, nil)
+	if err := e.uploads.MarkWorkerComplete(); err != nil {
+		return nil, fmt.Errorf("persist worker completion: %w", err)
+	}
+	return e.result(commandID, workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED, nil), nil
 }
 
 func (e *Executor) appendRecordingEvent(status *workerv1.RecordingStatus) error {

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
+	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
 	workercommand "github.com/traP-jp/kinugasa-recording/internal/worker/command"
 	workerconfig "github.com/traP-jp/kinugasa-recording/internal/worker/config"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/control"
@@ -45,6 +46,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	store, err := state.Open(config.SharedVolume, workerID.String(), time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("open worker state: %w", err)
+	}
+	uploads, err := uploadqueue.Open(config.SharedVolume, config.SessionID, config.CameraIdentityID)
+	if err != nil {
+		return fmt.Errorf("open upload queue: %w", err)
 	}
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	defer cancelRuntime()
@@ -77,7 +82,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
-	executor, err := workercommand.NewExecutor(store, recorder)
+	executor, err := workercommand.NewExecutor(store, recorder, uploads)
 	if err != nil {
 		cancelRuntime()
 		_ = mediaServer.Wait()
