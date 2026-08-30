@@ -17,6 +17,7 @@ type Config struct {
 	RTSPAddress       string
 	MediaAPIAddress   string
 	MediaPath         string
+	GatewayStatusURL  string
 	RTPSDP            string
 	InputPollInterval time.Duration
 }
@@ -33,6 +34,7 @@ func FromEnvironment() (Config, error) {
 		RTSPAddress:       valueOrDefault(os.Getenv("KINUGASA_RTSP_ADDRESS"), "127.0.0.1:8554"),
 		MediaAPIAddress:   valueOrDefault(os.Getenv("KINUGASA_MEDIA_API_ADDRESS"), "127.0.0.1:9997"),
 		MediaPath:         valueOrDefault(os.Getenv("KINUGASA_MEDIA_PATH"), "camera"),
+		GatewayStatusURL:  valueOrDefault(os.Getenv("KINUGASA_GATEWAY_STATUS_URL"), "http://127.0.0.1:9080/status"),
 		InputPollInterval: 250 * time.Millisecond,
 	}
 	if config.SessionID == "" {
@@ -70,4 +72,7 @@ t=0 0
 m=video 8000 RTP/AVP 96
 a=rtpmap:96 H264/90000
 a=rtcp:8001
+m=audio 8002 RTP/AVP 97
+a=rtpmap:97 opus/48000/2
+a=rtcp:8003
 a=recvonly`

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
+	"github.com/traP-jp/kinugasa-recording/internal/gateway"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
 	workercommand "github.com/traP-jp/kinugasa-recording/internal/worker/command"
 	workerconfig "github.com/traP-jp/kinugasa-recording/internal/worker/config"
@@ -88,6 +89,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
+	gatewayClient, err := gateway.NewClient(config.GatewayStatusURL)
+	if err != nil {
+		cancelRuntime()
+		_ = mediaServer.Wait()
+		return err
+	}
 	connection, err := grpc.NewClient(
 		config.ConsoleAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -111,7 +118,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
-	go observeInput(runtimeContext, mediaServer, store, controlClient, executor, config.InputPollInterval, logger)
+	go observeInput(runtimeContext, gatewayClient, mediaServer, store, controlClient, executor, config.InputPollInterval, logger)
 	controlDone := make(chan error, 1)
 	go func() { controlDone <- controlClient.Run(runtimeContext) }()
 	mediaDone := make(chan error, 1)
