@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
@@ -131,6 +132,50 @@ func TestWorkerRegistrationAndEventsAreTransactional(t *testing.T) {
 	}
 	if relativePath != "recordings/take-1/video.mp4" {
 		t.Fatalf("finalized relative path = %q", relativePath)
+	}
+	var videoState string
+	if err := pool.QueryRow(ctx, `
+		SELECT state FROM video_files
+		WHERE take_id = $1 AND camera_identity_id = $2`, workerTestTakeID, workerTestCameraID,
+	).Scan(&videoState); err != nil {
+		t.Fatalf("query staged video file: %v", err)
+	}
+	if videoState != "uploading" {
+		t.Fatalf("staged video state = %q, want uploading", videoState)
+	}
+	report := &upv1.UploadReport{
+		SessionId:        workerTestSessionID,
+		CameraIdentityId: workerTestCameraID,
+		TakeId:           workerTestTakeID,
+		RelativePath:     "recordings/take-1/video.mp4",
+		StartedAt:        timestamppb.New(now),
+		FinishedAt:       timestamppb.New(now.Add(time.Minute)),
+		State:            upv1.UploadState_UPLOAD_STATE_COMPLETED,
+		ObjectKey:        "recordings/take-1/hash-video.mp4",
+		Sha256:           make([]byte, 32),
+		Size:             42,
+		ObservedAt:       timestamppb.New(now.Add(2 * time.Minute)),
+	}
+	if err := store.ApplyUploadReport(ctx, report); err != nil {
+		t.Fatalf("ApplyUploadReport() error = %v", err)
+	}
+	if err := store.ApplyUploadReport(ctx, report); err != nil {
+		t.Fatalf("ApplyUploadReport(duplicate) error = %v", err)
+	}
+	var objectKey string
+	var size int64
+	if err := pool.QueryRow(ctx, `
+		SELECT state, object_key, size FROM video_files
+		WHERE take_id = $1 AND camera_identity_id = $2`, workerTestTakeID, workerTestCameraID,
+	).Scan(&videoState, &objectKey, &size); err != nil {
+		t.Fatalf("query completed video file: %v", err)
+	}
+	if videoState != "completed" || objectKey != report.ObjectKey || size != report.Size {
+		t.Fatalf("completed video file = %q, %q, %d", videoState, objectKey, size)
+	}
+	report.Size++
+	if err := store.ApplyUploadReport(ctx, report); !errors.Is(err, repository.ErrUploadReportMismatch) {
+		t.Fatalf("ApplyUploadReport(changed terminal) error = %v", err)
 	}
 }
 

@@ -317,6 +317,16 @@ func applyRecordingStatus(
 		if commandTag.RowsAffected() == 0 {
 			return repository.ErrWorkerStateMismatch
 		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO video_files (
+				take_id, camera_identity_id, session_id, state, started_at, finished_at
+			) VALUES ($1, $2, $3, 'uploading', $4, $5)
+			ON CONFLICT (take_id, camera_identity_id) DO NOTHING`,
+			recording.TakeId, cameraID, sessionID,
+			recording.StartedAt.AsTime(), recording.FinishedAt.AsTime(),
+		); err != nil {
+			return fmt.Errorf("stage video file upload: %w", err)
+		}
 		return nil
 	default:
 		return fmt.Errorf("apply recording status: unsupported state %s", recording.State)
