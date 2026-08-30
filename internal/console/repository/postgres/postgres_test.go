@@ -50,7 +50,8 @@ func resetDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	pool := requireTestPool(t)
 	_, err := pool.Exec(context.Background(), `
-		TRUNCATE video_files, recording_cameras, takes,
+		TRUNCATE worker_events, worker_commands, worker_processes,
+		         finalized_recordings, video_files, recording_cameras, takes,
 		         camera_connections, camera_identities, sessions CASCADE`)
 	if err != nil {
 		t.Fatalf("truncate database: %v", err)
