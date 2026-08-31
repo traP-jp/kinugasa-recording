@@ -236,8 +236,11 @@ func (s *Store) CompleteCameraDeletion(ctx context.Context, cameraID string) err
 
 func (s *Store) ActivateCameraConnection(ctx context.Context, cameraID, cameraURL string) error {
 	commandTag, err := s.pool.Exec(ctx, `
-		UPDATE camera_connections SET url = $2, status = 'waiting', error = NULL
-		WHERE camera_identity_id = $1 AND status = 'activating'
+		UPDATE camera_connections
+		SET url = $2,
+		    status = CASE WHEN status = 'activating' THEN 'waiting' ELSE status END,
+		    error = CASE WHEN status = 'activating' THEN NULL ELSE error END
+		WHERE camera_identity_id = $1
 		  AND deletion_requested_at IS NULL`, cameraID, cameraURL)
 	if err != nil {
 		return fmt.Errorf("activate camera connection: %w", err)

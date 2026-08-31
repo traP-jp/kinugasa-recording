@@ -52,6 +52,10 @@ func desiredPVC(connection *recordingv1alpha1.CameraConnection, config Config) *
 
 func desiredService(connection *recordingv1alpha1.CameraConnection, config Config) *corev1.Service {
 	labels := labelsFor(connection)
+	serviceType := corev1.ServiceTypeLoadBalancer
+	if config.usesNodePort() {
+		serviceType = corev1.ServiceTypeNodePort
+	}
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      connection.Name,
@@ -59,7 +63,7 @@ func desiredService(connection *recordingv1alpha1.CameraConnection, config Confi
 			Labels:    labels,
 		},
 		Spec: corev1.ServiceSpec{
-			Type:                     corev1.ServiceTypeLoadBalancer,
+			Type:                     serviceType,
 			ExternalTrafficPolicy:    corev1.ServiceExternalTrafficPolicyLocal,
 			PublishNotReadyAddresses: true,
 			Selector:                 labels,

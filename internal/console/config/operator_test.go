@@ -10,6 +10,9 @@ func TestOperatorFromEnvironment(t *testing.T) {
 	t.Setenv("CONSOLE_GRPC_ADDRESS", "console-server:9090")
 	t.Setenv("OPERATOR_NAMESPACE", "recording")
 	t.Setenv("SHARED_VOLUME_SIZE", "20Gi")
+	t.Setenv("VIDEO_GATEWAY_RIST_PUBLIC_HOST", "127.0.0.1")
+	t.Setenv("VIDEO_GATEWAY_RIST_NODE_PORT_MIN", "32000")
+	t.Setenv("VIDEO_GATEWAY_RIST_NODE_PORT_MAX", "32099")
 
 	config, err := OperatorFromEnvironment()
 	if err != nil {
@@ -20,6 +23,10 @@ func TestOperatorFromEnvironment(t *testing.T) {
 	}
 	if got := config.Manager.CameraConnection.SharedVolumeSize.String(); got != "20Gi" {
 		t.Fatalf("shared volume size = %q, want 20Gi", got)
+	}
+	if cameraConfig := config.Manager.CameraConnection; cameraConfig.RISTPublicHost != "127.0.0.1" ||
+		cameraConfig.RISTNodePortMin != 32000 || cameraConfig.RISTNodePortMax != 32099 {
+		t.Fatalf("RIST publication config = %+v", cameraConfig)
 	}
 }
 

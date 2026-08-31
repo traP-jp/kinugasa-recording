@@ -61,6 +61,7 @@ func NewManager(
 	}
 	if err := (&cameraconnection.Reconciler{
 		Client:         manager.GetClient(),
+		APIReader:      manager.GetAPIReader(),
 		Scheme:         manager.GetScheme(),
 		Config:         config.CameraConnection,
 		PreviewIngress: previewIngress,

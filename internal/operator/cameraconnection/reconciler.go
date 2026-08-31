@@ -28,6 +28,7 @@ const (
 
 type Reconciler struct {
 	client.Client
+	APIReader      client.Reader
 	Scheme         *runtime.Scheme
 	Config         Config
 	PreviewIngress PreviewIngress
@@ -115,7 +116,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &service); err != nil {
 		return r.resourceFailure(ctx, &connection, fmt.Errorf("load RIST Service status: %w", err))
 	}
-	if cameraURL := cameraURLForService(&service, config.RISTPort); cameraURL != "" {
+	if cameraURL := cameraURLForService(&service, config); cameraURL != "" {
 		connection.Status.CameraURL = cameraURL
 		if connection.Status.Phase == "" || connection.Status.Phase == recordingv1alpha1.CameraConnectionPhaseActivating {
 			connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
@@ -170,7 +171,13 @@ func observeWorkerRestart(status *recordingv1alpha1.CameraConnectionStatus, pod 
 	return ""
 }
 
-func cameraURLForService(service *corev1.Service, port int32) string {
+func cameraURLForService(service *corev1.Service, config Config) string {
+	if config.usesNodePort() {
+		if len(service.Spec.Ports) == 0 || service.Spec.Ports[0].NodePort == 0 {
+			return ""
+		}
+		return "rist://" + net.JoinHostPort(config.RISTPublicHost, fmt.Sprintf("%d", service.Spec.Ports[0].NodePort))
+	}
 	if len(service.Status.LoadBalancer.Ingress) == 0 {
 		return ""
 	}
@@ -180,6 +187,10 @@ func cameraURLForService(service *corev1.Service, port int32) string {
 	}
 	if address == "" {
 		return ""
+	}
+	port := config.RISTPort
+	if len(service.Spec.Ports) != 0 {
+		port = service.Spec.Ports[0].Port
 	}
 	return "rist://" + net.JoinHostPort(address, fmt.Sprintf("%d", port))
 }
@@ -218,10 +229,21 @@ func (r *Reconciler) ensureService(ctx context.Context, connection *recordingv1a
 	var existing corev1.Service
 	key := client.ObjectKeyFromObject(desired)
 	if err := r.Get(ctx, key, &existing); err == nil {
+		if len(existing.Spec.Ports) != 0 {
+			desired.Spec.Ports[0].NodePort = existing.Spec.Ports[0].NodePort
+		}
+		if config.usesNodePort() && !nodePortInRange(desired.Spec.Ports[0].NodePort, config) {
+			nodePort, err := r.allocateNodePort(ctx, connection.Namespace, connection.Name, config)
+			if err != nil {
+				return err
+			}
+			desired.Spec.Ports[0].NodePort = nodePort
+		}
 		base := existing.DeepCopy()
 		existing.Labels = desired.Labels
 		existing.Spec.Type = desired.Spec.Type
 		existing.Spec.ExternalTrafficPolicy = desired.Spec.ExternalTrafficPolicy
+		existing.Spec.HealthCheckNodePort = desired.Spec.HealthCheckNodePort
 		existing.Spec.Selector = desired.Spec.Selector
 		existing.Spec.Ports = desired.Spec.Ports
 		existing.Spec.PublishNotReadyAddresses = true
@@ -230,12 +252,60 @@ func (r *Reconciler) ensureService(ctx context.Context, connection *recordingv1a
 		}
 		return nil
 	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("get RTP Service: %w", err)
+		return fmt.Errorf("get RIST Service: %w", err)
+	}
+	if config.usesNodePort() {
+		nodePort, err := r.allocateNodePort(ctx, connection.Namespace, connection.Name, config)
+		if err != nil {
+			return err
+		}
+		desired.Spec.Ports[0].NodePort = nodePort
 	}
 	if err := r.Create(ctx, desired); err != nil {
-		return fmt.Errorf("create RTP Service: %w", err)
+		return fmt.Errorf("create RIST Service: %w", err)
 	}
 	return nil
+}
+
+func (r *Reconciler) allocateNodePort(
+	ctx context.Context,
+	namespace, serviceName string,
+	config Config,
+) (int32, error) {
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	var services corev1.ServiceList
+	if err := reader.List(ctx, &services); err != nil {
+		return 0, fmt.Errorf("list Services for RIST node port allocation: %w", err)
+	}
+	used := make(map[int32]struct{})
+	for index := range services.Items {
+		service := &services.Items[index]
+		if service.Namespace == namespace && service.Name == serviceName {
+			continue
+		}
+		for _, port := range service.Spec.Ports {
+			if port.NodePort != 0 {
+				used[port.NodePort] = struct{}{}
+			}
+		}
+	}
+	for port := config.RISTNodePortMin; port <= config.RISTNodePortMax; port++ {
+		if _, exists := used[port]; !exists {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf(
+		"allocate RIST node port: range %d..%d is exhausted",
+		config.RISTNodePortMin,
+		config.RISTNodePortMax,
+	)
+}
+
+func nodePortInRange(port int32, config Config) bool {
+	return port >= config.RISTNodePortMin && port <= config.RISTNodePortMax
 }
 
 func (r *Reconciler) ensurePod(ctx context.Context, connection *recordingv1alpha1.CameraConnection, config Config) error {

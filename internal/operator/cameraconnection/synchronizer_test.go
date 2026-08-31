@@ -74,6 +74,13 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 		Status:           domain.CameraConnectionStatusConnected,
 		VideoWorkerID:    "019c240e-5141-75e4-8b4b-5c611e7fab65",
 	}
+	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(&connection), &connection); err != nil {
+		t.Fatalf("refresh CameraConnection: %v", err)
+	}
+	connection.Status.CameraURL = "rist://127.0.0.1:32000"
+	if err := fakeClient.Status().Update(context.Background(), &connection); err != nil {
+		t.Fatalf("update reassigned CameraConnection URL: %v", err)
+	}
 	if err := synchronizer.Sync(context.Background()); err != nil {
 		t.Fatalf("status Sync() error = %v", err)
 	}
@@ -81,7 +88,9 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	if connection.Status.Phase != recordingv1alpha1.CameraConnectionPhaseConnected ||
-		connection.Status.VideoWorkerID != "019c240e-5141-75e4-8b4b-5c611e7fab65" {
+		connection.Status.VideoWorkerID != "019c240e-5141-75e4-8b4b-5c611e7fab65" ||
+		connection.Status.CameraURL != "rist://127.0.0.1:32000" ||
+		source.activatedURL != "rist://127.0.0.1:32000" {
 		t.Fatalf("synchronized CameraConnection status = %+v", connection.Status)
 	}
 }

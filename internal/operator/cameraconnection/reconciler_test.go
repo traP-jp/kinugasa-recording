@@ -116,11 +116,69 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 }
 
 func TestCameraURLForLoadBalancerService(t *testing.T) {
-	service := &corev1.Service{Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
-		Ingress: []corev1.LoadBalancerIngress{{Hostname: "camera.example.com"}},
-	}}}
-	if got := cameraURLForService(service, 9000); got != "rist://camera.example.com:9000" {
+	service := &corev1.Service{
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 9000}}},
+		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
+			Ingress: []corev1.LoadBalancerIngress{{Hostname: "camera.example.com"}},
+		}},
+	}
+	if got := cameraURLForService(service, testConfig()); got != "rist://camera.example.com:9000" {
 		t.Fatalf("cameraURLForService() = %q", got)
+	}
+}
+
+func TestReconcileAllocatesDistinctRISTNodePorts(t *testing.T) {
+	scheme := testScheme(t)
+	first := testConnection()
+	second := first.DeepCopy()
+	second.Name = "camera-019c240f"
+	second.UID = types.UID("connection-uid-2")
+	second.Spec.CameraIdentityID = "019c240f-3eb4-72d6-a6fa-adfe1df795c8"
+	second.Spec.CameraName = "camera-2"
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
+		WithObjects(first, second, &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{Name: first.Name, Namespace: first.Namespace},
+			Spec: corev1.ServiceSpec{
+				Type:                corev1.ServiceTypeLoadBalancer,
+				HealthCheckNodePort: 30554,
+				Ports: []corev1.ServicePort{{
+					Name: "rist", Protocol: corev1.ProtocolUDP, Port: 9000, NodePort: 31211,
+				}},
+			},
+		}).
+		Build()
+	reconciler := testReconciler(fakeClient, scheme)
+	reconciler.Config.RISTPublicHost = "127.0.0.1"
+	reconciler.Config.RISTNodePortMin = 32000
+	reconciler.Config.RISTNodePortMax = 32099
+
+	for _, connection := range []*recordingv1alpha1.CameraConnection{first, second} {
+		request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(connection)}
+		if _, err := reconciler.Reconcile(context.Background(), request); err != nil {
+			t.Fatalf("Reconcile(%s) error = %v", connection.Name, err)
+		}
+	}
+
+	for index, connection := range []*recordingv1alpha1.CameraConnection{first, second} {
+		var service corev1.Service
+		if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(connection), &service); err != nil {
+			t.Fatalf("get Service %s: %v", connection.Name, err)
+		}
+		wantPort := int32(32000 + index)
+		if service.Spec.Type != corev1.ServiceTypeNodePort || service.Spec.Ports[0].NodePort != wantPort ||
+			service.Spec.HealthCheckNodePort != 0 {
+			t.Fatalf("Service %s = %+v, want NodePort %d", connection.Name, service.Spec, wantPort)
+		}
+		var updated recordingv1alpha1.CameraConnection
+		if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(connection), &updated); err != nil {
+			t.Fatalf("get CameraConnection %s: %v", connection.Name, err)
+		}
+		wantURL := fmt.Sprintf("rist://127.0.0.1:%d", wantPort)
+		if updated.Status.CameraURL != wantURL || updated.Status.Phase != recordingv1alpha1.CameraConnectionPhaseWaiting {
+			t.Fatalf("CameraConnection %s status = %+v, want URL %s", connection.Name, updated.Status, wantURL)
+		}
 	}
 }
 
@@ -285,7 +343,7 @@ func testConfig() Config {
 
 func testReconciler(fakeClient client.Client, scheme *runtime.Scheme) *Reconciler {
 	return &Reconciler{
-		Client: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{},
+		Client: fakeClient, APIReader: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{},
 		WorkerFailures: workerFailureStub{},
 	}
 }

@@ -40,6 +40,14 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 	if err != nil {
 		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_RIST_PORT: %w", err)
 	}
+	ristNodePortMin, err := portOrDefault(os.Getenv("VIDEO_GATEWAY_RIST_NODE_PORT_MIN"), 0)
+	if err != nil {
+		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_RIST_NODE_PORT_MIN: %w", err)
+	}
+	ristNodePortMax, err := portOrDefault(os.Getenv("VIDEO_GATEWAY_RIST_NODE_PORT_MAX"), 0)
+	if err != nil {
+		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_RIST_NODE_PORT_MAX: %w", err)
+	}
 	volumeSize, err := resource.ParseQuantity(valueOrDefault(os.Getenv("SHARED_VOLUME_SIZE"), "100Gi"))
 	if err != nil || volumeSize.Sign() <= 0 {
 		return OperatorConfig{}, fmt.Errorf("SHARED_VOLUME_SIZE must be a positive Kubernetes quantity")
@@ -71,6 +79,9 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 				RTPPort:               rtpPort,
 				RTCPPort:              rtcpPort,
 				RISTPort:              ristPort,
+				RISTPublicHost:        os.Getenv("VIDEO_GATEWAY_RIST_PUBLIC_HOST"),
+				RISTNodePortMin:       ristNodePortMin,
+				RISTNodePortMax:       ristNodePortMax,
 			},
 		},
 	}, nil

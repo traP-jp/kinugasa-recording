@@ -70,6 +70,17 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 		activated.Connection.URL != "rist://camera.example.com:9000" {
 		t.Fatalf("activated camera = %+v, %v", activated, err)
 	}
+	if _, err := pool.Exec(ctx, `UPDATE camera_connections SET status = 'connected' WHERE camera_identity_id = $1`, identity.ID); err != nil {
+		t.Fatalf("set connected camera: %v", err)
+	}
+	if err := store.ActivateCameraConnection(ctx, string(identity.ID), "rist://127.0.0.1:32000"); err != nil {
+		t.Fatalf("update camera connection URL: %v", err)
+	}
+	reassigned, err := store.GetCamera(ctx, session.Name, identity.Name)
+	if err != nil || reassigned.Connection.Status != domain.CameraConnectionStatusConnected ||
+		reassigned.Connection.URL != "rist://127.0.0.1:32000" {
+		t.Fatalf("reassigned camera = %+v, %v", reassigned, err)
+	}
 
 	shutdown := repository.CameraCommand{CameraIdentityID: string(identity.ID), Command: &workerv1.WorkerCommand{
 		CommandId: "019c240e-5141-75e4-8b4b-5c611e7fab65", IssuedAt: timestamppb.New(createdAt),

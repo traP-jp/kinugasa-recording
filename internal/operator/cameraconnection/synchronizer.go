@@ -154,19 +154,17 @@ func (s *Synchronizer) syncResourceStatus(
 	resource *recordingv1alpha1.CameraConnection,
 	camera repository.CameraResource,
 ) error {
-	// Before Service allocation is copied to the database, the resource is the
-	// only place that contains the URL. Preserve it so Sync can activate the
-	// domain connection below.
-	if camera.Connection.Status == domain.CameraConnectionStatusActivating && camera.Connection.URL == "" {
-		return nil
-	}
 	phase, err := resourcePhase(camera.Connection.Status)
 	if err != nil {
 		return err
 	}
 	base := resource.DeepCopy()
 	resource.Status.Phase = phase
-	resource.Status.CameraURL = camera.Connection.URL
+	// The Service allocation recorded by the reconciler is authoritative. Keep
+	// it when present so a changed external endpoint can converge back to DB.
+	if resource.Status.CameraURL == "" {
+		resource.Status.CameraURL = camera.Connection.URL
+	}
 	resource.Status.VideoWorkerID = string(camera.Connection.VideoWorkerID)
 	resource.Status.Error = camera.Connection.Error
 	if err := s.Client.Status().Patch(ctx, resource, client.MergeFrom(base)); err != nil {

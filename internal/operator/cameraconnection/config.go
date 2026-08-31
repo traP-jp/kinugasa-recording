@@ -21,6 +21,9 @@ type Config struct {
 	RTPPort               int32
 	RTCPPort              int32
 	RISTPort              int32
+	RISTPublicHost        string
+	RISTNodePortMin       int32
+	RISTNodePortMax       int32
 }
 
 func (c Config) withDefaults() Config {
@@ -65,6 +68,21 @@ func (c Config) validate() error {
 	if c.RISTPort < 1 || c.RISTPort > 65535 {
 		validationErrors = append(validationErrors, fmt.Errorf("RIST port %d is outside 1..65535", c.RISTPort))
 	}
+	if (c.RISTNodePortMin == 0) != (c.RISTNodePortMax == 0) {
+		validationErrors = append(validationErrors, errors.New("RIST node port minimum and maximum must be configured together"))
+	}
+	if c.RISTNodePortMin != 0 {
+		if c.RISTPublicHost == "" {
+			validationErrors = append(validationErrors, errors.New("RIST public host is required with a node port range"))
+		}
+		if c.RISTNodePortMin < 1 || c.RISTNodePortMax > 65535 || c.RISTNodePortMin > c.RISTNodePortMax {
+			validationErrors = append(validationErrors, fmt.Errorf(
+				"RIST node port range %d..%d is invalid", c.RISTNodePortMin, c.RISTNodePortMax,
+			))
+		}
+	} else if c.RISTPublicHost != "" {
+		validationErrors = append(validationErrors, errors.New("RIST node port range is required with a public host"))
+	}
 	if c.RTPPort > 65533 || c.RTCPPort > 65533 {
 		validationErrors = append(validationErrors, errors.New("RTP and RTCP ports must leave room for audio ports at +2"))
 	}
@@ -76,4 +94,8 @@ func (c Config) validate() error {
 		validationErrors = append(validationErrors, errors.New("video and audio RTP/RTCP ports must be distinct"))
 	}
 	return errors.Join(validationErrors...)
+}
+
+func (c Config) usesNodePort() bool {
+	return c.RISTNodePortMin != 0 && c.RISTNodePortMax != 0
 }
