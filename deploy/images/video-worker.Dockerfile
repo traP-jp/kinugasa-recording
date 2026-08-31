@@ -5,8 +5,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/video-worker ./cmd/video-worker
 
-FROM bluenviron/mediamtx:1.20.1-ffmpeg
-RUN ffmpeg -version >/dev/null
+FROM bluenviron/mediamtx:1.20.1 AS mediamtx
+
+FROM alpine:3.23
+RUN apk add --no-cache ca-certificates
+COPY --from=mediamtx /mediamtx /mediamtx
 COPY --from=build /out/video-worker /usr/local/bin/video-worker
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/video-worker"]

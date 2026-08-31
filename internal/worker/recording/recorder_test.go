@@ -2,103 +2,78 @@ package recording
 
 import (
 	"context"
+	"encoding/binary"
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
 
-func TestRecorderFinalizesFFmpegOutputAtomically(t *testing.T) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("ffmpeg is not available")
-	}
+func TestRecorderFinalizesMediaMTXFMP4Atomically(t *testing.T) {
 	sharedVolume := t.TempDir()
-	recorder, err := NewRecorder(Config{
-		SharedVolume: sharedVolume,
-		FFmpegPath:   ffmpegPath,
-		InputArguments: []string{
-			"-re", "-f", "lavfi", "-i", "testsrc=size=160x90:rate=30",
+	segmentPath := testSegmentPath(t, sharedVolume)
+	startedAt := time.Date(2026, 8, 31, 5, 0, 0, 0, time.UTC)
+	finishedAt := startedAt.Add(time.Second)
+	controller := &controllerStub{
+		onStart: func() error {
+			if err := os.WriteFile(segmentPath, fragmentedMP4(), 0o600); err != nil {
+				return err
+			}
+			return WriteSegmentHook(sharedVolume, SegmentCreatedHookArgument, segmentPath, startedAt)
 		},
-		OutputArguments: []string{
-			"-map", "0:v:0", "-c:v", "mpeg4", "-q:v", "5",
+		onStop: func() error {
+			return WriteSegmentHook(sharedVolume, SegmentCompletedHookArgument, segmentPath, finishedAt)
 		},
-		StartWait:  5 * time.Second,
-		FinishWait: 5 * time.Second,
-	})
-	if err != nil {
-		t.Fatalf("NewRecorder() error = %v", err)
 	}
-	observedStart := time.Date(2026, 8, 31, 5, 0, 0, 0, time.UTC)
-	observedFinish := observedStart.Add(time.Second)
-	clock := []time.Time{observedStart, observedFinish}
-	recorder.now = func() time.Time {
-		value := clock[0]
-		clock = clock[1:]
-		return value
-	}
+	recorder := newTestRecorder(t, sharedVolume, controller)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	startedAt, err := recorder.Start(ctx, "recordings/take-1/video.mp4")
+	actualStart, err := recorder.Start(ctx, "recordings/take-1/video.mp4")
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if startedAt != observedStart || !recorder.Active() {
-		t.Fatalf("Start() = %v, active = %v", startedAt, recorder.Active())
+	if actualStart != startedAt || !recorder.Active() {
+		t.Fatalf("Start() = %v, active = %v", actualStart, recorder.Active())
 	}
 	finalized, err := recorder.Finish(ctx)
 	if err != nil {
 		t.Fatalf("Finish() error = %v", err)
 	}
 	if finalized.RelativePath != "recordings/take-1/video.mp4" ||
-		finalized.StartedAt != observedStart || finalized.FinishedAt != observedFinish {
+		finalized.StartedAt != startedAt || finalized.FinishedAt != finishedAt {
 		t.Fatalf("Finish() = %+v", finalized)
 	}
 	if recorder.Active() {
 		t.Fatal("recorder remains active after finalization")
 	}
 	finalPath := filepath.Join(sharedVolume, "recordings", "take-1", "video.mp4")
-	info, err := os.Stat(finalPath)
-	if err != nil {
-		t.Fatalf("stat finalized recording: %v", err)
+	if err := verifyFragmentedMP4(finalPath); err != nil {
+		t.Fatalf("finalized file is not fragmented MP4: %v", err)
 	}
-	if info.Size() == 0 {
-		t.Fatal("finalized recording is empty")
+	if _, err := os.Stat(segmentPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("private MediaMTX segment still exists: %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(sharedVolume, workerMetadataName, incompleteDirName))
-	if err != nil {
-		t.Fatalf("read incomplete recording directory: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("incomplete recordings remain: %v", entries)
-	}
-	verify := exec.CommandContext(ctx, ffmpegPath, "-v", "error", "-i", finalPath, "-f", "null", "-")
-	if output, err := verify.CombinedOutput(); err != nil {
-		t.Fatalf("decode finalized recording: %v: %s", err, output)
+	if got := controller.calls(); len(got) != 2 || !got[0] || got[1] {
+		t.Fatalf("SetRecording() calls = %v, want [true false]", got)
 	}
 }
 
 func TestRecorderRejectsSecondRecordingAndEscapingPath(t *testing.T) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("ffmpeg is not available")
-	}
-	recorder, err := NewRecorder(Config{
-		SharedVolume:   t.TempDir(),
-		FFmpegPath:     ffmpegPath,
-		InputArguments: []string{"-re", "-f", "lavfi", "-i", "testsrc=size=64x64:rate=30"},
-		OutputArguments: []string{
-			"-map", "0:v:0", "-c:v", "mpeg4",
-		},
-		StartWait:  5 * time.Second,
-		FinishWait: 5 * time.Second,
-	})
-	if err != nil {
-		t.Fatalf("NewRecorder() error = %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	sharedVolume := t.TempDir()
+	segmentPath := testSegmentPath(t, sharedVolume)
+	controller := &controllerStub{onStart: func() error {
+		if err := os.WriteFile(segmentPath, fragmentedMP4(), 0o600); err != nil {
+			return err
+		}
+		return WriteSegmentHook(sharedVolume, SegmentCreatedHookArgument, segmentPath, time.Now())
+	}, onStop: func() error {
+		return WriteSegmentHook(sharedVolume, SegmentCompletedHookArgument, segmentPath, time.Now())
+	}}
+	recorder := newTestRecorder(t, sharedVolume, controller)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if _, err := recorder.Start(ctx, "../outside.mp4"); err == nil {
 		t.Fatal("Start(escaping path) error = nil")
@@ -114,27 +89,168 @@ func TestRecorderRejectsSecondRecordingAndEscapingPath(t *testing.T) {
 	}
 }
 
-func TestRecorderReportsFFmpegFailureBeforeFirstFrame(t *testing.T) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
-	if err != nil {
-		t.Skip("ffmpeg is not available")
+func TestRecorderRejectsNonFragmentedMP4(t *testing.T) {
+	sharedVolume := t.TempDir()
+	segmentPath := testSegmentPath(t, sharedVolume)
+	controller := &controllerStub{onStart: func() error {
+		if err := os.WriteFile(segmentPath, mp4Boxes("ftyp", "moov", "mdat"), 0o600); err != nil {
+			return err
+		}
+		return WriteSegmentHook(sharedVolume, SegmentCreatedHookArgument, segmentPath, time.Now())
+	}, onStop: func() error {
+		return WriteSegmentHook(sharedVolume, SegmentCompletedHookArgument, segmentPath, time.Now())
+	}}
+	recorder := newTestRecorder(t, sharedVolume, controller)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := recorder.Start(ctx, "recordings/not-fragmented.mp4"); err != nil {
+		t.Fatalf("Start() error = %v", err)
 	}
+	if _, err := recorder.Finish(ctx); err == nil {
+		t.Fatal("Finish(non-fragmented MP4) error = nil")
+	}
+	if _, err := os.Stat(filepath.Join(sharedVolume, "recordings", "not-fragmented.mp4")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("invalid recording was published: %v", err)
+	}
+}
+
+func TestRecorderStopsMediaMTXWhenNoSegmentAppears(t *testing.T) {
+	sharedVolume := t.TempDir()
+	controller := &controllerStub{}
 	recorder, err := NewRecorder(Config{
-		SharedVolume:   t.TempDir(),
-		FFmpegPath:     ffmpegPath,
-		InputArguments: []string{"-f", "lavfi", "-i", "no_such_filter"},
-		StartWait:      5 * time.Second,
-		FinishWait:     5 * time.Second,
+		SharedVolume: sharedVolume,
+		Controller:   controller,
+		StartWait:    20 * time.Millisecond,
+		FinishWait:   time.Second,
+		PollInterval: time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewRecorder() error = %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if _, err := recorder.Start(context.Background(), "recordings/failure.mp4"); err == nil {
+		t.Fatal("Start(without MediaMTX segment) error = nil")
+	}
+	if got := controller.calls(); len(got) != 2 || !got[0] || got[1] {
+		t.Fatalf("SetRecording() calls = %v, want [true false]", got)
+	}
+}
+
+func TestWriteSegmentHookRejectsPathOutsidePrivateDirectory(t *testing.T) {
+	if err := WriteSegmentHook(t.TempDir(), SegmentCreatedHookArgument, "/tmp/outside.mp4", time.Now()); err == nil {
+		t.Fatal("WriteSegmentHook(outside path) error = nil")
+	}
+}
+
+func TestWriteSegmentHookAcceptsCreateEventBeforeSegmentFileExists(t *testing.T) {
+	sharedVolume := t.TempDir()
+	segmentPath := testSegmentPath(t, sharedVolume)
+	if err := WriteSegmentHook(sharedVolume, SegmentCreatedHookArgument, segmentPath, time.Now()); err != nil {
+		t.Fatalf("WriteSegmentHook(before file creation) error = %v", err)
+	}
+	_, eventRoot, err := prepareLayout(sharedVolume)
+	if err != nil {
+		t.Fatalf("prepareLayout() error = %v", err)
+	}
+	events, err := os.ReadDir(eventRoot)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("segment events = %v, error = %v", events, err)
+	}
+}
+
+func TestRecorderRejectsSymlinkSegment(t *testing.T) {
+	sharedVolume := t.TempDir()
+	segmentPath := testSegmentPath(t, sharedVolume)
+	outsidePath := filepath.Join(t.TempDir(), "outside.mp4")
+	if err := os.WriteFile(outsidePath, fragmentedMP4(), 0o600); err != nil {
+		t.Fatalf("write outside recording: %v", err)
+	}
+	controller := &controllerStub{
+		onStart: func() error {
+			if err := os.Symlink(outsidePath, segmentPath); err != nil {
+				return err
+			}
+			return WriteSegmentHook(sharedVolume, SegmentCreatedHookArgument, segmentPath, time.Now())
+		},
+		onStop: func() error {
+			return WriteSegmentHook(sharedVolume, SegmentCompletedHookArgument, segmentPath, time.Now())
+		},
+	}
+	recorder := newTestRecorder(t, sharedVolume, controller)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := recorder.Start(ctx, "recordings/failure.mp4"); err == nil {
-		t.Fatal("Start(invalid input) error = nil")
+	if _, err := recorder.Start(ctx, "recordings/symlink.mp4"); err != nil {
+		t.Fatalf("Start() error = %v", err)
 	}
-	if recorder.Active() {
-		t.Fatal("recorder is active after FFmpeg startup failure")
+	if _, err := recorder.Finish(ctx); err == nil {
+		t.Fatal("Finish(symlink segment) error = nil")
 	}
+}
+
+type controllerStub struct {
+	mu      sync.Mutex
+	values  []bool
+	onStart func() error
+	onStop  func() error
+}
+
+func (c *controllerStub) SetRecording(_ context.Context, enabled bool) error {
+	c.mu.Lock()
+	c.values = append(c.values, enabled)
+	c.mu.Unlock()
+	if enabled && c.onStart != nil {
+		return c.onStart()
+	}
+	if !enabled && c.onStop != nil {
+		return c.onStop()
+	}
+	return nil
+}
+
+func (c *controllerStub) calls() []bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]bool(nil), c.values...)
+}
+
+func newTestRecorder(t *testing.T, sharedVolume string, controller Controller) *Recorder {
+	t.Helper()
+	recorder, err := NewRecorder(Config{
+		SharedVolume: sharedVolume,
+		Controller:   controller,
+		StartWait:    time.Second,
+		FinishWait:   time.Second,
+		PollInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	return recorder
+}
+
+func testSegmentPath(t *testing.T, sharedVolume string) string {
+	t.Helper()
+	pattern, err := MediaMTXRecordPath(sharedVolume)
+	if err != nil {
+		t.Fatalf("MediaMTXRecordPath() error = %v", err)
+	}
+	path := filepath.Join(filepath.Dir(filepath.Dir(pattern)), "camera", "recording-1-000001.mp4")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("create test MediaMTX path directory: %v", err)
+	}
+	return path
+}
+
+func fragmentedMP4() []byte {
+	return mp4Boxes("ftyp", "moov", "moof", "mdat", "moof", "mdat")
+}
+
+func mp4Boxes(types ...string) []byte {
+	content := make([]byte, 0, len(types)*8)
+	for _, boxType := range types {
+		header := make([]byte, 8)
+		binary.BigEndian.PutUint32(header[:4], 8)
+		copy(header[4:], boxType)
+		content = append(content, header...)
+	}
+	return content
 }

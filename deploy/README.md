@@ -14,7 +14,7 @@ docker build -f deploy/images/video-uploader.Dockerfile -t registry.example/kinu
 docker build -f deploy/images/web.Dockerfile -t registry.example/kinugasa/web:VERSION .
 ```
 
-`video-gateway` imageはlibristの`ristreceiver`、`video-worker` imageはWHIP対応FFmpegとMediaMTXをbuild時に検査する。
+`video-gateway` imageはlibristの`ristreceiver`を含み、`video-worker` imageはMediaMTXを含む。
 
 ## Apply
 

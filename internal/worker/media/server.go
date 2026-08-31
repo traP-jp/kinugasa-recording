@@ -19,14 +19,19 @@ import (
 )
 
 type Config struct {
-	BinaryPath  string
-	RTPAddress  string
-	RTSPAddress string
-	APIAddress  string
-	PathName    string
-	RTPSDP      string
-	WHIPURL     string
-	WHIPToken   string
+	BinaryPath                 string
+	RTPAddress                 string
+	RTSPAddress                string
+	APIAddress                 string
+	PathName                   string
+	RTPSDP                     string
+	WHIPURL                    string
+	WHIPToken                  string
+	RecordPath                 string
+	RecordPartDuration         time.Duration
+	RecordSegmentDuration      time.Duration
+	RunOnRecordSegmentCreate   string
+	RunOnRecordSegmentComplete string
 }
 
 type Server struct {
@@ -60,6 +65,26 @@ func Start(ctx context.Context, config Config, logger *slog.Logger) (*Server, er
 		return nil, fmt.Errorf("MediaMTX WHIP URL and bearer token must be set together")
 	}
 	config.WHIPURL = forwardURL
+	if config.RecordPath != "" {
+		if !filepath.IsAbs(config.RecordPath) {
+			return nil, fmt.Errorf("MediaMTX record path must be absolute")
+		}
+		if !strings.Contains(config.RecordPath, "%path") {
+			return nil, fmt.Errorf("MediaMTX record path must contain %%path")
+		}
+		if config.RunOnRecordSegmentCreate == "" || config.RunOnRecordSegmentComplete == "" {
+			return nil, fmt.Errorf("MediaMTX recording hooks must be set")
+		}
+		if config.RecordPartDuration == 0 {
+			config.RecordPartDuration = time.Second
+		}
+		if config.RecordSegmentDuration == 0 {
+			config.RecordSegmentDuration = 24 * time.Hour
+		}
+		if config.RecordPartDuration < 0 || config.RecordSegmentDuration < 0 {
+			return nil, fmt.Errorf("MediaMTX recording durations must be positive")
+		}
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -164,6 +189,39 @@ func (s *Server) RTSPURL() string {
 	return "rtsp://" + s.config.RTSPAddress + "/" + s.config.PathName
 }
 
+// SetRecording toggles MediaMTX's native fMP4 recorder for the configured path.
+func (s *Server) SetRecording(ctx context.Context, enabled bool) error {
+	if s.config.RecordPath == "" {
+		return fmt.Errorf("MediaMTX recording is not configured")
+	}
+	body, err := json.Marshal(struct {
+		Record bool `json:"record"`
+	}{Record: enabled})
+	if err != nil {
+		return fmt.Errorf("encode MediaMTX recording request: %w", err)
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPatch,
+		s.apiURL("/v3/config/paths/patch/"+url.PathEscape(s.config.PathName)),
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("create MediaMTX recording request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := s.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("toggle MediaMTX recording: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("toggle MediaMTX recording: status %d", response.StatusCode)
+	}
+	return nil
+}
+
 func (s *Server) apiURL(path string) string {
 	return "http://" + s.config.APIAddress + path
 }
@@ -183,6 +241,17 @@ func renderConfig(config Config) []byte {
 		fmt.Fprintf(&output, "    forward:\n")
 		fmt.Fprintf(&output, "      - dest: %s\n", strconv.Quote(config.WHIPURL))
 		fmt.Fprintf(&output, "        whipBearerToken: %s\n", strconv.Quote(config.WHIPToken))
+	}
+	if config.RecordPath != "" {
+		fmt.Fprintf(&output, "    record: false\n")
+		fmt.Fprintf(&output, "    recordPath: %s\n", strconv.Quote(config.RecordPath))
+		fmt.Fprintf(&output, "    recordFormat: fmp4\n")
+		fmt.Fprintf(&output, "    recordPartDuration: %s\n", config.RecordPartDuration)
+		fmt.Fprintf(&output, "    recordMaxPartSize: 50M\n")
+		fmt.Fprintf(&output, "    recordSegmentDuration: %s\n", config.RecordSegmentDuration)
+		fmt.Fprintf(&output, "    recordDeleteAfter: 0s\n")
+		fmt.Fprintf(&output, "    runOnRecordSegmentCreate: %s\n", strconv.Quote(config.RunOnRecordSegmentCreate))
+		fmt.Fprintf(&output, "    runOnRecordSegmentComplete: %s\n", strconv.Quote(config.RunOnRecordSegmentComplete))
 	}
 	return output.Bytes()
 }

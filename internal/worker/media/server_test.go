@@ -5,6 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -14,13 +17,18 @@ import (
 
 func TestRenderConfigDefinesRTPSourceAndLoopbackServers(t *testing.T) {
 	config := Config{
-		RTPAddress:  "0.0.0.0:8000",
-		RTSPAddress: "127.0.0.1:8554",
-		APIAddress:  "127.0.0.1:9997",
-		PathName:    "camera",
-		RTPSDP:      testSDP(8000),
-		WHIPURL:     "whip://livekit-ingress.example.com/w",
-		WHIPToken:   "stream-key",
+		RTPAddress:                 "0.0.0.0:8000",
+		RTSPAddress:                "127.0.0.1:8554",
+		APIAddress:                 "127.0.0.1:9997",
+		PathName:                   "camera",
+		RTPSDP:                     testSDP(8000),
+		WHIPURL:                    "whip://livekit-ingress.example.com/w",
+		WHIPToken:                  "stream-key",
+		RecordPath:                 "/recordings/incomplete/recording-%s-%f",
+		RecordPartDuration:         time.Second,
+		RecordSegmentDuration:      24 * time.Hour,
+		RunOnRecordSegmentCreate:   `"/usr/local/bin/video-worker" recording-segment-created`,
+		RunOnRecordSegmentComplete: `"/usr/local/bin/video-worker" recording-segment-completed`,
 	}
 	rendered := string(renderConfig(config))
 	for _, expected := range []string{
@@ -30,10 +38,61 @@ func TestRenderConfigDefinesRTPSourceAndLoopbackServers(t *testing.T) {
 		"a=rtpmap:96 H264/90000",
 		`dest: "whip://livekit-ingress.example.com/w"`,
 		`whipBearerToken: "stream-key"`,
+		`recordFormat: fmp4`,
+		`recordPartDuration: 1s`,
+		`recordSegmentDuration: 24h0m0s`,
+		`runOnRecordSegmentCreate: "\"/usr/local/bin/video-worker\" recording-segment-created"`,
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered config does not contain %q:\n%s", expected, rendered)
 		}
+	}
+}
+
+func TestSetRecordingPatchesConfiguredPath(t *testing.T) {
+	var received string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPatch || request.URL.Path != "/v3/config/paths/patch/camera" {
+			t.Errorf("request = %s %s", request.Method, request.URL.Path)
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		buffer := new(strings.Builder)
+		_, _ = io.Copy(buffer, request.Body)
+		received = buffer.String()
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	endpoint, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	mediaServer := &Server{
+		config: Config{APIAddress: endpoint.Host, PathName: "camera", RecordPath: "/recordings/recording"},
+		client: server.Client(),
+	}
+	if err := mediaServer.SetRecording(context.Background(), true); err != nil {
+		t.Fatalf("SetRecording(true) error = %v", err)
+	}
+	if received != `{"record":true}` {
+		t.Fatalf("SetRecording(true) body = %q", received)
+	}
+}
+
+func TestStartRejectsRecordPathWithoutMediaPathTemplate(t *testing.T) {
+	_, err := Start(context.Background(), Config{
+		BinaryPath:                 "mediamtx",
+		RTPAddress:                 "127.0.0.1:8000",
+		RTSPAddress:                "127.0.0.1:8554",
+		APIAddress:                 "127.0.0.1:9997",
+		PathName:                   "camera",
+		RTPSDP:                     testSDP(8000),
+		RecordPath:                 "/recordings/recording-%s-%f",
+		RunOnRecordSegmentCreate:   "create-hook",
+		RunOnRecordSegmentComplete: "complete-hook",
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "%path") {
+		t.Fatalf("Start(record path without %%path) error = %v", err)
 	}
 }
 
