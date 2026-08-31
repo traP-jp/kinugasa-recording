@@ -137,7 +137,8 @@ stateDiagram-v2
     state "CameraIdentity" as CameraRemoved
 
     [*] --> CameraPresent : camera登録 / 両方を作成
-    CameraPresent --> CameraRemoved : camera削除 [RecordingCameraなし] / CameraConnectionを削除
+    CameraPresent --> CameraRemoved : camera削除 [RecordingCameraなし AND uploadingなVideoFileなし] / CameraConnectionを削除
+    CameraPresent --> CameraRemoved : camera強制削除 [RecordingCameraなし AND uploadingなVideoFileあり] / VideoFileをerroredにしてCameraConnectionを削除
 ```
 
 ```mermaid
@@ -152,7 +153,7 @@ stateDiagram-v2
     Ongoing --> Uploading : 録画正常終了 / VideoFileの作成とアップロードを開始
     Ongoing --> Errored : システム全体の復旧不能な障害などによるエラー終了
     Uploading --> Completed : 全VideoFileがcompleted
-    Uploading --> Errored : 全アップロード終了 [1つ以上errored]
+    Uploading --> Errored : 全VideoFileがcompletedまたはerrored [1つ以上errored]
 ```
 
 ### 制約
@@ -162,5 +163,7 @@ stateDiagram-v2
 - OngoingTake、FinishedTake、RecordingCamera、VideoFile、CameraConnectionおよびCameraIdentityの関係は同一のSession内で完結し、Sessionをまたいでcameraを貸し借りしてはならない。
 - 同一のOngoingTakeとCameraIdentityの組に対応するRecordingCamera、および同一のFinishedTakeとCameraIdentityの組に対応するVideoFileは、それぞれ1つ以下とする。
 - RecordingCameraのerroredへの遷移は、OngoingTakeおよび他のRecordingCameraの状態を変更しない。
-- video worker containerおよびCameraConnectionの正常終了または削除は、FinishedTakeおよびVideoFileの状態を変更せず、同じPod内のvideo uploader containerによる進行中または未開始のuploadを中断しない。
+- uploadingなVideoFileを処理中のvideo workerを強制削除する場合、対象のVideoFileをerroredに遷移させてuploadをabortする。
+- video workerがユーザー操作以外の理由で予期せず停止した場合、そのvideo workerが処理していたuploadingなVideoFileをerroredに遷移させる。
+- video workerの強制削除または予期しない停止によってVideoFileをerroredにした場合も、FinishedTakeは他のVideoFileにuploadingがある間はuploadingを維持する。すべてのVideoFileがcompletedまたはerroredになった時点で、1つ以上のVideoFileがerroredならばFinishedTakeもerroredに遷移する。
 - FinishedTakeがuploadingであることと、そのFinishedTakeに属する1つ以上のVideoFileがuploadingであることは同値とする。

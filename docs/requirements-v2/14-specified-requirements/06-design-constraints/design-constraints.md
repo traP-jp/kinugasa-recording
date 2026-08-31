@@ -8,6 +8,6 @@ kinugasa-recording v2は、CustomResourceDefinition（CRD）で定義したKuber
 - web consoleの実装には、TypeScriptおよびReactを使用する。
 - video workerには、MediaMTXを使用する。
 - video gatewayには、libristの`ristreceiver`を使用する。
-- video workerとvideo uploaderは同じPod内の別々のapplication containerとして配置し、Kubernetesのnative sidecar containerとしては扱わない。
-- video worker Podの`restartPolicy`は`OnFailure`とし、正常終了したvideo worker containerを再起動せず、video uploader containerの終了までPodを存続させる。
-- video worker Podが使用するshared volumeにはPersistentVolumeClaimを使用し、Pod内の両containerからmountする。
+- 録画、preview中継、ハッシュ計算およびuploadは同じvideo worker application containerで実行し、独立したvideo uploader containerを配置しない。
+- video worker Podの`restartPolicy`は`OnFailure`とする。ユーザーが要求したcamera削除による正常終了は再起動せず、予期しない停止はエラーとして扱ったうえで再起動する。
+- video worker Podが使用するwork volumeにはPersistentVolumeClaimを使用し、video worker containerからmountする。
