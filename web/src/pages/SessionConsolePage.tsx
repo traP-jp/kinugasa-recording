@@ -122,6 +122,7 @@ export function SessionConsolePage() {
           <section className="panel take-panel">
             {ongoing.data && (
               <TakeControls
+                sessionName={sessionName}
                 cameras={cameras.data ?? []}
                 ongoing={ongoing.data}
                 onStart={(name, selected) => mutate(() => api.startTake(sessionName, name, selected))}

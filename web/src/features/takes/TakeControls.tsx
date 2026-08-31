@@ -4,19 +4,25 @@ import type { CameraConnection, OngoingTakeResult } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/format";
+import { loadLastTakeCameras, storeLastTakeCameras } from "../../lib/takeCameraSelection";
+import { CameraSelectionActions } from "./CameraSelectionActions";
 
 interface TakeControlsProps {
+  sessionName: string;
   cameras: CameraConnection[];
   ongoing: OngoingTakeResult;
   onStart: (name: string, cameras: string[]) => Promise<void>;
   onFinish: () => Promise<void>;
 }
 
-export function TakeControls({ cameras, ongoing, onStart, onFinish }: TakeControlsProps) {
+export function TakeControls({ sessionName, cameras, ongoing, onStart, onFinish }: TakeControlsProps) {
   const connected = useMemo(() => cameras.filter((camera) => camera.status === "connected"), [cameras]);
   const [name, setName] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() => loadLastTakeCameras(sessionName));
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setSelected(loadLastTakeCameras(sessionName));
+  }, [sessionName]);
   useEffect(() => {
     setSelected((current) => current.filter((item) => connected.some((camera) => camera.name === item)));
   }, [connected]);
@@ -55,8 +61,8 @@ export function TakeControls({ cameras, ongoing, onStart, onFinish }: TakeContro
     setBusy(true);
     try {
       await onStart(name, selected);
+      storeLastTakeCameras(sessionName, selected);
       setName("");
-      setSelected([]);
     } finally {
       setBusy(false);
     }
@@ -71,6 +77,14 @@ export function TakeControls({ cameras, ongoing, onStart, onFinish }: TakeContro
       <label className="take-name-field"><span>Take name</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="take-001" maxLength={32} /></label>
       <fieldset>
         <legend>Recording cameras</legend>
+        {connected.length > 0 && (
+          <CameraSelectionActions
+            allSelected={selected.length === connected.length}
+            noneSelected={selected.length === 0}
+            onSelectAll={() => setSelected(connected.map((camera) => camera.name))}
+            onClear={() => setSelected([])}
+          />
+        )}
         {connected.length === 0 ? <p className="muted">接続済みのCameraがありません。</p> : connected.map((camera) => (
           <label className="camera-check" key={camera.name}>
             <input

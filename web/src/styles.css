@@ -134,6 +134,8 @@ input::placeholder { color: #586365; }
 .take-start-heading p { color: var(--muted); font-size: 11px; margin: 0; }
 .take-start fieldset { padding: 0; margin: 0; border: 0; display: grid; gap: 6px; }
 .take-start legend { margin-bottom: 8px; }
+.camera-selection-actions { display: flex; gap: 6px; margin-bottom: 2px; }
+.camera-selection-actions .button { min-height: 30px; padding: 0 10px; font-size: 10px; }
 .camera-check { min-height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
 .camera-check input { width: 14px; min-height: 14px; accent-color: var(--lime); }
 .camera-check .signal-dot { margin-left: auto; }
