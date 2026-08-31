@@ -80,6 +80,7 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 	workerEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
 	workerEnvironment = append(workerEnvironment,
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
+		corev1.EnvVar{Name: "KINUGASA_MEDIAMTX_BINARY", Value: "/mediamtx"},
 		corev1.EnvVar{Name: "KINUGASA_RTP_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RTPPort)},
 		corev1.EnvVar{Name: "KINUGASA_RTP_SDP", Value: workerRTPSDP(config)},
 		secretEnvironment("KINUGASA_LIVEKIT_WHIP_URL", connection.Name, previewURLKey),
@@ -104,6 +105,10 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyOnFailure,
 			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot:   pointer(true),
+				RunAsUser:      pointer[int64](65532),
+				RunAsGroup:     pointer[int64](65532),
+				FSGroup:        pointer[int64](65532),
 				SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 			},
 			Containers: []corev1.Container{
@@ -191,16 +196,18 @@ a=recvonly`, config.RTPPort, config.RTCPPort, config.RTPPort+2, config.RTCPPort+
 }
 
 func restrictedContainerSecurityContext() *corev1.SecurityContext {
-	falseValue := false
-	trueValue := true
 	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: &falseValue,
-		Privileged:               &falseValue,
-		ReadOnlyRootFilesystem:   &trueValue,
+		AllowPrivilegeEscalation: pointer(false),
+		Privileged:               pointer(false),
+		ReadOnlyRootFilesystem:   pointer(true),
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{"ALL"},
 		},
 	}
+}
+
+func pointer[T any](value T) *T {
+	return &value
 }
 
 func storageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {

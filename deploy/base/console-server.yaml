@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console-server
+  namespace: kinugasa-recording
+spec:
+  # Worker command streams are held in this process. Keep one replica until
+  # command routing is backed by shared state.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinugasa-recording
+      app.kubernetes.io/component: console-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinugasa-recording
+        app.kubernetes.io/component: console-server
+    spec:
+      serviceAccountName: kinugasa-recording
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: console-server
+        image: kinugasa-recording/console-server:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: kinugasa-console-config
+        env:
+        - name: LISTEN_ADDRESS
+          value: :8080
+        - name: GRPC_LISTEN_ADDRESS
+          value: :9090
+        - name: CONSOLE_GRPC_ADDRESS
+          value: console-server.kinugasa-recording.svc:9090
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: OPERATOR_LEADER_ELECTION
+          value: "true"
+        - name: OPERATOR_METRICS_ADDRESS
+          value: :8081
+        - name: OPERATOR_HEALTH_ADDRESS
+          value: :8082
+        - name: VIDEO_GATEWAY_IMAGE
+          value: kinugasa-recording/video-gateway:latest
+        - name: VIDEO_WORKER_IMAGE
+          value: kinugasa-recording/video-worker:latest
+        - name: VIDEO_UPLOADER_IMAGE
+          value: kinugasa-recording/video-uploader:latest
+        - name: OBJECT_STORAGE_SECRET
+          value: kinugasa-object-storage
+        - name: SHARED_VOLUME_SIZE
+          value: 100Gi
+        ports:
+        - name: http
+          containerPort: 8080
+        - name: grpc
+          containerPort: 9090
+        - name: metrics
+          containerPort: 8081
+        - name: health
+          containerPort: 8082
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: runtime
+          mountPath: /tmp
+      volumes:
+      - name: runtime
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: console-server
+  namespace: kinugasa-recording
+spec:
+  selector:
+    app.kubernetes.io/name: kinugasa-recording
+    app.kubernetes.io/component: console-server
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+  - name: grpc
+    port: 9090
+    targetPort: grpc
