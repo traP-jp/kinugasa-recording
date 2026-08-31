@@ -107,6 +107,7 @@ export function SessionConsolePage() {
               {(cameras.data ?? []).map((camera) => (
                 <CameraCard
                   key={camera.name}
+                  sessionName={sessionName}
                   camera={camera}
                   deletionDisabled={hasOngoing}
                   onPrepareDelete={prepareCameraDeletion}

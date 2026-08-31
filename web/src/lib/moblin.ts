@@ -10,10 +10,10 @@ interface MoblinSettings {
   }>;
 }
 
-export function buildMoblinUrl(name: string, url: string): string {
+export function buildMoblinUrl(sessionName: string, cameraName: string, url: string): string {
   const settings: MoblinSettings = {
     streams: [{
-      name,
+      name: `${sessionName}_${cameraName}`,
       url,
       selected: true,
       video: {

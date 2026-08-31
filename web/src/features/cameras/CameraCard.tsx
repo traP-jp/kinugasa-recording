@@ -7,13 +7,14 @@ import { CameraConnectionModal } from "./CameraConnectionModal";
 import { CameraDeletionConfirmation } from "./CameraDeletionConfirmation";
 
 interface CameraCardProps {
+  sessionName: string;
   camera: CameraConnection;
   deletionDisabled: boolean;
   onPrepareDelete: (name: string) => Promise<string[]>;
   onDelete: (name: string, force: boolean) => Promise<void>;
 }
 
-export function CameraCard({ camera, deletionDisabled, onPrepareDelete, onDelete }: CameraCardProps) {
+export function CameraCard({ sessionName, camera, deletionDisabled, onPrepareDelete, onDelete }: CameraCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deletionOpen, setDeletionOpen] = useState(false);
   const [uploadingTakeNames, setUploadingTakeNames] = useState<string[]>([]);
@@ -77,7 +78,7 @@ export function CameraCard({ camera, deletionDisabled, onPrepareDelete, onDelete
           onClick={() => void prepareRemoval()}
         >{preparingDeletion ? "確認中…" : "削除"}</Button>
       </div>
-      {modalOpen && <CameraConnectionModal camera={camera} onClose={() => setModalOpen(false)} />}
+      {modalOpen && <CameraConnectionModal sessionName={sessionName} camera={camera} onClose={() => setModalOpen(false)} />}
       {deletionOpen && (
         <CameraDeletionConfirmation
           cameraName={camera.name}

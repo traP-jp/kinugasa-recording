@@ -9,15 +9,18 @@ import { buildMoblinUrl } from "../../lib/moblin";
 import { ConnectionMethodTabs, type ConnectionMethod } from "./ConnectionMethodTabs";
 
 interface CameraConnectionModalProps {
+  sessionName: string;
   camera: CameraConnection;
   onClose: () => void;
 }
 
-export function CameraConnectionModal({ camera, onClose }: CameraConnectionModalProps) {
+export function CameraConnectionModal({ sessionName, camera, onClose }: CameraConnectionModalProps) {
   const [copied, setCopied] = useState(false);
   const [method, setMethod] = useState<ConnectionMethod>("moblin");
   const ristUrl = camera.url ?? "";
-  const url = method === "moblin" && ristUrl ? buildMoblinUrl(camera.name, ristUrl) : ristUrl;
+  const url = method === "moblin" && ristUrl
+    ? buildMoblinUrl(sessionName, camera.name, ristUrl)
+    : ristUrl;
   async function copy() {
     await navigator.clipboard.writeText(url);
     setCopied(true);
