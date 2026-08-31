@@ -31,6 +31,11 @@ type Reconciler struct {
 	Scheme         *runtime.Scheme
 	Config         Config
 	PreviewIngress PreviewIngress
+	WorkerFailures WorkerFailureSink
+}
+
+type WorkerFailureSink interface {
+	MarkWorkerFailure(context.Context, string, string) error
 }
 
 // +kubebuilder:rbac:groups=recording.kinugasa.trap.jp,resources=cameraconnections,verbs=create;delete;get;list;watch;patch;update
@@ -46,6 +51,9 @@ func (r *Reconciler) SetupWithManager(manager ctrl.Manager) error {
 	}
 	if r.PreviewIngress == nil {
 		return fmt.Errorf("LiveKit preview ingress is not configured")
+	}
+	if r.WorkerFailures == nil {
+		return fmt.Errorf("worker failure sink is not configured")
 	}
 	return ctrl.NewControllerManagedBy(manager).
 		For(&recordingv1alpha1.CameraConnection{}).
@@ -94,16 +102,28 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	connection.Status.ObservedGeneration = connection.Generation
 	connection.Status.WorkerPodName = connection.Name
 	connection.Status.PVCName = connection.Name
+	var pod corev1.Pod
+	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &pod); err != nil {
+		return r.resourceFailure(ctx, &connection, fmt.Errorf("load worker Pod status: %w", err))
+	}
+	if failure := observeWorkerRestart(&connection.Status, &pod); failure != "" {
+		if err := r.WorkerFailures.MarkWorkerFailure(ctx, connection.Spec.CameraIdentityID, failure); err != nil {
+			return r.resourceFailure(ctx, &connection, fmt.Errorf("record worker failure: %w", err))
+		}
+	}
 	var service corev1.Service
 	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &service); err != nil {
 		return r.resourceFailure(ctx, &connection, fmt.Errorf("load RIST Service status: %w", err))
 	}
 	if cameraURL := cameraURLForService(&service, config.RISTPort); cameraURL != "" {
 		connection.Status.CameraURL = cameraURL
-		connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
-	} else {
-		connection.Status.CameraURL = ""
+		if connection.Status.Phase == "" || connection.Status.Phase == recordingv1alpha1.CameraConnectionPhaseActivating {
+			connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
+			connection.Status.Error = ""
+		}
+	} else if connection.Status.CameraURL == "" {
 		connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseActivating
+		connection.Status.Error = ""
 	}
 	meta.SetStatusCondition(&connection.Status.Conditions, metav1.Condition{
 		Type:               resourcesReadyCondition,
@@ -118,6 +138,36 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func observeWorkerRestart(status *recordingv1alpha1.CameraConnectionStatus, pod *corev1.Pod) string {
+	uid := string(pod.UID)
+	for _, container := range pod.Status.ContainerStatuses {
+		if container.Name != workerContainer {
+			continue
+		}
+		if uid == "" {
+			return ""
+		}
+		if status.WorkerPodUID != uid {
+			status.WorkerPodUID = uid
+			status.ObservedWorkerRestartCount = container.RestartCount
+			return ""
+		}
+		if container.RestartCount <= status.ObservedWorkerRestartCount {
+			return ""
+		}
+		status.ObservedWorkerRestartCount = container.RestartCount
+		terminated := container.LastTerminationState.Terminated
+		if terminated == nil || terminated.ExitCode == 0 {
+			return ""
+		}
+		if terminated.Reason == "" {
+			return fmt.Sprintf("video worker exited unexpectedly with code %d", terminated.ExitCode)
+		}
+		return fmt.Sprintf("video worker exited unexpectedly with code %d (%s)", terminated.ExitCode, terminated.Reason)
+	}
+	return ""
 }
 
 func cameraURLForService(service *corev1.Service, port int32) string {

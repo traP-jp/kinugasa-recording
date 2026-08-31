@@ -198,6 +198,23 @@ func (s *Store) ApplyWorkerEvent(ctx context.Context, workerID string, event *wo
 	return nil
 }
 
+func (s *Store) MarkWorkerFailure(ctx context.Context, cameraID, reason string) error {
+	if reason == "" {
+		return fmt.Errorf("worker failure reason must not be empty")
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE recording_cameras
+		SET state = 'errored', error = $2
+		FROM takes
+		WHERE recording_cameras.take_id = takes.id
+		  AND recording_cameras.camera_identity_id = $1
+		  AND recording_cameras.state = 'recording'
+		  AND takes.phase = 'ongoing'`, cameraID, reason); err != nil {
+		return fmt.Errorf("mark recording camera after worker failure: %w", err)
+	}
+	return nil
+}
+
 func verifyDuplicateEvent(
 	ctx context.Context,
 	tx pgx.Tx,

@@ -172,6 +172,11 @@ spec:
                   into status.
                 format: int64
                 type: integer
+              observedWorkerRestartCount:
+                description: ObservedWorkerRestartCount is the latest handled restart
+                  count for the current worker Pod.
+                format: int32
+                type: integer
               phase:
                 description: Phase mirrors the CameraConnection state stored by console-server.
                 enum:
@@ -190,6 +195,10 @@ spec:
               workerPodName:
                 description: WorkerPodName and PVCName expose the resources selected
                   by the operator.
+                type: string
+              workerPodUID:
+                description: WorkerPodUID distinguishes a replacement Pod when tracking
+                  worker restarts.
                 type: string
             type: object
             x-kubernetes-validations:

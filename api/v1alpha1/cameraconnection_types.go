@@ -58,6 +58,10 @@ type CameraConnectionStatus struct {
 	// WorkerPodName and PVCName expose the resources selected by the operator.
 	WorkerPodName string `json:"workerPodName,omitempty"`
 	PVCName       string `json:"pvcName,omitempty"`
+	// WorkerPodUID and ObservedWorkerRestartCount make worker crash handling
+	// idempotent across reconciliations and distinguish replacement Pods.
+	WorkerPodUID               string `json:"workerPodUID,omitempty"`
+	ObservedWorkerRestartCount int32  `json:"observedWorkerRestartCount,omitempty"`
 
 	// Error is present exactly when Phase is Error.
 	// +kubebuilder:validation:MinLength=1

@@ -64,6 +64,7 @@ func NewManager(
 		Scheme:         manager.GetScheme(),
 		Config:         config.CameraConnection,
 		PreviewIngress: previewIngress,
+		WorkerFailures: cameraSource,
 	}).SetupWithManager(manager); err != nil {
 		return nil, fmt.Errorf("set up CameraConnection controller: %w", err)
 	}

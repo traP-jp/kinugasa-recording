@@ -124,6 +124,28 @@ func TestCameraURLForLoadBalancerService(t *testing.T) {
 	}
 }
 
+func TestObserveWorkerRestartReportsEachFailedRestartOnce(t *testing.T) {
+	status := recordingv1alpha1.CameraConnectionStatus{WorkerPodUID: "pod-1"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-1")}, Status: corev1.PodStatus{
+		ContainerStatuses: []corev1.ContainerStatus{{
+			Name: workerContainer, RestartCount: 1,
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				ExitCode: 2, Reason: "Error",
+			}},
+		}},
+	}}
+	if failure := observeWorkerRestart(&status, pod); failure == "" || status.ObservedWorkerRestartCount != 1 {
+		t.Fatalf("observeWorkerRestart() = %q, status = %+v", failure, status)
+	}
+	if failure := observeWorkerRestart(&status, pod); failure != "" {
+		t.Fatalf("duplicate observeWorkerRestart() = %q", failure)
+	}
+	pod.UID = types.UID("pod-2")
+	if failure := observeWorkerRestart(&status, pod); failure != "" || status.WorkerPodUID != "pod-2" {
+		t.Fatalf("replacement observeWorkerRestart() = %q, status = %+v", failure, status)
+	}
+}
+
 func TestDeletionWaitsForUploader(t *testing.T) {
 	scheme := testScheme(t)
 	connection := deletingConnection()
@@ -264,8 +286,13 @@ func testConfig() Config {
 func testReconciler(fakeClient client.Client, scheme *runtime.Scheme) *Reconciler {
 	return &Reconciler{
 		Client: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{},
+		WorkerFailures: workerFailureStub{},
 	}
 }
+
+type workerFailureStub struct{}
+
+func (workerFailureStub) MarkWorkerFailure(context.Context, string, string) error { return nil }
 
 type previewIngressStub struct {
 	deleted []string

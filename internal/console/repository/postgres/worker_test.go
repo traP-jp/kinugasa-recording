@@ -215,6 +215,26 @@ func TestRegisterWorkerRejectsMismatchedIdentity(t *testing.T) {
 	}
 }
 
+func TestMarkWorkerFailureOnlyErrorsActiveRecordingCamera(t *testing.T) {
+	pool := resetDatabase(t)
+	store := New(pool)
+	now := time.Date(2026, 8, 31, 2, 0, 0, 0, time.UTC)
+	createWorkerDomainState(t, store, now)
+	if err := store.MarkWorkerFailure(context.Background(), workerTestCameraID, "worker exited with code 2"); err != nil {
+		t.Fatalf("MarkWorkerFailure() error = %v", err)
+	}
+	var state, reason string
+	if err := pool.QueryRow(context.Background(), `
+		SELECT state, error FROM recording_cameras
+		WHERE take_id = $1 AND camera_identity_id = $2`, workerTestTakeID, workerTestCameraID,
+	).Scan(&state, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if state != "errored" || reason != "worker exited with code 2" {
+		t.Fatalf("recording after worker failure = %q, %q", state, reason)
+	}
+}
+
 func TestSaveCommandResultIsIdempotent(t *testing.T) {
 	pool := resetDatabase(t)
 	store := New(pool)
