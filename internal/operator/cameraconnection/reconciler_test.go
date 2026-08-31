@@ -185,6 +185,16 @@ func TestCameraURLForLoadBalancerService(t *testing.T) {
 	assertEncryptedRISTURL(t, cameraURLForService(service, connection, testConfig()), connection, "camera.example.com:9000")
 }
 
+func TestCameraURLForLoadBalancerServiceUsesConfiguredPublicHost(t *testing.T) {
+	service := &corev1.Service{
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 9000}}},
+	}
+	connection := testConnection()
+	config := testConfig()
+	config.RISTPublicHost = "rist.example.com"
+	assertEncryptedRISTURL(t, cameraURLForService(service, connection, config), connection, "rist.example.com:9000")
+}
+
 func TestReconcileAllocatesDistinctRISTNodePorts(t *testing.T) {
 	scheme := testScheme(t)
 	first := testConnection()

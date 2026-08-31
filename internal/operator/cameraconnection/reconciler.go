@@ -216,15 +216,18 @@ func cameraURLForService(
 		}
 		host = net.JoinHostPort(config.RISTPublicHost, fmt.Sprintf("%d", service.Spec.Ports[0].NodePort))
 	} else {
-		if len(service.Status.LoadBalancer.Ingress) == 0 {
-			return ""
-		}
-		address := service.Status.LoadBalancer.Ingress[0].IP
+		address := config.RISTPublicHost
 		if address == "" {
-			address = service.Status.LoadBalancer.Ingress[0].Hostname
-		}
-		if address == "" {
-			return ""
+			if len(service.Status.LoadBalancer.Ingress) == 0 {
+				return ""
+			}
+			address = service.Status.LoadBalancer.Ingress[0].IP
+			if address == "" {
+				address = service.Status.LoadBalancer.Ingress[0].Hostname
+			}
+			if address == "" {
+				return ""
+			}
 		}
 		port := config.RISTPort
 		if len(service.Spec.Ports) != 0 {

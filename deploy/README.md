@@ -26,7 +26,7 @@ kubectl apply -f deploy/secrets.yaml
 kubectl apply -k deploy
 ```
 
-Web consoleのServiceはClusterIPで作成される。tailnet内のIngressまたはGatewayを`web-console:80`へ接続する。CameraごとのRIST ServiceはoperatorがLoadBalancerとして作成する。RIST Main ProfileのAES-256 PSKはpepper、session ID、camera identity IDからCameraごとに導出され、Camera URLの`secret`および`aes-type` query parameterとして返される。pepperを変更すると既存URLが無効になり、Cameraのworker Podも再作成されるため、収録中にはrotationしないこと。
+Web consoleのServiceはClusterIPで作成される。tailnet内のIngressまたはGatewayを`web-console:80`へ接続する。CameraごとのRIST ServiceはoperatorがLoadBalancerとして作成する。Consoleに表示するRIST URLのホスト名は`VIDEO_GATEWAY_RIST_PUBLIC_HOST`で指定する。未指定の場合はLoadBalancer Serviceが払い出したIPまたはホスト名を使用する。RIST Main ProfileのAES-256 PSKはpepper、session ID、camera identity IDからCameraごとに導出され、Camera URLの`secret`および`aes-type` query parameterとして返される。pepperを変更すると既存URLが無効になり、Cameraのworker Podも再作成されるため、収録中にはrotationしないこと。
 
 テスト環境などで単一ホストのNodePort範囲をCameraごとのRIST接続先として使う場合は、次の3変数を設定する。operatorは範囲内の未使用NodePortをCameraごとに1つ割り当て、暗号化parameterを含む`rist://<public-host>:<node-port>?aes-type=256&secret=...`を返す。この範囲はkinugasa-recording専用とし、ホスト側でも同じUDP範囲をKubernetes nodeへ転送する。
 

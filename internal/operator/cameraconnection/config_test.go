@@ -16,6 +16,9 @@ func TestConfigValidatesRISTNodePortPublication(t *testing.T) {
 			config.RISTNodePortMin = 32000
 			config.RISTNodePortMax = 32099
 		}},
+		{name: "public host with load balancer", mutate: func(config *Config) {
+			config.RISTPublicHost = "rist.example.com"
+		}},
 		{name: "missing public host", mutate: func(config *Config) {
 			config.RISTNodePortMin = 32000
 			config.RISTNodePortMax = 32099

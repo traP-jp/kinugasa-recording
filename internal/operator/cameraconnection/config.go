@@ -84,8 +84,6 @@ func (c Config) validate() error {
 				"RIST node port range %d..%d is invalid", c.RISTNodePortMin, c.RISTNodePortMax,
 			))
 		}
-	} else if c.RISTPublicHost != "" {
-		validationErrors = append(validationErrors, errors.New("RIST node port range is required with a public host"))
 	}
 	if c.RTPPort == c.MPEGTSPort || c.RTPPort == c.RISTPort || c.MPEGTSPort == c.RISTPort {
 		validationErrors = append(validationErrors, errors.New("RIST, RTP, and MPEG-TS ports must be distinct"))
