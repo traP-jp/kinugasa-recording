@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	recordingv1alpha1 "github.com/traP-jp/kinugasa-recording/api/v1alpha1"
@@ -27,6 +28,7 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 				SessionID: "019c240d-a6de-7de0-a826-0f26e8803fc0",
 				Name:      "camera-1",
 			},
+			Connection: domain.CameraConnection{Status: domain.CameraConnectionStatusActivating},
 		},
 		SessionName: "session-1",
 	}}}
@@ -66,6 +68,44 @@ func TestSynchronizerConvergesResourcesToDatabase(t *testing.T) {
 	if source.activatedID != "019c240e-3eb4-72d6-a6fa-adfe1df795c8" || source.activatedURL != "rist://camera.example.com:9000" {
 		t.Fatalf("activated camera = %q, %q", source.activatedID, source.activatedURL)
 	}
+	source.resources[0].Connection = domain.CameraConnection{
+		CameraIdentityID: "019c240e-3eb4-72d6-a6fa-adfe1df795c8",
+		URL:              "rist://camera.example.com:9000",
+		Status:           domain.CameraConnectionStatusConnected,
+		VideoWorkerID:    "019c240e-5141-75e4-8b4b-5c611e7fab65",
+	}
+	if err := synchronizer.Sync(context.Background()); err != nil {
+		t.Fatalf("status Sync() error = %v", err)
+	}
+	if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(&connection), &connection); err != nil {
+		t.Fatal(err)
+	}
+	if connection.Status.Phase != recordingv1alpha1.CameraConnectionPhaseConnected ||
+		connection.Status.VideoWorkerID != "019c240e-5141-75e4-8b4b-5c611e7fab65" {
+		t.Fatalf("synchronized CameraConnection status = %+v", connection.Status)
+	}
+}
+
+func TestSynchronizerCompletesRequestedDeletionAfterResourceDisappears(t *testing.T) {
+	scheme := testScheme(t)
+	connection := testConnection()
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
+		WithObjects(connection).Build()
+	source := &cameraSourceStub{resources: []repository.CameraResource{{
+		Camera:   repository.Camera{Identity: domain.CameraIdentity{ID: domain.CameraIdentityID(connection.Spec.CameraIdentityID)}},
+		Deleting: true,
+	}}}
+	synchronizer := Synchronizer{Client: fakeClient, Source: source, Namespace: connection.Namespace}
+	if err := synchronizer.Sync(context.Background()); err != nil {
+		t.Fatalf("delete Sync() error = %v", err)
+	}
+	if err := synchronizer.Sync(context.Background()); err != nil {
+		t.Fatalf("complete Sync() error = %v", err)
+	}
+	if source.completedID != connection.Spec.CameraIdentityID {
+		t.Fatalf("completed camera ID = %q", source.completedID)
+	}
 }
 
 type cameraSourceStub struct {
@@ -73,6 +113,7 @@ type cameraSourceStub struct {
 	err          error
 	activatedID  string
 	activatedURL string
+	completedID  string
 }
 
 func (s *cameraSourceStub) ActivateCameraConnection(_ context.Context, cameraID, cameraURL string) error {
@@ -83,3 +124,10 @@ func (s *cameraSourceStub) ActivateCameraConnection(_ context.Context, cameraID,
 func (s *cameraSourceStub) ListCameraResources(context.Context) ([]repository.CameraResource, error) {
 	return s.resources, s.err
 }
+
+func (s *cameraSourceStub) CompleteCameraDeletion(_ context.Context, cameraID string) error {
+	s.completedID = cameraID
+	return s.err
+}
+
+func (s *cameraSourceStub) MarkWorkerFailure(context.Context, string, string) error { return s.err }

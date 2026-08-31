@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 )
@@ -39,6 +40,7 @@ type Camera struct {
 type CameraResource struct {
 	Camera
 	SessionName string
+	Deleting    bool
 }
 
 type Repository interface {
@@ -49,6 +51,7 @@ type Repository interface {
 	CreateCamera(context.Context, domain.CameraIdentity, domain.CameraConnection) error
 	ListCameras(context.Context, string) ([]Camera, error)
 	GetCamera(context.Context, string, string) (Camera, error)
-	DeleteCamera(context.Context, string, string) error
+	RequestCameraDeletion(context.Context, string, string, CameraCommand, time.Time) error
+	CompleteCameraDeletion(context.Context, string) error
 	ActivateCameraConnection(context.Context, string, string) error
 }

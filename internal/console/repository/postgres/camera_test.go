@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
 )
@@ -68,11 +71,15 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 		t.Fatalf("activated camera = %+v, %v", activated, err)
 	}
 
-	if err := store.DeleteCamera(ctx, session.Name, identity.Name); err != nil {
-		t.Fatalf("DeleteCamera() error = %v", err)
+	shutdown := repository.CameraCommand{CameraIdentityID: string(identity.ID), Command: &workerv1.WorkerCommand{
+		CommandId: "019c240e-5141-75e4-8b4b-5c611e7fab65", IssuedAt: timestamppb.New(createdAt),
+		Command: &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{Reason: "test deletion"}},
+	}}
+	if err := store.RequestCameraDeletion(ctx, session.Name, identity.Name, shutdown, createdAt); err != nil {
+		t.Fatalf("RequestCameraDeletion() error = %v", err)
 	}
 	if _, err := store.GetCamera(ctx, session.Name, identity.Name); !errors.Is(err, repository.ErrNotFound) {
-		t.Fatalf("GetCamera(deleted) error = %v, want ErrNotFound", err)
+		t.Fatalf("GetCamera(deleting) error = %v, want ErrNotFound", err)
 	}
 	var identities int
 	if err := pool.QueryRow(ctx,
@@ -87,8 +94,15 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListCameraResources(after delete) error = %v", err)
 	}
-	if len(resources) != 0 {
-		t.Fatalf("ListCameraResources(after delete) = %+v, want empty", resources)
+	if len(resources) != 1 || !resources[0].Deleting {
+		t.Fatalf("ListCameraResources(during delete) = %+v, want deleting resource", resources)
+	}
+	if err := store.CompleteCameraDeletion(ctx, string(identity.ID)); err != nil {
+		t.Fatalf("CompleteCameraDeletion() error = %v", err)
+	}
+	resources, err = store.ListCameraResources(ctx)
+	if err != nil || len(resources) != 0 {
+		t.Fatalf("ListCameraResources(after delete) = %+v, %v", resources, err)
 	}
 
 	identity.ID = "019c240e-4a04-73e3-8328-a32a246b8c47"

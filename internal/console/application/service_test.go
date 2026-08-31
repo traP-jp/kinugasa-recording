@@ -113,6 +113,25 @@ func TestFinishTakeOnlyDispatchesToRecordingCameras(t *testing.T) {
 	}
 }
 
+func TestDeleteCameraPersistsShutdownBeforeDispatch(t *testing.T) {
+	now := time.Date(2026, 8, 31, 13, 0, 0, 0, time.UTC)
+	repo := &repositoryStub{cameras: map[string]repository.Camera{"camera-1": {
+		Identity: domain.CameraIdentity{ID: "019c293b-0362-7823-ac1e-83cbc6ba195d", Name: "camera-1"},
+	}}}
+	dispatcher := &dispatcherStub{}
+	service := New(repo).WithRuntime(func() time.Time { return now }, func() (string, error) {
+		return "019c293b-1ee3-718f-9420-dd1f1ff16c5b", nil
+	}).WithCommandDispatcher(dispatcher)
+
+	if err := service.DeleteCamera(context.Background(), "session-1", "camera-1"); err != nil {
+		t.Fatalf("DeleteCamera() error = %v", err)
+	}
+	if repo.deleteCamera.Command.GetShutdown() == nil || len(dispatcher.commands) != 1 ||
+		dispatcher.commands[0].CommandId != repo.deleteCamera.Command.CommandId {
+		t.Fatalf("delete command/replay = %+v / %+v", repo.deleteCamera, dispatcher.commands)
+	}
+}
+
 func TestGetLockfileFormatsCompletedObjects(t *testing.T) {
 	hash := domain.ContentHash{0xab}
 	repo := &repositoryStub{lockfileObjects: []repository.LockfileObject{{
@@ -165,6 +184,7 @@ type repositoryStub struct {
 	cameras         map[string]repository.Camera
 	startTake       repository.StartTakeRequest
 	finishTake      repository.FinishTakeRequest
+	deleteCamera    repository.CameraCommand
 	ongoingTake     *domain.OngoingTake
 	lockfileObjects []repository.LockfileObject
 }
@@ -198,7 +218,17 @@ func (r *repositoryStub) GetCamera(context.Context, string, string) (repository.
 	return repository.Camera{}, repository.ErrNotFound
 }
 
-func (r *repositoryStub) DeleteCamera(context.Context, string, string) error {
+func (r *repositoryStub) RequestCameraDeletion(
+	_ context.Context,
+	_, _ string,
+	command repository.CameraCommand,
+	_ time.Time,
+) error {
+	r.deleteCamera = command
+	return nil
+}
+
+func (r *repositoryStub) CompleteCameraDeletion(context.Context, string) error {
 	return nil
 }
 

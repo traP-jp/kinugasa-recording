@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	recordingv1alpha1 "github.com/traP-jp/kinugasa-recording/api/v1alpha1"
+	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
 )
 
@@ -19,6 +20,8 @@ const defaultSyncInterval = 30 * time.Second
 type CameraSource interface {
 	ListCameraResources(context.Context) ([]repository.CameraResource, error)
 	ActivateCameraConnection(context.Context, string, string) error
+	CompleteCameraDeletion(context.Context, string) error
+	MarkWorkerFailure(context.Context, string, string) error
 }
 
 type Synchronizer struct {
@@ -67,10 +70,27 @@ func (s *Synchronizer) Sync(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list desired camera connections: %w", err)
 	}
-	desired := make(map[string]repository.CameraResource, len(desiredCameras))
+	known := make(map[string]repository.CameraResource, len(desiredCameras))
 	for _, camera := range desiredCameras {
 		name := resourceName(camera)
-		desired[name] = camera
+		known[name] = camera
+		if camera.Deleting {
+			var resource recordingv1alpha1.CameraConnection
+			err := s.Client.Get(ctx, client.ObjectKey{Namespace: s.Namespace, Name: name}, &resource)
+			switch {
+			case err == nil:
+				if err := s.Client.Delete(ctx, &resource); client.IgnoreNotFound(err) != nil {
+					return fmt.Errorf("delete requested CameraConnection %q: %w", name, err)
+				}
+			case apierrors.IsNotFound(err):
+				if err := s.Source.CompleteCameraDeletion(ctx, string(camera.Identity.ID)); err != nil {
+					return fmt.Errorf("complete camera deletion %q: %w", name, err)
+				}
+			default:
+				return fmt.Errorf("get deleting CameraConnection %q: %w", name, err)
+			}
+			continue
+		}
 		resource, err := s.ensureResource(ctx, name, camera)
 		if err != nil {
 			return err
@@ -88,7 +108,7 @@ func (s *Synchronizer) Sync(ctx context.Context) error {
 	}
 	for index := range existing.Items {
 		connection := &existing.Items[index]
-		if _, ok := desired[connection.Name]; ok {
+		if _, ok := known[connection.Name]; ok {
 			continue
 		}
 		if err := s.Client.Delete(ctx, connection); client.IgnoreNotFound(err) != nil {
@@ -106,6 +126,9 @@ func (s *Synchronizer) ensureResource(
 	key := client.ObjectKey{Namespace: s.Namespace, Name: name}
 	var existing recordingv1alpha1.CameraConnection
 	if err := s.Client.Get(ctx, key, &existing); err == nil {
+		if err := s.syncResourceStatus(ctx, &existing, camera); err != nil {
+			return nil, err
+		}
 		return &existing, nil
 	} else if !apierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("get CameraConnection %q: %w", name, err)
@@ -124,6 +147,47 @@ func (s *Synchronizer) ensureResource(
 		return nil, fmt.Errorf("create CameraConnection %q: %w", name, err)
 	}
 	return connection, nil
+}
+
+func (s *Synchronizer) syncResourceStatus(
+	ctx context.Context,
+	resource *recordingv1alpha1.CameraConnection,
+	camera repository.CameraResource,
+) error {
+	// Before Service allocation is copied to the database, the resource is the
+	// only place that contains the URL. Preserve it so Sync can activate the
+	// domain connection below.
+	if camera.Connection.Status == domain.CameraConnectionStatusActivating && camera.Connection.URL == "" {
+		return nil
+	}
+	phase, err := resourcePhase(camera.Connection.Status)
+	if err != nil {
+		return err
+	}
+	base := resource.DeepCopy()
+	resource.Status.Phase = phase
+	resource.Status.CameraURL = camera.Connection.URL
+	resource.Status.VideoWorkerID = string(camera.Connection.VideoWorkerID)
+	resource.Status.Error = camera.Connection.Error
+	if err := s.Client.Status().Patch(ctx, resource, client.MergeFrom(base)); err != nil {
+		return fmt.Errorf("synchronize CameraConnection status %q: %w", resource.Name, err)
+	}
+	return nil
+}
+
+func resourcePhase(status domain.CameraConnectionStatus) (recordingv1alpha1.CameraConnectionPhase, error) {
+	switch status {
+	case domain.CameraConnectionStatusActivating:
+		return recordingv1alpha1.CameraConnectionPhaseActivating, nil
+	case domain.CameraConnectionStatusWaiting:
+		return recordingv1alpha1.CameraConnectionPhaseWaiting, nil
+	case domain.CameraConnectionStatusConnected:
+		return recordingv1alpha1.CameraConnectionPhaseConnected, nil
+	case domain.CameraConnectionStatusError:
+		return recordingv1alpha1.CameraConnectionPhaseError, nil
+	default:
+		return "", fmt.Errorf("unsupported CameraConnection status %q", status)
+	}
 }
 
 func resourceName(camera repository.CameraResource) string {

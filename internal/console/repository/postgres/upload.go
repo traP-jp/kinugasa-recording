@@ -125,14 +125,22 @@ func convergeFinishedTake(ctx context.Context, tx pgx.Tx, takeID, sessionID stri
 	if expected == 0 || total != expected || uploading != 0 {
 		return nil
 	}
+	var updateError error
 	if errored != 0 {
-		_, err := tx.Exec(ctx, `
+		_, updateError = tx.Exec(ctx, `
 			UPDATE takes SET state = 'errored', error = 'one or more video uploads failed'
 			WHERE id = $1 AND session_id = $2 AND phase = 'finished'`, takeID, sessionID)
-		return err
+	} else {
+		_, updateError = tx.Exec(ctx, `
+			UPDATE takes SET state = 'completed', error = NULL
+			WHERE id = $1 AND session_id = $2 AND phase = 'finished'`, takeID, sessionID)
 	}
-	_, err := tx.Exec(ctx, `
-		UPDATE takes SET state = 'completed', error = NULL
-		WHERE id = $1 AND session_id = $2 AND phase = 'finished'`, takeID, sessionID)
-	return err
+	if updateError != nil {
+		return updateError
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM recording_cameras WHERE take_id = $1 AND session_id = $2`, takeID, sessionID); err != nil {
+		return fmt.Errorf("release terminal recording cameras: %w", err)
+	}
+	return nil
 }

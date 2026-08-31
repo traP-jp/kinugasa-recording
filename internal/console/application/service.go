@@ -166,7 +166,32 @@ func (s *Service) GetCamera(ctx context.Context, sessionName, cameraName string)
 }
 
 func (s *Service) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
-	return s.repository.DeleteCamera(ctx, sessionName, cameraName)
+	camera, err := s.repository.GetCamera(ctx, sessionName, cameraName)
+	if err != nil {
+		return err
+	}
+	commandID, err := s.newID()
+	if err != nil {
+		return fmt.Errorf("generate shutdown command ID: %w", err)
+	}
+	now := s.now().UTC()
+	command := repository.CameraCommand{
+		CameraIdentityID: string(camera.Identity.ID),
+		Command: &workerv1.WorkerCommand{
+			CommandId: commandID,
+			IssuedAt:  timestamppb.New(now),
+			Command: &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{
+				Reason: "camera connection deleted",
+			}},
+		},
+	}
+	if err := s.repository.RequestCameraDeletion(ctx, sessionName, cameraName, command, now); err != nil {
+		return err
+	}
+	if s.dispatcher != nil {
+		s.dispatcher.Enqueue(command.CameraIdentityID, command.Command)
+	}
+	return nil
 }
 
 type OngoingTakeView struct {

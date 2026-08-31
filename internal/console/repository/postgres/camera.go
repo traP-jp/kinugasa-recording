@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
@@ -78,7 +79,7 @@ func (s *Store) ListCameras(ctx context.Context, sessionName string) ([]reposito
 		FROM camera_identities
 		JOIN sessions ON sessions.id = camera_identities.session_id
 		JOIN camera_connections ON camera_connections.camera_identity_id = camera_identities.id
-		WHERE sessions.name = $1
+		WHERE sessions.name = $1 AND camera_connections.deletion_requested_at IS NULL
 		ORDER BY camera_identities.created_at ASC, camera_identities.name ASC`, sessionName)
 	if err != nil {
 		return nil, fmt.Errorf("list cameras: %w", err)
@@ -106,7 +107,8 @@ func (s *Store) ListCameraResources(ctx context.Context) ([]repository.CameraRes
 		       coalesce(camera_connections.url, ''), camera_connections.status,
 		       coalesce(camera_connections.error, ''),
 		       coalesce(camera_connections.video_worker_id::text, ''),
-		       sessions.name
+		       sessions.name,
+		       camera_connections.deletion_requested_at IS NOT NULL
 		FROM camera_identities
 		JOIN sessions ON sessions.id = camera_identities.session_id
 		JOIN camera_connections ON camera_connections.camera_identity_id = camera_identities.id
@@ -129,6 +131,7 @@ func (s *Store) ListCameraResources(ctx context.Context) ([]repository.CameraRes
 			&resource.Connection.Error,
 			&resource.Connection.VideoWorkerID,
 			&resource.SessionName,
+			&resource.Deleting,
 		); err != nil {
 			return nil, fmt.Errorf("scan camera resource: %w", err)
 		}
@@ -151,7 +154,8 @@ func (s *Store) GetCamera(ctx context.Context, sessionName, cameraName string) (
 		FROM camera_identities
 		JOIN sessions ON sessions.id = camera_identities.session_id
 		JOIN camera_connections ON camera_connections.camera_identity_id = camera_identities.id
-		WHERE sessions.name = $1 AND camera_identities.name = $2`, sessionName, cameraName)
+		WHERE sessions.name = $1 AND camera_identities.name = $2
+		  AND camera_connections.deletion_requested_at IS NULL`, sessionName, cameraName)
 	camera, err := scanCamera(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.Camera{}, repository.ErrNotFound
@@ -159,16 +163,70 @@ func (s *Store) GetCamera(ctx context.Context, sessionName, cameraName string) (
 	return camera, err
 }
 
-func (s *Store) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
+func (s *Store) RequestCameraDeletion(
+	ctx context.Context,
+	sessionName, cameraName string,
+	command repository.CameraCommand,
+	requestedAt time.Time,
+) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin camera deletion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var cameraID string
+	err = tx.QueryRow(ctx, `
+		SELECT camera_connections.camera_identity_id::text
+		FROM camera_connections
+		JOIN camera_identities ON camera_identities.id = camera_connections.camera_identity_id
+		JOIN sessions ON sessions.id = camera_identities.session_id
+		WHERE sessions.name = $1 AND camera_identities.name = $2
+		  AND camera_connections.deletion_requested_at IS NULL
+		FOR UPDATE`, sessionName, cameraName,
+	).Scan(&cameraID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("load camera for deletion: %w", err)
+	}
+	var recording bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM recording_cameras
+			JOIN takes ON takes.id = recording_cameras.take_id
+			WHERE recording_cameras.camera_identity_id = $1 AND takes.phase = 'ongoing'
+		)`, cameraID,
+	).Scan(&recording); err != nil {
+		return fmt.Errorf("check active recording before camera deletion: %w", err)
+	}
+	if recording {
+		return repository.ErrConflict
+	}
+	if command.CameraIdentityID != cameraID || command.Command.GetShutdown() == nil {
+		return repository.ErrConflict
+	}
+	if err := insertWorkerCommand(ctx, tx, command); err != nil {
+		return fmt.Errorf("persist camera shutdown command: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE camera_connections SET deletion_requested_at = $2
+		WHERE camera_identity_id = $1`, cameraID, requestedAt.UTC(),
+	); err != nil {
+		return fmt.Errorf("request camera deletion: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit camera deletion request: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CompleteCameraDeletion(ctx context.Context, cameraID string) error {
 	commandTag, err := s.pool.Exec(ctx, `
 		DELETE FROM camera_connections
-		USING camera_identities, sessions
-		WHERE camera_connections.camera_identity_id = camera_identities.id
-		  AND camera_identities.session_id = sessions.id
-		  AND sessions.name = $1
-		  AND camera_identities.name = $2`, sessionName, cameraName)
+		WHERE camera_identity_id = $1 AND deletion_requested_at IS NOT NULL`, cameraID)
 	if err != nil {
-		return fmt.Errorf("delete camera: %w", classifyError(err))
+		return fmt.Errorf("complete camera deletion: %w", classifyError(err))
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrNotFound
@@ -179,7 +237,8 @@ func (s *Store) DeleteCamera(ctx context.Context, sessionName, cameraName string
 func (s *Store) ActivateCameraConnection(ctx context.Context, cameraID, cameraURL string) error {
 	commandTag, err := s.pool.Exec(ctx, `
 		UPDATE camera_connections SET url = $2, status = 'waiting', error = NULL
-		WHERE camera_identity_id = $1 AND status = 'activating'`, cameraID, cameraURL)
+		WHERE camera_identity_id = $1 AND status = 'activating'
+		  AND deletion_requested_at IS NULL`, cameraID, cameraURL)
 	if err != nil {
 		return fmt.Errorf("activate camera connection: %w", err)
 	}
