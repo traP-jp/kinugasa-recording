@@ -24,6 +24,7 @@
             golangci-lint
             gopls
             kubectl
+            librist
             mediamtx
             nodejs
             pnpm
