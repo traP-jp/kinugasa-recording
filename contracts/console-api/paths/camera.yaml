@@ -6,10 +6,13 @@ delete:
   operationId: deleteCamera
   tags: [Cameras]
   summary: cameraを削除する
-  description: CameraConnectionを削除する。CameraIdentityと名前の使用履歴は残る。
+  description: >-
+    CameraConnectionの削除を要求する。Shutdown commandを永続化してworkerへ送り、
+    uploaderのterminal処理後にPod、PVC、CameraConnectionを削除する。
+    CameraIdentityと名前の使用履歴は残る。
   responses:
     '204':
-      description: cameraを削除した
+      description: cameraの削除要求を受理した
     '404':
       $ref: ../openapi.yaml#/components/responses/NotFound
     '409':
