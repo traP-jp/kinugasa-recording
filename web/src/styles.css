@@ -185,6 +185,17 @@ input::placeholder { color: #586365; }
 .qr-frame { background: white; border-radius: 12px; padding: 8px; display: grid; }
 .connection-url { width: 100%; color: var(--cyan); background: #080c0d; border: 1px solid var(--line); border-radius: 7px; padding: 10px; word-break: break-all; font-size: 10px; }
 .modal-hint { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 0; }
+.camera-deletion-dialog { padding: 20px; display: grid; gap: 18px; }
+.danger-message { display: flex; gap: 12px; color: #ffd3ce; background: rgba(134, 41, 34, .24); border: 1px solid #743a35; border-radius: 10px; padding: 13px; }
+.danger-message > svg { flex: none; color: var(--red); }
+.danger-message strong { font-size: 13px; }
+.danger-message p, .camera-delete-message { color: #c9d0d1; font-size: 12px; line-height: 1.6; margin: 5px 0 0; }
+.affected-video-files { display: grid; gap: 7px; }
+.affected-video-files > span, .danger-confirmation > span { color: #aab4b5; font: 10px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.affected-video-files ul { margin: 0; padding: 10px 10px 10px 28px; border: 1px solid var(--line); border-radius: 8px; color: var(--cyan); font: 10px var(--mono); }
+.danger-confirmation { display: grid; gap: 8px; }
+.danger-confirmation code { color: var(--amber); font-size: 10px; overflow-wrap: anywhere; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 .pagination { display: flex; justify-content: center; align-items: center; gap: 14px; padding-top: 22px; color: var(--muted); font: 10px var(--mono); }
 .empty-state { min-height: 230px; border: 1px dashed #334043; border-radius: 14px; display: grid; place-content: center; justify-items: center; text-align: center; padding: 24px; color: var(--muted); }

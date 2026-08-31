@@ -266,6 +266,55 @@ func (ErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_v1_console_video_worker_proto_rawDescGZIP(), []int{3}
 }
 
+type UploadState int32
+
+const (
+	UploadState_UPLOAD_STATE_UNSPECIFIED UploadState = 0
+	UploadState_UPLOAD_STATE_COMPLETED   UploadState = 1
+	UploadState_UPLOAD_STATE_ERRORED     UploadState = 2
+)
+
+// Enum value maps for UploadState.
+var (
+	UploadState_name = map[int32]string{
+		0: "UPLOAD_STATE_UNSPECIFIED",
+		1: "UPLOAD_STATE_COMPLETED",
+		2: "UPLOAD_STATE_ERRORED",
+	}
+	UploadState_value = map[string]int32{
+		"UPLOAD_STATE_UNSPECIFIED": 0,
+		"UPLOAD_STATE_COMPLETED":   1,
+		"UPLOAD_STATE_ERRORED":     2,
+	}
+)
+
+func (x UploadState) Enum() *UploadState {
+	p := new(UploadState)
+	*p = x
+	return p
+}
+
+func (x UploadState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UploadState) Descriptor() protoreflect.EnumDescriptor {
+	return file_v1_console_video_worker_proto_enumTypes[4].Descriptor()
+}
+
+func (UploadState) Type() protoreflect.EnumType {
+	return &file_v1_console_video_worker_proto_enumTypes[4]
+}
+
+func (x UploadState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UploadState.Descriptor instead.
+func (UploadState) EnumDescriptor() ([]byte, []int) {
+	return file_v1_console_video_worker_proto_rawDescGZIP(), []int{4}
+}
+
 type WorkerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -720,7 +769,7 @@ type RecordingStatus struct {
 	// Set only for a terminal state.
 	FinishedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
 	// Set only for RECORDING_STATE_FINISHED. The file has been flushed, closed,
-	// and made visible to video-uploader before this status is emitted.
+	// and queued for upload before this status is emitted.
 	FinalizedFile *FinalizedFile `protobuf:"bytes,5,opt,name=finalized_file,json=finalizedFile,proto3" json:"finalized_file,omitempty"`
 	// Present if and only if state is RECORDING_STATE_ERROR.
 	Error         *WorkerError `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
@@ -1400,6 +1449,198 @@ func (x *WorkerError) GetRetryable() bool {
 	return false
 }
 
+type UploadReport struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	SessionId        string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	CameraIdentityId string                 `protobuf:"bytes,2,opt,name=camera_identity_id,json=cameraIdentityId,proto3" json:"camera_identity_id,omitempty"`
+	TakeId           string                 `protobuf:"bytes,3,opt,name=take_id,json=takeId,proto3" json:"take_id,omitempty"`
+	RelativePath     string                 `protobuf:"bytes,4,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	StartedAt        *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	FinishedAt       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	State            UploadState            `protobuf:"varint,7,opt,name=state,proto3,enum=kinugasa.recording.console_video_worker.v1.UploadState" json:"state,omitempty"`
+	ObjectKey        string                 `protobuf:"bytes,8,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
+	Sha256           []byte                 `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Size             int64                  `protobuf:"varint,10,opt,name=size,proto3" json:"size,omitempty"`
+	Error            string                 `protobuf:"bytes,11,opt,name=error,proto3" json:"error,omitempty"`
+	ObservedAt       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UploadReport) Reset() {
+	*x = UploadReport{}
+	mi := &file_v1_console_video_worker_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadReport) ProtoMessage() {}
+
+func (x *UploadReport) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_console_video_worker_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadReport.ProtoReflect.Descriptor instead.
+func (*UploadReport) Descriptor() ([]byte, []int) {
+	return file_v1_console_video_worker_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *UploadReport) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *UploadReport) GetCameraIdentityId() string {
+	if x != nil {
+		return x.CameraIdentityId
+	}
+	return ""
+}
+
+func (x *UploadReport) GetTakeId() string {
+	if x != nil {
+		return x.TakeId
+	}
+	return ""
+}
+
+func (x *UploadReport) GetRelativePath() string {
+	if x != nil {
+		return x.RelativePath
+	}
+	return ""
+}
+
+func (x *UploadReport) GetStartedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartedAt
+	}
+	return nil
+}
+
+func (x *UploadReport) GetFinishedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.FinishedAt
+	}
+	return nil
+}
+
+func (x *UploadReport) GetState() UploadState {
+	if x != nil {
+		return x.State
+	}
+	return UploadState_UPLOAD_STATE_UNSPECIFIED
+}
+
+func (x *UploadReport) GetObjectKey() string {
+	if x != nil {
+		return x.ObjectKey
+	}
+	return ""
+}
+
+func (x *UploadReport) GetSha256() []byte {
+	if x != nil {
+		return x.Sha256
+	}
+	return nil
+}
+
+func (x *UploadReport) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *UploadReport) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *UploadReport) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+type UploadReportAcknowledged struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	TakeId           string                 `protobuf:"bytes,1,opt,name=take_id,json=takeId,proto3" json:"take_id,omitempty"`
+	CameraIdentityId string                 `protobuf:"bytes,2,opt,name=camera_identity_id,json=cameraIdentityId,proto3" json:"camera_identity_id,omitempty"`
+	AcceptedAt       *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=accepted_at,json=acceptedAt,proto3" json:"accepted_at,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *UploadReportAcknowledged) Reset() {
+	*x = UploadReportAcknowledged{}
+	mi := &file_v1_console_video_worker_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadReportAcknowledged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadReportAcknowledged) ProtoMessage() {}
+
+func (x *UploadReportAcknowledged) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_console_video_worker_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadReportAcknowledged.ProtoReflect.Descriptor instead.
+func (*UploadReportAcknowledged) Descriptor() ([]byte, []int) {
+	return file_v1_console_video_worker_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *UploadReportAcknowledged) GetTakeId() string {
+	if x != nil {
+		return x.TakeId
+	}
+	return ""
+}
+
+func (x *UploadReportAcknowledged) GetCameraIdentityId() string {
+	if x != nil {
+		return x.CameraIdentityId
+	}
+	return ""
+}
+
+func (x *UploadReportAcknowledged) GetAcceptedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.AcceptedAt
+	}
+	return nil
+}
+
 var File_v1_console_video_worker_proto protoreflect.FileDescriptor
 
 const file_v1_console_video_worker_proto_rawDesc = "" +
@@ -1482,7 +1723,31 @@ const file_v1_console_video_worker_proto_rawDesc = "" +
 	"\vWorkerError\x12I\n" +
 	"\x04code\x18\x01 \x01(\x0e25.kinugasa.recording.console_video_worker.v1.ErrorCodeR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1c\n" +
-	"\tretryable\x18\x03 \x01(\bR\tretryable*t\n" +
+	"\tretryable\x18\x03 \x01(\bR\tretryable\"\xfe\x03\n" +
+	"\fUploadReport\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12,\n" +
+	"\x12camera_identity_id\x18\x02 \x01(\tR\x10cameraIdentityId\x12\x17\n" +
+	"\atake_id\x18\x03 \x01(\tR\x06takeId\x12#\n" +
+	"\rrelative_path\x18\x04 \x01(\tR\frelativePath\x129\n" +
+	"\n" +
+	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
+	"\vfinished_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"finishedAt\x12M\n" +
+	"\x05state\x18\a \x01(\x0e27.kinugasa.recording.console_video_worker.v1.UploadStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"object_key\x18\b \x01(\tR\tobjectKey\x12\x16\n" +
+	"\x06sha256\x18\t \x01(\fR\x06sha256\x12\x12\n" +
+	"\x04size\x18\n" +
+	" \x01(\x03R\x04size\x12\x14\n" +
+	"\x05error\x18\v \x01(\tR\x05error\x12;\n" +
+	"\vobserved_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\"\x9e\x01\n" +
+	"\x18UploadReportAcknowledged\x12\x17\n" +
+	"\atake_id\x18\x01 \x01(\tR\x06takeId\x12,\n" +
+	"\x12camera_identity_id\x18\x02 \x01(\tR\x10cameraIdentityId\x12;\n" +
+	"\vaccepted_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"acceptedAt*t\n" +
 	"\n" +
 	"InputState\x12\x1b\n" +
 	"\x17INPUT_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -1516,9 +1781,14 @@ const file_v1_console_video_worker_proto_rawDesc = "" +
 	"\x1fERROR_CODE_FINALIZATION_FAILURE\x10\n" +
 	"\x12\x17\n" +
 	"\x13ERROR_CODE_INTERNAL\x10\v\x12$\n" +
-	" ERROR_CODE_RECORDING_INTERRUPTED\x10\f2\xa2\x01\n" +
+	" ERROR_CODE_RECORDING_INTERRUPTED\x10\f*a\n" +
+	"\vUploadState\x12\x1c\n" +
+	"\x18UPLOAD_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16UPLOAD_STATE_COMPLETED\x10\x01\x12\x18\n" +
+	"\x14UPLOAD_STATE_ERRORED\x10\x022\xb3\x02\n" +
 	"\x19ConsoleVideoWorkerService\x12\x84\x01\n" +
-	"\aControl\x129.kinugasa.recording.console_video_worker.v1.WorkerMessage\x1a:.kinugasa.recording.console_video_worker.v1.ConsoleMessage(\x010\x01BZZXgithub.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1;console_video_workerv1b\x06proto3"
+	"\aControl\x129.kinugasa.recording.console_video_worker.v1.WorkerMessage\x1a:.kinugasa.recording.console_video_worker.v1.ConsoleMessage(\x010\x01\x12\x8e\x01\n" +
+	"\fReportUpload\x128.kinugasa.recording.console_video_worker.v1.UploadReport\x1aD.kinugasa.recording.console_video_worker.v1.UploadReportAcknowledgedBZZXgithub.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1;console_video_workerv1b\x06proto3"
 
 var (
 	file_v1_console_video_worker_proto_rawDescOnce sync.Once
@@ -1532,68 +1802,78 @@ func file_v1_console_video_worker_proto_rawDescGZIP() []byte {
 	return file_v1_console_video_worker_proto_rawDescData
 }
 
-var file_v1_console_video_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_v1_console_video_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_v1_console_video_worker_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_v1_console_video_worker_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_v1_console_video_worker_proto_goTypes = []any{
 	(InputState)(0),                  // 0: kinugasa.recording.console_video_worker.v1.InputState
 	(RecordingState)(0),              // 1: kinugasa.recording.console_video_worker.v1.RecordingState
 	(CommandResultStatus)(0),         // 2: kinugasa.recording.console_video_worker.v1.CommandResultStatus
 	(ErrorCode)(0),                   // 3: kinugasa.recording.console_video_worker.v1.ErrorCode
-	(*WorkerMessage)(nil),            // 4: kinugasa.recording.console_video_worker.v1.WorkerMessage
-	(*ConsoleMessage)(nil),           // 5: kinugasa.recording.console_video_worker.v1.ConsoleMessage
-	(*WorkerHello)(nil),              // 6: kinugasa.recording.console_video_worker.v1.WorkerHello
-	(*WorkerRegistered)(nil),         // 7: kinugasa.recording.console_video_worker.v1.WorkerRegistered
-	(*WorkerSnapshot)(nil),           // 8: kinugasa.recording.console_video_worker.v1.WorkerSnapshot
-	(*InputStatus)(nil),              // 9: kinugasa.recording.console_video_worker.v1.InputStatus
-	(*RecordingStatus)(nil),          // 10: kinugasa.recording.console_video_worker.v1.RecordingStatus
-	(*FinalizedFile)(nil),            // 11: kinugasa.recording.console_video_worker.v1.FinalizedFile
-	(*WorkerEvent)(nil),              // 12: kinugasa.recording.console_video_worker.v1.WorkerEvent
-	(*WorkerEventsAcknowledged)(nil), // 13: kinugasa.recording.console_video_worker.v1.WorkerEventsAcknowledged
-	(*WorkerCommand)(nil),            // 14: kinugasa.recording.console_video_worker.v1.WorkerCommand
-	(*StartRecording)(nil),           // 15: kinugasa.recording.console_video_worker.v1.StartRecording
-	(*FinishRecording)(nil),          // 16: kinugasa.recording.console_video_worker.v1.FinishRecording
-	(*Shutdown)(nil),                 // 17: kinugasa.recording.console_video_worker.v1.Shutdown
-	(*CommandResult)(nil),            // 18: kinugasa.recording.console_video_worker.v1.CommandResult
-	(*WorkerError)(nil),              // 19: kinugasa.recording.console_video_worker.v1.WorkerError
-	(*timestamppb.Timestamp)(nil),    // 20: google.protobuf.Timestamp
+	(UploadState)(0),                 // 4: kinugasa.recording.console_video_worker.v1.UploadState
+	(*WorkerMessage)(nil),            // 5: kinugasa.recording.console_video_worker.v1.WorkerMessage
+	(*ConsoleMessage)(nil),           // 6: kinugasa.recording.console_video_worker.v1.ConsoleMessage
+	(*WorkerHello)(nil),              // 7: kinugasa.recording.console_video_worker.v1.WorkerHello
+	(*WorkerRegistered)(nil),         // 8: kinugasa.recording.console_video_worker.v1.WorkerRegistered
+	(*WorkerSnapshot)(nil),           // 9: kinugasa.recording.console_video_worker.v1.WorkerSnapshot
+	(*InputStatus)(nil),              // 10: kinugasa.recording.console_video_worker.v1.InputStatus
+	(*RecordingStatus)(nil),          // 11: kinugasa.recording.console_video_worker.v1.RecordingStatus
+	(*FinalizedFile)(nil),            // 12: kinugasa.recording.console_video_worker.v1.FinalizedFile
+	(*WorkerEvent)(nil),              // 13: kinugasa.recording.console_video_worker.v1.WorkerEvent
+	(*WorkerEventsAcknowledged)(nil), // 14: kinugasa.recording.console_video_worker.v1.WorkerEventsAcknowledged
+	(*WorkerCommand)(nil),            // 15: kinugasa.recording.console_video_worker.v1.WorkerCommand
+	(*StartRecording)(nil),           // 16: kinugasa.recording.console_video_worker.v1.StartRecording
+	(*FinishRecording)(nil),          // 17: kinugasa.recording.console_video_worker.v1.FinishRecording
+	(*Shutdown)(nil),                 // 18: kinugasa.recording.console_video_worker.v1.Shutdown
+	(*CommandResult)(nil),            // 19: kinugasa.recording.console_video_worker.v1.CommandResult
+	(*WorkerError)(nil),              // 20: kinugasa.recording.console_video_worker.v1.WorkerError
+	(*UploadReport)(nil),             // 21: kinugasa.recording.console_video_worker.v1.UploadReport
+	(*UploadReportAcknowledged)(nil), // 22: kinugasa.recording.console_video_worker.v1.UploadReportAcknowledged
+	(*timestamppb.Timestamp)(nil),    // 23: google.protobuf.Timestamp
 }
 var file_v1_console_video_worker_proto_depIdxs = []int32{
-	6,  // 0: kinugasa.recording.console_video_worker.v1.WorkerMessage.hello:type_name -> kinugasa.recording.console_video_worker.v1.WorkerHello
-	12, // 1: kinugasa.recording.console_video_worker.v1.WorkerMessage.event:type_name -> kinugasa.recording.console_video_worker.v1.WorkerEvent
-	18, // 2: kinugasa.recording.console_video_worker.v1.WorkerMessage.command_result:type_name -> kinugasa.recording.console_video_worker.v1.CommandResult
-	7,  // 3: kinugasa.recording.console_video_worker.v1.ConsoleMessage.registered:type_name -> kinugasa.recording.console_video_worker.v1.WorkerRegistered
-	13, // 4: kinugasa.recording.console_video_worker.v1.ConsoleMessage.events_acknowledged:type_name -> kinugasa.recording.console_video_worker.v1.WorkerEventsAcknowledged
-	14, // 5: kinugasa.recording.console_video_worker.v1.ConsoleMessage.command:type_name -> kinugasa.recording.console_video_worker.v1.WorkerCommand
-	20, // 6: kinugasa.recording.console_video_worker.v1.WorkerHello.observed_at:type_name -> google.protobuf.Timestamp
-	8,  // 7: kinugasa.recording.console_video_worker.v1.WorkerHello.snapshot:type_name -> kinugasa.recording.console_video_worker.v1.WorkerSnapshot
-	20, // 8: kinugasa.recording.console_video_worker.v1.WorkerRegistered.registered_at:type_name -> google.protobuf.Timestamp
-	9,  // 9: kinugasa.recording.console_video_worker.v1.WorkerSnapshot.input:type_name -> kinugasa.recording.console_video_worker.v1.InputStatus
-	10, // 10: kinugasa.recording.console_video_worker.v1.WorkerSnapshot.recording:type_name -> kinugasa.recording.console_video_worker.v1.RecordingStatus
+	7,  // 0: kinugasa.recording.console_video_worker.v1.WorkerMessage.hello:type_name -> kinugasa.recording.console_video_worker.v1.WorkerHello
+	13, // 1: kinugasa.recording.console_video_worker.v1.WorkerMessage.event:type_name -> kinugasa.recording.console_video_worker.v1.WorkerEvent
+	19, // 2: kinugasa.recording.console_video_worker.v1.WorkerMessage.command_result:type_name -> kinugasa.recording.console_video_worker.v1.CommandResult
+	8,  // 3: kinugasa.recording.console_video_worker.v1.ConsoleMessage.registered:type_name -> kinugasa.recording.console_video_worker.v1.WorkerRegistered
+	14, // 4: kinugasa.recording.console_video_worker.v1.ConsoleMessage.events_acknowledged:type_name -> kinugasa.recording.console_video_worker.v1.WorkerEventsAcknowledged
+	15, // 5: kinugasa.recording.console_video_worker.v1.ConsoleMessage.command:type_name -> kinugasa.recording.console_video_worker.v1.WorkerCommand
+	23, // 6: kinugasa.recording.console_video_worker.v1.WorkerHello.observed_at:type_name -> google.protobuf.Timestamp
+	9,  // 7: kinugasa.recording.console_video_worker.v1.WorkerHello.snapshot:type_name -> kinugasa.recording.console_video_worker.v1.WorkerSnapshot
+	23, // 8: kinugasa.recording.console_video_worker.v1.WorkerRegistered.registered_at:type_name -> google.protobuf.Timestamp
+	10, // 9: kinugasa.recording.console_video_worker.v1.WorkerSnapshot.input:type_name -> kinugasa.recording.console_video_worker.v1.InputStatus
+	11, // 10: kinugasa.recording.console_video_worker.v1.WorkerSnapshot.recording:type_name -> kinugasa.recording.console_video_worker.v1.RecordingStatus
 	0,  // 11: kinugasa.recording.console_video_worker.v1.InputStatus.state:type_name -> kinugasa.recording.console_video_worker.v1.InputState
-	19, // 12: kinugasa.recording.console_video_worker.v1.InputStatus.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
+	20, // 12: kinugasa.recording.console_video_worker.v1.InputStatus.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
 	1,  // 13: kinugasa.recording.console_video_worker.v1.RecordingStatus.state:type_name -> kinugasa.recording.console_video_worker.v1.RecordingState
-	20, // 14: kinugasa.recording.console_video_worker.v1.RecordingStatus.started_at:type_name -> google.protobuf.Timestamp
-	20, // 15: kinugasa.recording.console_video_worker.v1.RecordingStatus.finished_at:type_name -> google.protobuf.Timestamp
-	11, // 16: kinugasa.recording.console_video_worker.v1.RecordingStatus.finalized_file:type_name -> kinugasa.recording.console_video_worker.v1.FinalizedFile
-	19, // 17: kinugasa.recording.console_video_worker.v1.RecordingStatus.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
-	20, // 18: kinugasa.recording.console_video_worker.v1.WorkerEvent.occurred_at:type_name -> google.protobuf.Timestamp
-	9,  // 19: kinugasa.recording.console_video_worker.v1.WorkerEvent.input_status_changed:type_name -> kinugasa.recording.console_video_worker.v1.InputStatus
-	10, // 20: kinugasa.recording.console_video_worker.v1.WorkerEvent.recording_status_changed:type_name -> kinugasa.recording.console_video_worker.v1.RecordingStatus
-	20, // 21: kinugasa.recording.console_video_worker.v1.WorkerCommand.issued_at:type_name -> google.protobuf.Timestamp
-	15, // 22: kinugasa.recording.console_video_worker.v1.WorkerCommand.start_recording:type_name -> kinugasa.recording.console_video_worker.v1.StartRecording
-	16, // 23: kinugasa.recording.console_video_worker.v1.WorkerCommand.finish_recording:type_name -> kinugasa.recording.console_video_worker.v1.FinishRecording
-	17, // 24: kinugasa.recording.console_video_worker.v1.WorkerCommand.shutdown:type_name -> kinugasa.recording.console_video_worker.v1.Shutdown
+	23, // 14: kinugasa.recording.console_video_worker.v1.RecordingStatus.started_at:type_name -> google.protobuf.Timestamp
+	23, // 15: kinugasa.recording.console_video_worker.v1.RecordingStatus.finished_at:type_name -> google.protobuf.Timestamp
+	12, // 16: kinugasa.recording.console_video_worker.v1.RecordingStatus.finalized_file:type_name -> kinugasa.recording.console_video_worker.v1.FinalizedFile
+	20, // 17: kinugasa.recording.console_video_worker.v1.RecordingStatus.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
+	23, // 18: kinugasa.recording.console_video_worker.v1.WorkerEvent.occurred_at:type_name -> google.protobuf.Timestamp
+	10, // 19: kinugasa.recording.console_video_worker.v1.WorkerEvent.input_status_changed:type_name -> kinugasa.recording.console_video_worker.v1.InputStatus
+	11, // 20: kinugasa.recording.console_video_worker.v1.WorkerEvent.recording_status_changed:type_name -> kinugasa.recording.console_video_worker.v1.RecordingStatus
+	23, // 21: kinugasa.recording.console_video_worker.v1.WorkerCommand.issued_at:type_name -> google.protobuf.Timestamp
+	16, // 22: kinugasa.recording.console_video_worker.v1.WorkerCommand.start_recording:type_name -> kinugasa.recording.console_video_worker.v1.StartRecording
+	17, // 23: kinugasa.recording.console_video_worker.v1.WorkerCommand.finish_recording:type_name -> kinugasa.recording.console_video_worker.v1.FinishRecording
+	18, // 24: kinugasa.recording.console_video_worker.v1.WorkerCommand.shutdown:type_name -> kinugasa.recording.console_video_worker.v1.Shutdown
 	2,  // 25: kinugasa.recording.console_video_worker.v1.CommandResult.status:type_name -> kinugasa.recording.console_video_worker.v1.CommandResultStatus
-	20, // 26: kinugasa.recording.console_video_worker.v1.CommandResult.completed_at:type_name -> google.protobuf.Timestamp
-	19, // 27: kinugasa.recording.console_video_worker.v1.CommandResult.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
+	23, // 26: kinugasa.recording.console_video_worker.v1.CommandResult.completed_at:type_name -> google.protobuf.Timestamp
+	20, // 27: kinugasa.recording.console_video_worker.v1.CommandResult.error:type_name -> kinugasa.recording.console_video_worker.v1.WorkerError
 	3,  // 28: kinugasa.recording.console_video_worker.v1.WorkerError.code:type_name -> kinugasa.recording.console_video_worker.v1.ErrorCode
-	4,  // 29: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.Control:input_type -> kinugasa.recording.console_video_worker.v1.WorkerMessage
-	5,  // 30: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.Control:output_type -> kinugasa.recording.console_video_worker.v1.ConsoleMessage
-	30, // [30:31] is the sub-list for method output_type
-	29, // [29:30] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	23, // 29: kinugasa.recording.console_video_worker.v1.UploadReport.started_at:type_name -> google.protobuf.Timestamp
+	23, // 30: kinugasa.recording.console_video_worker.v1.UploadReport.finished_at:type_name -> google.protobuf.Timestamp
+	4,  // 31: kinugasa.recording.console_video_worker.v1.UploadReport.state:type_name -> kinugasa.recording.console_video_worker.v1.UploadState
+	23, // 32: kinugasa.recording.console_video_worker.v1.UploadReport.observed_at:type_name -> google.protobuf.Timestamp
+	23, // 33: kinugasa.recording.console_video_worker.v1.UploadReportAcknowledged.accepted_at:type_name -> google.protobuf.Timestamp
+	5,  // 34: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.Control:input_type -> kinugasa.recording.console_video_worker.v1.WorkerMessage
+	21, // 35: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.ReportUpload:input_type -> kinugasa.recording.console_video_worker.v1.UploadReport
+	6,  // 36: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.Control:output_type -> kinugasa.recording.console_video_worker.v1.ConsoleMessage
+	22, // 37: kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService.ReportUpload:output_type -> kinugasa.recording.console_video_worker.v1.UploadReportAcknowledged
+	36, // [36:38] is the sub-list for method output_type
+	34, // [34:36] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_v1_console_video_worker_proto_init() }
@@ -1625,8 +1905,8 @@ func file_v1_console_video_worker_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_console_video_worker_proto_rawDesc), len(file_v1_console_video_worker_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   16,
+			NumEnums:      5,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

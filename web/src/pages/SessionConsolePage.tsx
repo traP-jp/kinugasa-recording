@@ -2,7 +2,7 @@ import { Camera, History, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { PreviewAccess } from "../api/types";
+import type { FinishedTakeDetail, PreviewAccess } from "../api/types";
 import { AppShell } from "../components/AppShell";
 import { Button } from "../components/Button";
 import { EmptyState } from "../components/EmptyState";
@@ -19,6 +19,7 @@ export function SessionConsolePage() {
   const { sessionName = "" } = useParams();
   const [actionError, setActionError] = useState<Error | null>(null);
   const [previewAccess, setPreviewAccess] = useState<PreviewAccess | null>(null);
+  const [uploadingDetails, setUploadingDetails] = useState<FinishedTakeDetail[]>([]);
   const loadSession = useCallback(() => api.getSession(sessionName), [sessionName]);
   const loadCameras = useCallback(() => api.listCameras(sessionName), [sessionName]);
   const loadOngoing = useCallback(() => api.getOngoingTake(sessionName), [sessionName]);
@@ -60,11 +61,37 @@ export function SessionConsolePage() {
     }
   }
 
+  const uploading = takes.data?.items.filter((take) => take.state === "uploading") ?? [];
+  const uploadingKey = uploading.map((take) => `${take.id}:${take.state}`).join(",");
+
+  useEffect(() => {
+    let active = true;
+    if (uploading.length === 0) {
+      setUploadingDetails([]);
+      return () => { active = false; };
+    }
+    void Promise.all(uploading.map((take) => api.getTake(sessionName, take.name)))
+      .then((details) => { if (active) setUploadingDetails(details); })
+      .catch((error) => {
+        if (active) setActionError(error instanceof Error ? error : new Error(String(error)));
+      });
+    return () => { active = false; };
+  }, [sessionName, uploadingKey]);
+
   if ((session.loading || cameras.loading || ongoing.loading) && (!session.data || !cameras.data || !ongoing.data)) {
     return <AppShell sessionName={sessionName}><PageLoading /></AppShell>;
   }
-  const uploading = takes.data?.items.filter((take) => take.state === "uploading") ?? [];
   const hasOngoing = ongoing.data?.type === "present";
+
+  const uploadingTakeNamesByCamera = new Map<string, string[]>();
+  for (const take of uploadingDetails) {
+    for (const file of take.videoFiles) {
+      if (file.state !== "uploading") continue;
+      const names = uploadingTakeNamesByCamera.get(file.cameraName) ?? [];
+      names.push(take.name);
+      uploadingTakeNamesByCamera.set(file.cameraName, names);
+    }
+  }
 
   return (
     <AppShell sessionName={sessionName}>
@@ -90,7 +117,13 @@ export function SessionConsolePage() {
             />
             <div className="camera-list">
               {(cameras.data ?? []).map((camera) => (
-                <CameraCard key={camera.name} camera={camera} deletionDisabled={hasOngoing} onDelete={(name) => mutate(() => api.deleteCamera(sessionName, name))} />
+                <CameraCard
+                  key={camera.name}
+                  camera={camera}
+                  deletionDisabled={hasOngoing}
+                  uploadingTakeNames={uploadingTakeNamesByCamera.get(camera.name) ?? []}
+                  onDelete={(name, force) => mutate(() => api.deleteCamera(sessionName, name, force))}
+                />
               ))}
               {cameras.data?.length === 0 && <EmptyState icon={<Plus size={24} />} title="Camera未登録" description="Cameraを追加すると接続先が割り当てられます。" />}
             </div>

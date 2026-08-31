@@ -9,12 +9,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadprotocol"
 )
 
-func (s *Store) ApplyUploadReport(ctx context.Context, report *upv1.UploadReport) error {
+func (s *Store) ApplyUploadReport(ctx context.Context, report *workerv1.UploadReport) error {
 	if err := uploadprotocol.ValidateReport(report); err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (s *Store) ApplyUploadReport(ctx context.Context, report *upv1.UploadReport
 		return fmt.Errorf("load video file: %w", err)
 	}
 	wantedState := "completed"
-	if report.State == upv1.UploadState_UPLOAD_STATE_ERRORED {
+	if report.State == workerv1.UploadState_UPLOAD_STATE_ERRORED {
 		wantedState = "errored"
 	}
 	if currentState != "uploading" {
@@ -102,9 +102,9 @@ func sameUploadResult(
 	hash []byte,
 	size *int64,
 	reportError *string,
-	report *upv1.UploadReport,
+	report *workerv1.UploadReport,
 ) bool {
-	if report.State == upv1.UploadState_UPLOAD_STATE_COMPLETED {
+	if report.State == workerv1.UploadState_UPLOAD_STATE_COMPLETED {
 		return state == "completed" && objectKey != nil && *objectKey == report.ObjectKey &&
 			bytes.Equal(hash, report.Sha256) && size != nil && *size == report.Size && reportError == nil
 	}
@@ -141,6 +141,41 @@ func convergeFinishedTake(ctx context.Context, tx pgx.Tx, takeID, sessionID stri
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM recording_cameras WHERE take_id = $1 AND session_id = $2`, takeID, sessionID); err != nil {
 		return fmt.Errorf("release terminal recording cameras: %w", err)
+	}
+	return nil
+}
+
+func errorUploadingVideoFiles(ctx context.Context, tx pgx.Tx, cameraID, reason string) error {
+	rows, err := tx.Query(ctx, `
+		UPDATE video_files
+		SET state = 'errored', object_key = NULL, hash = NULL, size = NULL, error = $2
+		WHERE camera_identity_id = $1 AND state = 'uploading'
+		RETURNING take_id::text, session_id::text`, cameraID, reason)
+	if err != nil {
+		return fmt.Errorf("mark worker uploads errored: %w", err)
+	}
+	type takeKey struct {
+		takeID    string
+		sessionID string
+	}
+	takes := make(map[takeKey]struct{})
+	for rows.Next() {
+		var key takeKey
+		if err := rows.Scan(&key.takeID, &key.sessionID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan errored worker upload: %w", err)
+		}
+		takes[key] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate errored worker uploads: %w", err)
+	}
+	rows.Close()
+	for key := range takes {
+		if err := convergeFinishedTake(ctx, tx, key.takeID, key.sessionID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

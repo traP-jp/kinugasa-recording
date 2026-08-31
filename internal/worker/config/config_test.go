@@ -11,6 +11,8 @@ func TestFromEnvironment(t *testing.T) {
 	t.Setenv("KINUGASA_CONSOLE_GRPC_ADDRESS", "console:9090")
 	t.Setenv("KINUGASA_LIVEKIT_WHIP_URL", "https://ingress.example.com/whip")
 	t.Setenv("KINUGASA_LIVEKIT_WHIP_TOKEN", "stream-key")
+	t.Setenv("KINUGASA_S3_BUCKET", "recordings")
+	t.Setenv("KINUGASA_S3_REGION", "auto")
 	t.Setenv("KINUGASA_INPUT_POLL_INTERVAL", "100ms")
 	config, err := FromEnvironment()
 	if err != nil {
@@ -18,7 +20,8 @@ func TestFromEnvironment(t *testing.T) {
 	}
 	if config.SharedVolume != "/recordings" || config.RTPAddress != "0.0.0.0:8000" ||
 		config.MPEGTSAddress != "127.0.0.1:10000" || config.FFprobeBinary != "ffprobe" ||
-		config.ConsoleAddress != "console:9090" || config.InputPollInterval != 100*time.Millisecond {
+		config.ConsoleAddress != "console:9090" || config.InputPollInterval != 100*time.Millisecond ||
+		config.S3.Bucket != "recordings" || config.UploadPollInterval != time.Second || config.UploadMaxAttempts != 5 {
 		t.Fatalf("FromEnvironment() = %+v", config)
 	}
 }

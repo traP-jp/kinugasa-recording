@@ -1,4 +1,4 @@
-package uploader
+package upload
 
 import (
 	"context"
@@ -32,10 +32,10 @@ type Processor struct {
 
 func NewProcessor(sharedVolume string, queue Queue, objects ObjectStore, maxAttempts int) (*Processor, error) {
 	if strings.TrimSpace(sharedVolume) == "" || queue == nil || objects == nil {
-		return nil, fmt.Errorf("uploader volume, queue, and object store must be set")
+		return nil, fmt.Errorf("upload volume, queue, and object store must be set")
 	}
 	if maxAttempts <= 0 {
-		return nil, fmt.Errorf("uploader maximum attempts must be positive")
+		return nil, fmt.Errorf("upload maximum attempts must be positive")
 	}
 	return &Processor{sharedVolume: sharedVolume, queue: queue, objects: objects, maxAttempts: maxAttempts}, nil
 }

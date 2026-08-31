@@ -11,6 +11,7 @@ option go_package = "github.com/traP-jp/kinugasa-recording/gen/console_video_wor
 // lifetime.
 service ConsoleVideoWorkerService {
   rpc Control(stream WorkerMessage) returns (stream ConsoleMessage);
+  rpc ReportUpload(UploadReport) returns (UploadReportAcknowledged);
 }
 
 message WorkerMessage {
@@ -85,7 +86,7 @@ message RecordingStatus {
   google.protobuf.Timestamp finished_at = 4;
 
   // Set only for RECORDING_STATE_FINISHED. The file has been flushed, closed,
-  // and made visible to video-uploader before this status is emitted.
+  // and queued for upload before this status is emitted.
   FinalizedFile finalized_file = 5;
 
   // Present if and only if state is RECORDING_STATE_ERROR.
@@ -201,4 +202,31 @@ enum ErrorCode {
   ERROR_CODE_FINALIZATION_FAILURE = 10;
   ERROR_CODE_INTERNAL = 11;
   ERROR_CODE_RECORDING_INTERRUPTED = 12;
+}
+
+message UploadReport {
+  string session_id = 1;
+  string camera_identity_id = 2;
+  string take_id = 3;
+  string relative_path = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp finished_at = 6;
+  UploadState state = 7;
+  string object_key = 8;
+  bytes sha256 = 9;
+  int64 size = 10;
+  string error = 11;
+  google.protobuf.Timestamp observed_at = 12;
+}
+
+enum UploadState {
+  UPLOAD_STATE_UNSPECIFIED = 0;
+  UPLOAD_STATE_COMPLETED = 1;
+  UPLOAD_STATE_ERRORED = 2;
+}
+
+message UploadReportAcknowledged {
+  string take_id = 1;
+  string camera_identity_id = 2;
+  google.protobuf.Timestamp accepted_at = 3;
 }

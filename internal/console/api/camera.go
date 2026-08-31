@@ -47,10 +47,16 @@ func (h *Handler) getCameraConnection(response http.ResponseWriter, request *htt
 }
 
 func (h *Handler) deleteCamera(response http.ResponseWriter, request *http.Request) {
-	err := h.service.DeleteCamera(
+	force, err := optionalBooleanQuery(request, "force")
+	if err != nil {
+		h.writeError(response, request, err)
+		return
+	}
+	err = h.service.DeleteCamera(
 		request.Context(),
 		request.PathValue("sessionName"),
 		request.PathValue("cameraName"),
+		force,
 	)
 	if err != nil {
 		h.writeError(response, request, err)

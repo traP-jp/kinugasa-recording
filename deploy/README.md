@@ -10,11 +10,10 @@ repository rootから各imageをbuildする。
 docker build -f deploy/images/console-server.Dockerfile -t registry.example/kinugasa/console-server:VERSION .
 docker build -f deploy/images/video-gateway.Dockerfile -t registry.example/kinugasa/video-gateway:VERSION .
 docker build -f deploy/images/video-worker.Dockerfile -t registry.example/kinugasa/video-worker:VERSION .
-docker build -f deploy/images/video-uploader.Dockerfile -t registry.example/kinugasa/video-uploader:VERSION .
 docker build -f deploy/images/web.Dockerfile -t registry.example/kinugasa/web:VERSION .
 ```
 
-`video-gateway` imageはlibristの`ristreceiver`だけをruntimeとして含み、FFmpeg、FFprobeおよびGo製binaryを含まない。`video-worker` imageはMediaMTXと入力検証用のFFprobeを含む。
+`video-gateway` imageはlibristの`ristreceiver`だけをruntimeとして含み、FFmpeg、FFprobeおよびGo製binaryを含まない。`video-worker` imageはMediaMTX、入力検証用のFFprobe、録画ファイルのhash計算およびobject storageへのupload機能を含む。
 
 ## Apply
 

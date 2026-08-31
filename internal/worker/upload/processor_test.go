@@ -1,4 +1,4 @@
-package uploader
+package upload
 
 import (
 	"bytes"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
-	"github.com/traP-jp/kinugasa-recording/internal/uploader/objectstore/filesystem"
+	"github.com/traP-jp/kinugasa-recording/internal/worker/upload/objectstore/filesystem"
 )
 
 func TestProcessorHashesAndUploadsFinalizedRecording(t *testing.T) {

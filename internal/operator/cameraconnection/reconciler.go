@@ -22,9 +22,8 @@ import (
 )
 
 const (
-	FinalizerName             = "recording.kinugasa.trap.jp/protect-uploads"
-	resourcesReadyCondition   = "ResourcesReady"
-	uploadsProtectedCondition = "UploadsProtected"
+	FinalizerName           = "recording.kinugasa.trap.jp/protect-uploads"
+	resourcesReadyCondition = "ResourcesReady"
 )
 
 type Reconciler struct {
@@ -112,6 +111,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 		if err := r.WorkerFailures.MarkWorkerFailure(ctx, connection.Spec.CameraIdentityID, failure); err != nil {
 			return r.resourceFailure(ctx, &connection, fmt.Errorf("record worker failure: %w", err))
 		}
+		if workerContainerTerminated(&pod) {
+			connection.Status.WorkerPodUID = ""
+			connection.Status.ObservedWorkerRestartCount = 0
+			if !reflect.DeepEqual(base.Status, connection.Status) {
+				if err := r.Status().Patch(ctx, &connection, client.MergeFrom(base)); err != nil {
+					return ctrl.Result{}, fmt.Errorf("record terminated worker status: %w", err)
+				}
+			}
+			if err := r.Delete(ctx, &pod); client.IgnoreNotFound(err) != nil {
+				return ctrl.Result{}, fmt.Errorf("replace terminated worker Pod: %w", err)
+			}
+			return ctrl.Result{RequeueAfter: time.Millisecond}, nil
+		}
 	}
 	var service corev1.Service
 	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &service); err != nil {
@@ -152,24 +164,44 @@ func observeWorkerRestart(status *recordingv1alpha1.CameraConnectionStatus, pod 
 			return ""
 		}
 		if status.WorkerPodUID != uid {
+			replaced := status.WorkerPodUID != ""
 			status.WorkerPodUID = uid
 			status.ObservedWorkerRestartCount = container.RestartCount
+			if replaced {
+				return "video worker Pod was replaced unexpectedly"
+			}
 			return ""
+		}
+		if terminated := container.State.Terminated; terminated != nil {
+			return workerTerminationReason(terminated)
 		}
 		if container.RestartCount <= status.ObservedWorkerRestartCount {
 			return ""
 		}
 		status.ObservedWorkerRestartCount = container.RestartCount
 		terminated := container.LastTerminationState.Terminated
-		if terminated == nil || terminated.ExitCode == 0 {
+		if terminated == nil {
 			return ""
 		}
-		if terminated.Reason == "" {
-			return fmt.Sprintf("video worker exited unexpectedly with code %d", terminated.ExitCode)
-		}
-		return fmt.Sprintf("video worker exited unexpectedly with code %d (%s)", terminated.ExitCode, terminated.Reason)
+		return workerTerminationReason(terminated)
 	}
 	return ""
+}
+
+func workerTerminationReason(terminated *corev1.ContainerStateTerminated) string {
+	if terminated.Reason == "" {
+		return fmt.Sprintf("video worker exited unexpectedly with code %d", terminated.ExitCode)
+	}
+	return fmt.Sprintf("video worker exited unexpectedly with code %d (%s)", terminated.ExitCode, terminated.Reason)
+}
+
+func workerContainerTerminated(pod *corev1.Pod) bool {
+	for _, container := range pod.Status.ContainerStatuses {
+		if container.Name == workerContainer {
+			return container.State.Terminated != nil
+		}
+	}
+	return false
 }
 
 func cameraURLForService(
@@ -367,24 +399,12 @@ func (r *Reconciler) reconcileDeletion(
 	}
 	var pod corev1.Pod
 	err := r.Get(ctx, client.ObjectKeyFromObject(connection), &pod)
-	if err == nil && !uploaderCompleted(&pod) {
-		base := connection.DeepCopy()
-		meta.SetStatusCondition(&connection.Status.Conditions, metav1.Condition{
-			Type:               uploadsProtectedCondition,
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: connection.Generation,
-			Reason:             "WaitingForUploader",
-			Message:            "shared volume is retained until video-uploader exits successfully",
-		})
-		_ = r.Status().Patch(ctx, connection, client.MergeFrom(base))
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-	}
 	if err != nil && !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, fmt.Errorf("get worker Pod during deletion: %w", err)
 	}
 	if err == nil {
 		if err := r.Delete(ctx, &pod); client.IgnoreNotFound(err) != nil {
-			return ctrl.Result{}, fmt.Errorf("delete completed worker Pod: %w", err)
+			return ctrl.Result{}, fmt.Errorf("delete worker Pod: %w", err)
 		}
 		return ctrl.Result{RequeueAfter: time.Millisecond}, nil
 	}
@@ -404,13 +424,4 @@ func (r *Reconciler) reconcileDeletion(
 		return ctrl.Result{}, fmt.Errorf("remove upload protection finalizer: %w", err)
 	}
 	return ctrl.Result{}, nil
-}
-
-func uploaderCompleted(pod *corev1.Pod) bool {
-	for _, status := range pod.Status.ContainerStatuses {
-		if status.Name == uploaderContainer {
-			return status.State.Terminated != nil && status.State.Terminated.ExitCode == 0
-		}
-	}
-	return false
 }

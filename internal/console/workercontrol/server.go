@@ -16,12 +16,17 @@ import (
 
 type Server struct {
 	workerv1.UnimplementedConsoleVideoWorkerServiceServer
-	repository repository.WorkerControlRepository
+	repository controlRepository
 	registry   *Registry
 	now        func() time.Time
 }
 
-func NewServer(repository repository.WorkerControlRepository, registry *Registry) *Server {
+type controlRepository interface {
+	repository.WorkerControlRepository
+	repository.UploadRepository
+}
+
+func NewServer(repository controlRepository, registry *Registry) *Server {
 	if registry == nil {
 		registry = NewRegistry()
 	}

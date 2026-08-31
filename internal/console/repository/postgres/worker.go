@@ -202,7 +202,12 @@ func (s *Store) MarkWorkerFailure(ctx context.Context, cameraID, reason string) 
 	if reason == "" {
 		return fmt.Errorf("worker failure reason must not be empty")
 	}
-	if _, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin worker failure transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
 		UPDATE recording_cameras
 		SET state = 'errored', error = $2
 		FROM takes
@@ -211,6 +216,12 @@ func (s *Store) MarkWorkerFailure(ctx context.Context, cameraID, reason string) 
 		  AND recording_cameras.state = 'recording'
 		  AND takes.phase = 'ongoing'`, cameraID, reason); err != nil {
 		return fmt.Errorf("mark recording camera after worker failure: %w", err)
+	}
+	if err := errorUploadingVideoFiles(ctx, tx, cameraID, reason); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit worker failure: %w", err)
 	}
 	return nil
 }

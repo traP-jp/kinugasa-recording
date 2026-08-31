@@ -86,7 +86,7 @@ func TestCameraRepositoryPreservesIdentityAndName(t *testing.T) {
 		CommandId: "019c240e-5141-75e4-8b4b-5c611e7fab65", IssuedAt: timestamppb.New(createdAt),
 		Command: &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{Reason: "test deletion"}},
 	}}
-	if err := store.RequestCameraDeletion(ctx, session.Name, identity.Name, shutdown, createdAt); err != nil {
+	if err := store.RequestCameraDeletion(ctx, session.Name, identity.Name, shutdown, createdAt, false); err != nil {
 		t.Fatalf("RequestCameraDeletion() error = %v", err)
 	}
 	if _, err := store.GetCamera(ctx, session.Name, identity.Name); !errors.Is(err, repository.ErrNotFound) {
@@ -146,5 +146,67 @@ func TestCreateCameraRequiresSession(t *testing.T) {
 
 	if err := store.CreateCamera(context.Background(), identity, connection); !errors.Is(err, repository.ErrNotFound) {
 		t.Fatalf("CreateCamera() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCameraDeletionRequiresForceForUploadingVideo(t *testing.T) {
+	pool := resetDatabase(t)
+	store := New(pool)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 1, 1, 0, 0, 0, time.UTC)
+	createTakeTestCamera(t, store, now)
+	take := domain.OngoingTake{
+		ID: takeTestTakeID, SessionID: takeTestSessionID, Name: "take-1", StartedAt: now,
+		Cameras: []domain.RecordingCamera{{
+			OngoingTakeID: takeTestTakeID, CameraIdentityID: takeTestCameraID,
+			State: domain.RecordingCameraStateRecording, StartedAt: now,
+		}},
+	}
+	start := repository.CameraCommand{CameraIdentityID: takeTestCameraID, Command: &workerv1.WorkerCommand{
+		CommandId: takeTestStartID, IssuedAt: timestamppb.New(now),
+		Command: &workerv1.WorkerCommand_StartRecording{StartRecording: &workerv1.StartRecording{
+			TakeId: takeTestTakeID, RelativePath: "recording/session-1/take-1/camera-1/video.mp4",
+		}},
+	}}
+	if err := store.CreateTake(ctx, repository.StartTakeRequest{
+		Take: take, CameraNames: []string{"camera-1"}, Commands: []repository.CameraCommand{start},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	finish := repository.CameraCommand{CameraIdentityID: takeTestCameraID, Command: &workerv1.WorkerCommand{
+		CommandId: takeTestFinishID, IssuedAt: timestamppb.New(now.Add(time.Second)),
+		Command: &workerv1.WorkerCommand_FinishRecording{FinishRecording: &workerv1.FinishRecording{TakeId: takeTestTakeID}},
+	}}
+	if _, err := store.FinishTake(ctx, repository.FinishTakeRequest{
+		SessionName: "session-1", FinishedAt: now.Add(time.Second), Commands: []repository.CameraCommand{finish},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	shutdown := repository.CameraCommand{CameraIdentityID: takeTestCameraID, Command: &workerv1.WorkerCommand{
+		CommandId: "019c2923-73d4-7df9-a278-624178a7817a", IssuedAt: timestamppb.New(now.Add(2 * time.Second)),
+		Command: &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{Reason: "delete"}},
+	}}
+	if err := store.RequestCameraDeletion(ctx, "session-1", "camera-1", shutdown, now.Add(2*time.Second), false); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("RequestCameraDeletion(normal) error = %v, want conflict", err)
+	}
+	var videoState string
+	if err := pool.QueryRow(ctx, `SELECT state FROM video_files WHERE take_id = $1 AND camera_identity_id = $2`,
+		takeTestTakeID, takeTestCameraID).Scan(&videoState); err != nil || videoState != "uploading" {
+		t.Fatalf("video before force delete = %q, %v", videoState, err)
+	}
+	if err := store.RequestCameraDeletion(ctx, "session-1", "camera-1", shutdown, now.Add(2*time.Second), true); err != nil {
+		t.Fatalf("RequestCameraDeletion(force) error = %v", err)
+	}
+	var videoError, takeState, takeError string
+	if err := pool.QueryRow(ctx, `SELECT state, error FROM video_files WHERE take_id = $1 AND camera_identity_id = $2`,
+		takeTestTakeID, takeTestCameraID).Scan(&videoState, &videoError); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT state, error FROM takes WHERE id = $1`, takeTestTakeID).Scan(&takeState, &takeError); err != nil {
+		t.Fatal(err)
+	}
+	if videoState != "errored" || videoError != "upload aborted by forced camera deletion" ||
+		takeState != "errored" || takeError == "" {
+		t.Fatalf("forced deletion states = video %q/%q, take %q/%q", videoState, videoError, takeState, takeError)
 	}
 }

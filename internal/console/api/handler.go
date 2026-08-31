@@ -22,7 +22,7 @@ type Service interface {
 	CreateCamera(context.Context, string, string) (repository.Camera, error)
 	ListCameras(context.Context, string) ([]repository.Camera, error)
 	GetCamera(context.Context, string, string) (repository.Camera, error)
-	DeleteCamera(context.Context, string, string) error
+	DeleteCamera(context.Context, string, string, bool) error
 	StartTake(context.Context, string, string, []string) (application.OngoingTakeView, error)
 	GetOngoingTake(context.Context, string) (*application.OngoingTakeView, error)
 	FinishTake(context.Context, string) (domain.FinishedTake, error)
@@ -126,6 +126,18 @@ func positiveQueryInteger(request *http.Request, name string, defaultValue int) 
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s must be an integer", application.ErrInvalidArgument, name)
+	}
+	return parsed, nil
+}
+
+func optionalBooleanQuery(request *http.Request, name string) (bool, error) {
+	value := request.URL.Query().Get(name)
+	if value == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%w: %s must be true or false", application.ErrInvalidArgument, name)
 	}
 	return parsed, nil
 }

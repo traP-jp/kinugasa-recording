@@ -168,6 +168,7 @@ func (s *Store) RequestCameraDeletion(
 	sessionName, cameraName string,
 	command repository.CameraCommand,
 	requestedAt time.Time,
+	force bool,
 ) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -205,6 +206,23 @@ func (s *Store) RequestCameraDeletion(
 	}
 	if command.CameraIdentityID != cameraID || command.Command.GetShutdown() == nil {
 		return repository.ErrConflict
+	}
+	var uploading bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM video_files
+			WHERE camera_identity_id = $1 AND state = 'uploading'
+		)`, cameraID,
+	).Scan(&uploading); err != nil {
+		return fmt.Errorf("check active uploads before camera deletion: %w", err)
+	}
+	if uploading && !force {
+		return repository.ErrConflict
+	}
+	if uploading {
+		if err := errorUploadingVideoFiles(ctx, tx, cameraID, "upload aborted by forced camera deletion"); err != nil {
+			return err
+		}
 	}
 	if err := insertWorkerCommand(ctx, tx, command); err != nil {
 		return fmt.Errorf("persist camera shutdown command: %w", err)

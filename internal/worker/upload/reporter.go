@@ -1,4 +1,4 @@
-package uploader
+package upload
 
 import (
 	"context"
@@ -6,20 +6,25 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadprotocol"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
 )
 
 type Reporter struct {
 	queue   Queue
-	service upv1.ConsoleVideoUploaderServiceClient
+	service UploadService
 	now     func() time.Time
 }
 
-func NewReporter(queue Queue, service upv1.ConsoleVideoUploaderServiceClient) (*Reporter, error) {
+type UploadService interface {
+	ReportUpload(context.Context, *workerv1.UploadReport, ...grpc.CallOption) (*workerv1.UploadReportAcknowledged, error)
+}
+
+func NewReporter(queue Queue, service UploadService) (*Reporter, error) {
 	if queue == nil || service == nil {
 		return nil, fmt.Errorf("upload reporter queue and service must be set")
 	}
@@ -58,8 +63,8 @@ func (r *Reporter) ReportPending(ctx context.Context) (int, error) {
 	return reported, nil
 }
 
-func reportFromManifest(manifest uploadqueue.Manifest, observedAt time.Time) (*upv1.UploadReport, error) {
-	report := &upv1.UploadReport{
+func reportFromManifest(manifest uploadqueue.Manifest, observedAt time.Time) (*workerv1.UploadReport, error) {
+	report := &workerv1.UploadReport{
 		SessionId: manifest.SessionID, CameraIdentityId: manifest.CameraIdentityID, TakeId: manifest.TakeID,
 		RelativePath: manifest.RelativePath,
 		StartedAt:    timestamppb.New(manifest.StartedAt), FinishedAt: timestamppb.New(manifest.FinishedAt),
@@ -71,10 +76,10 @@ func reportFromManifest(manifest uploadqueue.Manifest, observedAt time.Time) (*u
 		if err != nil {
 			return nil, fmt.Errorf("decode upload manifest SHA-256: %w", err)
 		}
-		report.State = upv1.UploadState_UPLOAD_STATE_COMPLETED
+		report.State = workerv1.UploadState_UPLOAD_STATE_COMPLETED
 		report.ObjectKey, report.Sha256, report.Size = manifest.ObjectKey, digest, manifest.Size
 	case uploadqueue.StateErrored:
-		report.State = upv1.UploadState_UPLOAD_STATE_ERRORED
+		report.State = workerv1.UploadState_UPLOAD_STATE_ERRORED
 		report.Error = manifest.Error
 	default:
 		return nil, fmt.Errorf("upload manifest is not terminal")

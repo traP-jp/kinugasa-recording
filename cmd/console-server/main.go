@@ -15,14 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/api"
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/config"
 	"github.com/traP-jp/kinugasa-recording/internal/console/preview"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
-	"github.com/traP-jp/kinugasa-recording/internal/console/uploadreport"
 	"github.com/traP-jp/kinugasa-recording/internal/console/workercontrol"
 	livekitingress "github.com/traP-jp/kinugasa-recording/internal/livekit/ingress"
 	"github.com/traP-jp/kinugasa-recording/internal/operator"
@@ -82,7 +80,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		grpcServer,
 		workercontrol.NewServer(repository, workerRegistry),
 	)
-	upv1.RegisterConsoleVideoUploaderServiceServer(grpcServer, uploadreport.NewServer(repository))
 	operatorConfig, err := config.OperatorFromEnvironment()
 	if err != nil {
 		return fmt.Errorf("load operator configuration: %w", err)

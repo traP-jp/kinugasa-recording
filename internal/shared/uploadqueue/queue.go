@@ -21,7 +21,6 @@ import (
 const (
 	metadataDirectory = ".kinugasa-worker"
 	uploadDirectory   = "uploads"
-	completeMarker    = "worker-complete"
 	maxManifestSize   = 1 << 20
 )
 
@@ -145,32 +144,6 @@ func (q *Queue) Save(manifest Manifest) error {
 		}
 	}
 	return q.write(path, manifest)
-}
-
-func (q *Queue) MarkWorkerComplete() error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	path := filepath.Join(q.directory, completeMarker)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("create worker completion marker: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("sync worker completion marker: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return syncDirectory(q.directory)
-}
-
-func (q *Queue) WorkerComplete() (bool, error) {
-	_, err := os.Stat(filepath.Join(q.directory, completeMarker))
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return err == nil, err
 }
 
 func (q *Queue) manifestPath(takeID string) string {

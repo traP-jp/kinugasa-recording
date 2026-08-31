@@ -1,4 +1,4 @@
-package uploader
+package upload
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
 )
 
@@ -68,11 +68,11 @@ type uploaderServiceStub struct {
 
 func (s *uploaderServiceStub) ReportUpload(
 	_ context.Context,
-	report *upv1.UploadReport,
+	report *workerv1.UploadReport,
 	_ ...grpc.CallOption,
-) (*upv1.UploadReportAcknowledged, error) {
+) (*workerv1.UploadReportAcknowledged, error) {
 	s.calls++
-	return &upv1.UploadReportAcknowledged{
+	return &workerv1.UploadReportAcknowledged{
 		TakeId: report.TakeId, CameraIdentityId: report.CameraIdentityId,
 		AcceptedAt: timestamppb.New(s.acceptedAt),
 	}, nil

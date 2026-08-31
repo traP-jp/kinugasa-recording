@@ -144,6 +144,27 @@ func TestRepositoryErrorsMapToContractStatuses(t *testing.T) {
 	}
 }
 
+func TestDeleteCameraParsesForce(t *testing.T) {
+	called := false
+	service := &serviceStub{deleteCamera: func(_ context.Context, sessionName, cameraName string, force bool) error {
+		called = true
+		if sessionName != "session-1" || cameraName != "camera-1" || !force {
+			t.Fatalf("DeleteCamera(%q, %q, %v)", sessionName, cameraName, force)
+		}
+		return nil
+	}}
+	response := request(t, NewHandler(service, discardLogger()), http.MethodDelete,
+		"/api/sessions/session-1/cameras/camera-1?force=true", "")
+	if response.Code != http.StatusNoContent || !called {
+		t.Fatalf("delete response = %d, called = %v, body = %s", response.Code, called, response.Body.String())
+	}
+	invalid := request(t, NewHandler(service, discardLogger()), http.MethodDelete,
+		"/api/sessions/session-1/cameras/camera-1?force=danger", "")
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid force response = %d, body = %s", invalid.Code, invalid.Body.String())
+	}
+}
+
 func TestTakeEndpoints(t *testing.T) {
 	now := time.Date(2026, 8, 31, 13, 0, 0, 0, time.UTC)
 	view := application.OngoingTakeView{
@@ -268,7 +289,7 @@ type serviceStub struct {
 	createCamera        func(context.Context, string, string) (repository.Camera, error)
 	listCameras         func(context.Context, string) ([]repository.Camera, error)
 	getCamera           func(context.Context, string, string) (repository.Camera, error)
-	deleteCamera        func(context.Context, string, string) error
+	deleteCamera        func(context.Context, string, string, bool) error
 	startTake           func(context.Context, string, string, []string) (application.OngoingTakeView, error)
 	getOngoingTake      func(context.Context, string) (*application.OngoingTakeView, error)
 	finishTake          func(context.Context, string) (domain.FinishedTake, error)
@@ -302,8 +323,8 @@ func (s *serviceStub) GetCamera(ctx context.Context, sessionName, cameraName str
 	return s.getCamera(ctx, sessionName, cameraName)
 }
 
-func (s *serviceStub) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
-	return s.deleteCamera(ctx, sessionName, cameraName)
+func (s *serviceStub) DeleteCamera(ctx context.Context, sessionName, cameraName string, force bool) error {
+	return s.deleteCamera(ctx, sessionName, cameraName, force)
 }
 
 func (s *serviceStub) StartTake(ctx context.Context, sessionName, takeName string, cameraNames []string) (application.OngoingTakeView, error) {

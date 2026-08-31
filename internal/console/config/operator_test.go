@@ -6,7 +6,6 @@ func TestOperatorFromEnvironment(t *testing.T) {
 	t.Setenv("OPERATOR_ENABLED", "true")
 	t.Setenv("VIDEO_GATEWAY_IMAGE", "registry.example/gateway:test")
 	t.Setenv("VIDEO_WORKER_IMAGE", "registry.example/worker:test")
-	t.Setenv("VIDEO_UPLOADER_IMAGE", "registry.example/uploader:test")
 	t.Setenv("CONSOLE_GRPC_ADDRESS", "console-server:9090")
 	t.Setenv("OPERATOR_NAMESPACE", "recording")
 	t.Setenv("SHARED_VOLUME_SIZE", "20Gi")
@@ -50,7 +49,6 @@ func TestOperatorRequiresImages(t *testing.T) {
 	t.Setenv("OPERATOR_ENABLED", "true")
 	t.Setenv("VIDEO_GATEWAY_IMAGE", "")
 	t.Setenv("VIDEO_WORKER_IMAGE", "")
-	t.Setenv("VIDEO_UPLOADER_IMAGE", "")
 	t.Setenv("CONSOLE_GRPC_ADDRESS", "")
 
 	if _, err := OperatorFromEnvironment(); err == nil {

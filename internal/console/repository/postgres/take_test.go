@@ -8,7 +8,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
@@ -109,11 +108,11 @@ func TestTakeCommandsAreCommittedWithDesiredState(t *testing.T) {
 	if err := store.ApplyWorkerEvent(ctx, takeTestWorkerID, event); err != nil {
 		t.Fatalf("ApplyWorkerEvent(finished) error = %v", err)
 	}
-	report := &upv1.UploadReport{
+	report := &workerv1.UploadReport{
 		SessionId: takeTestSessionID, CameraIdentityId: takeTestCameraID, TakeId: takeTestTakeID,
 		RelativePath: "recording/session-1/take-1/camera-1/video.mp4",
 		StartedAt:    timestamppb.New(mediaStartedAt), FinishedAt: timestamppb.New(mediaFinishedAt),
-		State:     upv1.UploadState_UPLOAD_STATE_COMPLETED,
+		State:     workerv1.UploadState_UPLOAD_STATE_COMPLETED,
 		ObjectKey: "recording/session-1/take-1/camera-1/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
 		Sha256:    make([]byte, 32), Size: 42, ObservedAt: timestamppb.New(mediaFinishedAt.Add(time.Second)),
 	}

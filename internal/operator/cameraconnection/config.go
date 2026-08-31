@@ -14,7 +14,6 @@ const minimumRISTEncryptionPepperLength = 32
 type Config struct {
 	GatewayImage          string
 	WorkerImage           string
-	UploaderImage         string
 	ConsoleGRPCAddress    string
 	ObjectStorageSecret   string
 	StorageClassName      string
@@ -52,9 +51,6 @@ func (c Config) validate() error {
 	}
 	if c.GatewayImage == "" {
 		validationErrors = append(validationErrors, errors.New("gateway image is required"))
-	}
-	if c.UploaderImage == "" {
-		validationErrors = append(validationErrors, errors.New("uploader image is required"))
 	}
 	if c.ConsoleGRPCAddress == "" {
 		validationErrors = append(validationErrors, errors.New("console gRPC address is required"))

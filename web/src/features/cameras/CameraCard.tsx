@@ -4,21 +4,24 @@ import type { CameraConnection } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { CameraConnectionModal } from "./CameraConnectionModal";
+import { CameraDeletionDialog } from "./CameraDeletionDialog";
 
 interface CameraCardProps {
   camera: CameraConnection;
   deletionDisabled: boolean;
-  onDelete: (name: string) => Promise<void>;
+  uploadingTakeNames: string[];
+  onDelete: (name: string, force: boolean) => Promise<void>;
 }
 
-export function CameraCard({ camera, deletionDisabled, onDelete }: CameraCardProps) {
+export function CameraCard({ camera, deletionDisabled, uploadingTakeNames, onDelete }: CameraCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [deletionOpen, setDeletionOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  async function remove() {
-    if (!window.confirm(`${camera.name} を削除しますか？`)) return;
+  async function remove(force: boolean) {
     setDeleting(true);
     try {
-      await onDelete(camera.name);
+      await onDelete(camera.name, force);
+      setDeletionOpen(false);
     } finally {
       setDeleting(false);
     }
@@ -42,10 +45,19 @@ export function CameraCard({ camera, deletionDisabled, onDelete }: CameraCardPro
           variant="quiet"
           icon={<Trash2 size={17} />}
           disabled={deletionDisabled || deleting}
-          onClick={() => void remove()}
+          onClick={() => setDeletionOpen(true)}
         >削除</Button>
       </div>
       {modalOpen && <CameraConnectionModal camera={camera} onClose={() => setModalOpen(false)} />}
+      {deletionOpen && (
+        <CameraDeletionDialog
+          cameraName={camera.name}
+          uploadingTakeNames={uploadingTakeNames}
+          deleting={deleting}
+          onCancel={() => setDeletionOpen(false)}
+          onConfirm={remove}
+        />
+      )}
     </article>
   );
 }

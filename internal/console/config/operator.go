@@ -55,10 +55,9 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 
 	gatewayImage := os.Getenv("VIDEO_GATEWAY_IMAGE")
 	workerImage := os.Getenv("VIDEO_WORKER_IMAGE")
-	uploaderImage := os.Getenv("VIDEO_UPLOADER_IMAGE")
 	consoleGRPCAddress := os.Getenv("CONSOLE_GRPC_ADDRESS")
-	if gatewayImage == "" || workerImage == "" || uploaderImage == "" || consoleGRPCAddress == "" {
-		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_IMAGE, VIDEO_WORKER_IMAGE, VIDEO_UPLOADER_IMAGE, and CONSOLE_GRPC_ADDRESS are required")
+	if gatewayImage == "" || workerImage == "" || consoleGRPCAddress == "" {
+		return OperatorConfig{}, fmt.Errorf("VIDEO_GATEWAY_IMAGE, VIDEO_WORKER_IMAGE, and CONSOLE_GRPC_ADDRESS are required")
 	}
 	return OperatorConfig{
 		Enabled: true,
@@ -70,7 +69,6 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 			CameraConnection: cameraconnection.Config{
 				GatewayImage:          gatewayImage,
 				WorkerImage:           workerImage,
-				UploaderImage:         uploaderImage,
 				ConsoleGRPCAddress:    consoleGRPCAddress,
 				ObjectStorageSecret:   os.Getenv("OBJECT_STORAGE_SECRET"),
 				StorageClassName:      os.Getenv("SHARED_VOLUME_STORAGE_CLASS"),

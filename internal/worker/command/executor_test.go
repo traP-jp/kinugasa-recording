@@ -96,9 +96,6 @@ func TestExecutorRunsRecordingStateMachineIdempotently(t *testing.T) {
 	if err != nil || result.Status != workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED {
 		t.Fatalf("Execute(shutdown after finish) = %+v, %v", result, err)
 	}
-	if uploads.completeCalls.Load() != 1 {
-		t.Fatalf("worker completion marker calls = %d, want 1", uploads.completeCalls.Load())
-	}
 }
 
 func TestExecutorPersistsStartFailureBeforeReturningFailedResult(t *testing.T) {
@@ -231,17 +228,11 @@ func newTestExecutor(t *testing.T, store *workerstate.Store, recorder Recorder) 
 }
 
 type uploadQueueStub struct {
-	publishCalls  atomic.Int32
-	completeCalls atomic.Int32
+	publishCalls atomic.Int32
 }
 
 func (q *uploadQueueStub) Publish(string, string, time.Time, time.Time) error {
 	q.publishCalls.Add(1)
-	return nil
-}
-
-func (q *uploadQueueStub) MarkWorkerComplete() error {
-	q.completeCalls.Add(1)
 	return nil
 }
 

@@ -23,6 +23,8 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/recording"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/state"
+	"github.com/traP-jp/kinugasa-recording/internal/worker/upload"
+	s3store "github.com/traP-jp/kinugasa-recording/internal/worker/upload/objectstore/s3"
 )
 
 func main() {
@@ -59,6 +61,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	uploads, err := uploadqueue.Open(config.SharedVolume, config.SessionID, config.CameraIdentityID)
 	if err != nil {
 		return fmt.Errorf("open upload queue: %w", err)
+	}
+	objects, err := s3store.New(ctx, config.S3)
+	if err != nil {
+		return fmt.Errorf("configure object storage: %w", err)
+	}
+	uploadProcessor, err := upload.NewProcessor(config.SharedVolume, uploads, objects, config.UploadMaxAttempts)
+	if err != nil {
+		return err
 	}
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	defer cancelRuntime()
@@ -128,13 +138,20 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("create console gRPC client: %w", err)
 	}
 	defer func() { _ = connection.Close() }()
+	workerService := workerv1.NewConsoleVideoWorkerServiceClient(connection)
 	controlClient, err := control.NewClient(
-		workerv1.NewConsoleVideoWorkerServiceClient(connection),
+		workerService,
 		store,
 		executor,
 		control.Config{SessionID: config.SessionID, CameraIdentityID: config.CameraIdentityID},
 		logger,
 	)
+	if err != nil {
+		cancelRuntime()
+		_ = mediaServer.Wait()
+		return err
+	}
+	uploadReporter, err := upload.NewReporter(uploads, workerService)
 	if err != nil {
 		cancelRuntime()
 		_ = mediaServer.Wait()
@@ -152,16 +169,28 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	)
 	controlDone := make(chan error, 1)
 	go func() { controlDone <- controlClient.Run(runtimeContext) }()
+	uploadDone := make(chan error, 1)
+	go func() {
+		uploadDone <- runUploads(
+			runtimeContext,
+			uploadProcessor,
+			uploadReporter,
+			config.UploadPollInterval,
+			logger,
+		)
+	}()
 	mediaDone := make(chan error, 1)
 	go func() { mediaDone <- mediaServer.Wait() }()
 	select {
 	case err := <-controlDone:
 		cancelRuntime()
 		mediaError := <-mediaDone
-		return errors.Join(err, ignoredCanceledProcess(mediaError))
+		uploadError := <-uploadDone
+		return errors.Join(err, ignoredCanceledProcess(mediaError), uploadError)
 	case err := <-mediaDone:
 		cancelRuntime()
 		<-controlDone
+		<-uploadDone
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -173,6 +202,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		cancelRuntime()
 		mediaError := <-mediaDone
 		<-controlDone
+		<-uploadDone
 		if ctx.Err() != nil && err == nil {
 			return ignoredCanceledProcess(mediaError)
 		}
@@ -180,11 +210,23 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			err = fmt.Errorf("RTP/MP2T bridge exited unexpectedly")
 		}
 		return errors.Join(err, ignoredCanceledProcess(mediaError))
+	case err := <-uploadDone:
+		cancelRuntime()
+		controlError := <-controlDone
+		mediaError := <-mediaDone
+		if ctx.Err() != nil && err == nil {
+			return errors.Join(controlError, ignoredCanceledProcess(mediaError))
+		}
+		if err == nil {
+			err = fmt.Errorf("upload loop exited unexpectedly")
+		}
+		return errors.Join(err, controlError, ignoredCanceledProcess(mediaError))
 	case <-ctx.Done():
 		cancelRuntime()
 		controlError := <-controlDone
 		mediaError := <-mediaDone
-		return errors.Join(controlError, ignoredCanceledProcess(mediaError))
+		uploadError := <-uploadDone
+		return errors.Join(controlError, ignoredCanceledProcess(mediaError), uploadError)
 	}
 }
 

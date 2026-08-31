@@ -165,7 +165,7 @@ func (s *Service) GetCamera(ctx context.Context, sessionName, cameraName string)
 	return s.repository.GetCamera(ctx, sessionName, cameraName)
 }
 
-func (s *Service) DeleteCamera(ctx context.Context, sessionName, cameraName string) error {
+func (s *Service) DeleteCamera(ctx context.Context, sessionName, cameraName string, force bool) error {
 	camera, err := s.repository.GetCamera(ctx, sessionName, cameraName)
 	if err != nil {
 		return err
@@ -181,17 +181,24 @@ func (s *Service) DeleteCamera(ctx context.Context, sessionName, cameraName stri
 			CommandId: commandID,
 			IssuedAt:  timestamppb.New(now),
 			Command: &workerv1.WorkerCommand_Shutdown{Shutdown: &workerv1.Shutdown{
-				Reason: "camera connection deleted",
+				Reason: cameraDeletionReason(force),
 			}},
 		},
 	}
-	if err := s.repository.RequestCameraDeletion(ctx, sessionName, cameraName, command, now); err != nil {
+	if err := s.repository.RequestCameraDeletion(ctx, sessionName, cameraName, command, now, force); err != nil {
 		return err
 	}
 	if s.dispatcher != nil {
 		s.dispatcher.Enqueue(command.CameraIdentityID, command.Command)
 	}
 	return nil
+}
+
+func cameraDeletionReason(force bool) string {
+	if force {
+		return "camera connection force deleted; active uploads were aborted"
+	}
+	return "camera connection deleted"
 }
 
 type OngoingTakeView struct {

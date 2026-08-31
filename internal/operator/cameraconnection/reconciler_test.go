@@ -73,20 +73,22 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if pod.Spec.RestartPolicy != corev1.RestartPolicyOnFailure {
 		t.Fatalf("restartPolicy = %q, want OnFailure", pod.Spec.RestartPolicy)
 	}
-	if len(pod.Spec.InitContainers) != 0 || len(pod.Spec.Containers) != 3 {
+	if len(pod.Spec.InitContainers) != 0 || len(pod.Spec.Containers) != 2 {
 		t.Fatalf("Pod containers = %d regular, %d init", len(pod.Spec.Containers), len(pod.Spec.InitContainers))
 	}
-	if pod.Spec.Containers[0].Name != gatewayContainer || pod.Spec.Containers[1].Name != workerContainer ||
-		pod.Spec.Containers[2].Name != uploaderContainer {
-		t.Fatalf("Pod containers = %q, %q, %q", pod.Spec.Containers[0].Name, pod.Spec.Containers[1].Name, pod.Spec.Containers[2].Name)
+	if pod.Spec.Containers[0].Name != gatewayContainer || pod.Spec.Containers[1].Name != workerContainer {
+		t.Fatalf("Pod containers = %q, %q", pod.Spec.Containers[0].Name, pod.Spec.Containers[1].Name)
 	}
 	if len(pod.Spec.Volumes) != 2 || pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != connection.Name ||
 		pod.Spec.Volumes[1].EmptyDir == nil {
 		t.Fatalf("Pod volumes = %+v", pod.Spec.Volumes)
 	}
-	if len(pod.Spec.Containers[0].VolumeMounts) != 1 || len(pod.Spec.Containers[1].VolumeMounts) != 2 ||
-		len(pod.Spec.Containers[2].VolumeMounts) != 1 {
+	if len(pod.Spec.Containers[0].VolumeMounts) != 1 || len(pod.Spec.Containers[1].VolumeMounts) != 2 {
 		t.Fatalf("Pod container volume mounts = %+v", pod.Spec.Containers)
+	}
+	if len(pod.Spec.Containers[1].EnvFrom) != 1 || pod.Spec.Containers[1].EnvFrom[0].SecretRef == nil ||
+		pod.Spec.Containers[1].EnvFrom[0].SecretRef.Name != "object-storage" {
+		t.Fatalf("worker object storage environment = %+v", pod.Spec.Containers[1].EnvFrom)
 	}
 	if !hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_URL", previewURLKey) ||
 		!hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_TOKEN", previewTokenKey) {
@@ -256,85 +258,18 @@ func TestObserveWorkerRestartReportsEachFailedRestartOnce(t *testing.T) {
 		t.Fatalf("duplicate observeWorkerRestart() = %q", failure)
 	}
 	pod.UID = types.UID("pod-2")
-	if failure := observeWorkerRestart(&status, pod); failure != "" || status.WorkerPodUID != "pod-2" {
+	if failure := observeWorkerRestart(&status, pod); failure == "" || status.WorkerPodUID != "pod-2" {
 		t.Fatalf("replacement observeWorkerRestart() = %q, status = %+v", failure, status)
 	}
 }
 
-func TestDeletionWaitsForUploader(t *testing.T) {
-	scheme := testScheme(t)
-	connection := deletingConnection()
-	pvc := desiredPVC(connection, testConfig())
-	pod := desiredPod(connection, testConfig())
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
-		WithObjects(connection, pvc, pod).
-		Build()
-	reconciler := testReconciler(fakeClient, scheme)
-	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(connection)}
-
-	result, err := reconciler.Reconcile(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-	if result.RequeueAfter != 5*time.Second {
-		t.Fatalf("Reconcile() requeueAfter = %s, want 5s", result.RequeueAfter)
-	}
-	var retained corev1.PersistentVolumeClaim
-	if err := fakeClient.Get(context.Background(), request.NamespacedName, &retained); err != nil {
-		t.Fatalf("PVC was removed before uploader completed: %v", err)
-	}
-}
-
-func TestDeletionReleasesPreviewBeforeUploaderCompletes(t *testing.T) {
-	scheme := testScheme(t)
-	connection := deletingConnection()
-	pod := desiredPod(connection, testConfig())
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: connection.Name, Namespace: connection.Namespace},
-		Data:       map[string][]byte{previewIngressIDKey: []byte("IN_delete")},
-	}
-	if err := controllerutil.SetControllerReference(connection, secret, scheme); err != nil {
-		t.Fatal(err)
-	}
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
-		WithObjects(connection, pod, secret).
-		Build()
-	previewIngress := &previewIngressStub{}
-	reconciler := testReconciler(fakeClient, scheme)
-	reconciler.PreviewIngress = previewIngress
-	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(connection)}
-
-	result, err := reconciler.Reconcile(context.Background(), request)
-	if err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-	if result.RequeueAfter != 5*time.Second || len(previewIngress.deleted) != 1 ||
-		previewIngress.deleted[0] != "IN_delete" {
-		t.Fatalf("result/deleted = %+v / %q", result, previewIngress.deleted)
-	}
-	var removed corev1.Secret
-	if err := fakeClient.Get(context.Background(), request.NamespacedName, &removed); !apierrors.IsNotFound(err) {
-		t.Fatalf("preview Secret still exists or Get failed: %v", err)
-	}
-}
-
-func TestDeletionReleasesResourcesAfterUploaderCompletion(t *testing.T) {
+func TestDeletionReleasesResourcesImmediately(t *testing.T) {
 	scheme := testScheme(t)
 	connection := deletingConnection()
 	config := testConfig()
 	pvc := desiredPVC(connection, config)
 	service := desiredService(connection, config)
 	pod := desiredPod(connection, config)
-	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
-		Name: uploaderContainer,
-		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
-			ExitCode: 0,
-		}},
-	}}
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&recordingv1alpha1.CameraConnection{}).
@@ -391,7 +326,6 @@ func testConfig() Config {
 	return Config{
 		GatewayImage:         "registry.example/video-gateway:test",
 		WorkerImage:          "registry.example/video-worker:test",
-		UploaderImage:        "registry.example/video-uploader:test",
 		ConsoleGRPCAddress:   "console-server.recording.svc:9090",
 		ObjectStorageSecret:  "object-storage",
 		SharedVolumeSize:     resource.MustParse("20Gi"),

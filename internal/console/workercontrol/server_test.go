@@ -225,6 +225,7 @@ type workerRepositoryStub struct {
 	appliedWorkerID string
 	appliedEvent    *workerv1.WorkerEvent
 	pending         []*workerv1.WorkerCommand
+	uploadApplied   bool
 }
 
 func (r *workerRepositoryStub) RegisterWorker(context.Context, *workerv1.WorkerHello, time.Time) error {
@@ -245,4 +246,9 @@ func (r *workerRepositoryStub) SaveCommandResult(context.Context, string, *worke
 
 func (r *workerRepositoryStub) PendingWorkerCommands(context.Context, string) ([]*workerv1.WorkerCommand, error) {
 	return r.pending, nil
+}
+
+func (r *workerRepositoryStub) ApplyUploadReport(context.Context, *workerv1.UploadReport) error {
+	r.uploadApplied = true
+	return nil
 }

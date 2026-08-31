@@ -6,11 +6,11 @@ import (
 	"path"
 	"strings"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
+	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/workerprotocol"
 )
 
-func ValidateReport(report *upv1.UploadReport) error {
+func ValidateReport(report *workerv1.UploadReport) error {
 	if report == nil {
 		return fmt.Errorf("upload report must be set")
 	}
@@ -33,7 +33,7 @@ func ValidateReport(report *upv1.UploadReport) error {
 		return err
 	}
 	switch report.State {
-	case upv1.UploadState_UPLOAD_STATE_COMPLETED:
+	case workerv1.UploadState_UPLOAD_STATE_COMPLETED:
 		if report.ObjectKey == "" || len(report.Sha256) != 32 || report.Size < 0 || report.Error != "" {
 			return fmt.Errorf("completed upload report metadata is invalid")
 		}
@@ -41,7 +41,7 @@ func ValidateReport(report *upv1.UploadReport) error {
 		if report.ObjectKey != expectedKey {
 			return fmt.Errorf("completed upload report object key does not match its path and SHA-256")
 		}
-	case upv1.UploadState_UPLOAD_STATE_ERRORED:
+	case workerv1.UploadState_UPLOAD_STATE_ERRORED:
 		if strings.TrimSpace(report.Error) == "" {
 			return fmt.Errorf("errored upload report must contain an error")
 		}

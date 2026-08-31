@@ -8,13 +8,24 @@ delete:
   summary: cameraを削除する
   description: >-
     CameraConnectionの削除を要求する。Shutdown commandを永続化してworkerへ送り、
-    uploaderのterminal処理後にPod、PVC、CameraConnectionを削除する。
+    Pod、PVC、CameraConnectionを削除する。uploadingなVideoFileがある場合は
+    force=trueが必要で、対象VideoFileをerroredにしてuploadをabortする。
     CameraIdentityと名前の使用履歴は残る。
+  parameters:
+    - name: force
+      in: query
+      required: false
+      description: uploadingなVideoFileをerroredにし、uploadをabortして強制削除する。
+      schema:
+        type: boolean
+        default: false
   responses:
     '204':
       description: cameraの削除要求を受理した
     '404':
       $ref: ../openapi.yaml#/components/responses/NotFound
+    '400':
+      $ref: ../openapi.yaml#/components/responses/BadRequest
     '409':
       $ref: ../openapi.yaml#/components/responses/Conflict
     '500':

@@ -6,12 +6,10 @@
 kinugasa-recording/
 ├── cmd/                               # Goコンポーネントのentry point
 │   ├── console-server/
-│   ├── video-worker/
-│   └── video-uploader/
+│   └── video-worker/
 ├── internal/                          # Goの内部実装
 │   ├── console/                       # REST API、domain、DB、reconciliation
-│   ├── worker/                        # 録画、preview、gRPC control
-│   ├── uploader/                      # hash計算とobject upload
+│   ├── worker/                        # 録画、preview、upload、gRPC control
 │   └── shared/                        # 複数componentで共有する基盤処理
 ├── web/                               # Reactによるweb console
 ├── contracts/                         # OpenAPI、Protocol Buffers、JSON Schema

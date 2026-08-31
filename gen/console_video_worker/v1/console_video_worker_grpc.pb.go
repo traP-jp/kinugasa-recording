@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ConsoleVideoWorkerService_Control_FullMethodName = "/kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService/Control"
+	ConsoleVideoWorkerService_Control_FullMethodName      = "/kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService/Control"
+	ConsoleVideoWorkerService_ReportUpload_FullMethodName = "/kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService/ReportUpload"
 )
 
 // ConsoleVideoWorkerServiceClient is the client API for ConsoleVideoWorkerService service.
@@ -31,6 +32,7 @@ const (
 // lifetime.
 type ConsoleVideoWorkerServiceClient interface {
 	Control(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WorkerMessage, ConsoleMessage], error)
+	ReportUpload(ctx context.Context, in *UploadReport, opts ...grpc.CallOption) (*UploadReportAcknowledged, error)
 }
 
 type consoleVideoWorkerServiceClient struct {
@@ -54,6 +56,16 @@ func (c *consoleVideoWorkerServiceClient) Control(ctx context.Context, opts ...g
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ConsoleVideoWorkerService_ControlClient = grpc.BidiStreamingClient[WorkerMessage, ConsoleMessage]
 
+func (c *consoleVideoWorkerServiceClient) ReportUpload(ctx context.Context, in *UploadReport, opts ...grpc.CallOption) (*UploadReportAcknowledged, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadReportAcknowledged)
+	err := c.cc.Invoke(ctx, ConsoleVideoWorkerService_ReportUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConsoleVideoWorkerServiceServer is the server API for ConsoleVideoWorkerService service.
 // All implementations must embed UnimplementedConsoleVideoWorkerServiceServer
 // for forward compatibility.
@@ -63,6 +75,7 @@ type ConsoleVideoWorkerService_ControlClient = grpc.BidiStreamingClient[WorkerMe
 // lifetime.
 type ConsoleVideoWorkerServiceServer interface {
 	Control(grpc.BidiStreamingServer[WorkerMessage, ConsoleMessage]) error
+	ReportUpload(context.Context, *UploadReport) (*UploadReportAcknowledged, error)
 	mustEmbedUnimplementedConsoleVideoWorkerServiceServer()
 }
 
@@ -75,6 +88,9 @@ type UnimplementedConsoleVideoWorkerServiceServer struct{}
 
 func (UnimplementedConsoleVideoWorkerServiceServer) Control(grpc.BidiStreamingServer[WorkerMessage, ConsoleMessage]) error {
 	return status.Error(codes.Unimplemented, "method Control not implemented")
+}
+func (UnimplementedConsoleVideoWorkerServiceServer) ReportUpload(context.Context, *UploadReport) (*UploadReportAcknowledged, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportUpload not implemented")
 }
 func (UnimplementedConsoleVideoWorkerServiceServer) mustEmbedUnimplementedConsoleVideoWorkerServiceServer() {
 }
@@ -105,13 +121,36 @@ func _ConsoleVideoWorkerService_Control_Handler(srv interface{}, stream grpc.Ser
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ConsoleVideoWorkerService_ControlServer = grpc.BidiStreamingServer[WorkerMessage, ConsoleMessage]
 
+func _ConsoleVideoWorkerService_ReportUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadReport)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConsoleVideoWorkerServiceServer).ReportUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConsoleVideoWorkerService_ReportUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConsoleVideoWorkerServiceServer).ReportUpload(ctx, req.(*UploadReport))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConsoleVideoWorkerService_ServiceDesc is the grpc.ServiceDesc for ConsoleVideoWorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ConsoleVideoWorkerService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "kinugasa.recording.console_video_worker.v1.ConsoleVideoWorkerService",
 	HandlerType: (*ConsoleVideoWorkerServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReportUpload",
+			Handler:    _ConsoleVideoWorkerService_ReportUpload_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Control",

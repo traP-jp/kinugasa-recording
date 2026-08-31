@@ -52,8 +52,6 @@ spec:
           value: kinugasa-recording/video-gateway:latest
         - name: VIDEO_WORKER_IMAGE
           value: kinugasa-recording/video-worker:latest
-        - name: VIDEO_UPLOADER_IMAGE
-          value: kinugasa-recording/video-uploader:latest
         - name: OBJECT_STORAGE_SECRET
           value: kinugasa-object-storage
         - name: SHARED_VOLUME_SIZE

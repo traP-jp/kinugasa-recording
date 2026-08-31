@@ -9,7 +9,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
@@ -143,14 +142,14 @@ func TestWorkerRegistrationAndEventsAreTransactional(t *testing.T) {
 	if videoState != "uploading" {
 		t.Fatalf("staged video state = %q, want uploading", videoState)
 	}
-	report := &upv1.UploadReport{
+	report := &workerv1.UploadReport{
 		SessionId:        workerTestSessionID,
 		CameraIdentityId: workerTestCameraID,
 		TakeId:           workerTestTakeID,
 		RelativePath:     "recordings/take-1/video.mp4",
 		StartedAt:        timestamppb.New(now),
 		FinishedAt:       timestamppb.New(now.Add(time.Minute)),
-		State:            upv1.UploadState_UPLOAD_STATE_COMPLETED,
+		State:            workerv1.UploadState_UPLOAD_STATE_COMPLETED,
 		ObjectKey:        "recordings/take-1/0000000000000000000000000000000000000000000000000000000000000000-video.mp4",
 		Sha256:           make([]byte, 32),
 		Size:             42,
@@ -215,11 +214,30 @@ func TestRegisterWorkerRejectsMismatchedIdentity(t *testing.T) {
 	}
 }
 
-func TestMarkWorkerFailureOnlyErrorsActiveRecordingCamera(t *testing.T) {
+func TestMarkWorkerFailureErrorsActiveRecordingAndUploads(t *testing.T) {
 	pool := resetDatabase(t)
 	store := New(pool)
 	now := time.Date(2026, 8, 31, 2, 0, 0, 0, time.UTC)
 	createWorkerDomainState(t, store, now)
+	const finishedTakeID = "019c250e-7411-72bb-a0b7-e77c179c7ad4"
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO takes (id, session_id, name, phase, state, started_at, finished_at)
+		VALUES ($1, $2, 'finished-worker', 'finished', 'uploading', $3, $4)`,
+		finishedTakeID, workerTestSessionID, now.Add(-time.Minute), now); err != nil {
+		t.Fatalf("create uploading take: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO recording_cameras (take_id, camera_identity_id, session_id, state, started_at)
+		VALUES ($1, $2, $3, 'recording', $4)`,
+		finishedTakeID, workerTestCameraID, workerTestSessionID, now.Add(-time.Minute)); err != nil {
+		t.Fatalf("create finished recording camera: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), `
+		INSERT INTO video_files (take_id, camera_identity_id, session_id, state, started_at, finished_at)
+		VALUES ($1, $2, $3, 'uploading', $4, $5)`,
+		finishedTakeID, workerTestCameraID, workerTestSessionID, now.Add(-time.Minute), now); err != nil {
+		t.Fatalf("create uploading video: %v", err)
+	}
 	if err := store.MarkWorkerFailure(context.Background(), workerTestCameraID, "worker exited with code 2"); err != nil {
 		t.Fatalf("MarkWorkerFailure() error = %v", err)
 	}
@@ -232,6 +250,20 @@ func TestMarkWorkerFailureOnlyErrorsActiveRecordingCamera(t *testing.T) {
 	}
 	if state != "errored" || reason != "worker exited with code 2" {
 		t.Fatalf("recording after worker failure = %q, %q", state, reason)
+	}
+	var videoState, videoError, takeState, takeError string
+	if err := pool.QueryRow(context.Background(), `
+		SELECT state, error FROM video_files WHERE take_id = $1 AND camera_identity_id = $2`,
+		finishedTakeID, workerTestCameraID).Scan(&videoState, &videoError); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(context.Background(), `SELECT state, error FROM takes WHERE id = $1`, finishedTakeID).
+		Scan(&takeState, &takeError); err != nil {
+		t.Fatal(err)
+	}
+	if videoState != "errored" || videoError != "worker exited with code 2" ||
+		takeState != "errored" || takeError == "" {
+		t.Fatalf("upload after worker failure = video %q/%q, take %q/%q", videoState, videoError, takeState, takeError)
 	}
 }
 

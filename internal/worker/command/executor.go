@@ -28,7 +28,6 @@ type Recorder interface {
 
 type UploadQueue interface {
 	Publish(takeID, relativePath string, startedAt, finishedAt time.Time) error
-	MarkWorkerComplete() error
 }
 
 type Executor struct {
@@ -284,9 +283,6 @@ func (e *Executor) shutdown(commandID string) (*workerv1.CommandResult, error) {
 			workerv1.ErrorCode_ERROR_CODE_RECORDING_ALREADY_ACTIVE,
 			"cannot shut down while recording",
 		), nil
-	}
-	if err := e.uploads.MarkWorkerComplete(); err != nil {
-		return nil, fmt.Errorf("persist worker completion: %w", err)
 	}
 	return e.result(commandID, workerv1.CommandResultStatus_COMMAND_RESULT_STATUS_APPLIED, nil), nil
 }

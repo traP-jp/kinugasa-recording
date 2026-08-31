@@ -123,12 +123,27 @@ func TestDeleteCameraPersistsShutdownBeforeDispatch(t *testing.T) {
 		return "019c293b-1ee3-718f-9420-dd1f1ff16c5b", nil
 	}).WithCommandDispatcher(dispatcher)
 
-	if err := service.DeleteCamera(context.Background(), "session-1", "camera-1"); err != nil {
+	if err := service.DeleteCamera(context.Background(), "session-1", "camera-1", false); err != nil {
 		t.Fatalf("DeleteCamera() error = %v", err)
 	}
 	if repo.deleteCamera.Command.GetShutdown() == nil || len(dispatcher.commands) != 1 ||
 		dispatcher.commands[0].CommandId != repo.deleteCamera.Command.CommandId {
 		t.Fatalf("delete command/replay = %+v / %+v", repo.deleteCamera, dispatcher.commands)
+	}
+}
+
+func TestDeleteCameraPropagatesForce(t *testing.T) {
+	repo := &repositoryStub{cameras: map[string]repository.Camera{"camera-1": {
+		Identity: domain.CameraIdentity{ID: "019c293b-0362-7823-ac1e-83cbc6ba195d", Name: "camera-1"},
+	}}}
+	service := New(repo).WithRuntime(time.Now, func() (string, error) {
+		return "019c293b-1ee3-718f-9420-dd1f1ff16c5b", nil
+	})
+	if err := service.DeleteCamera(context.Background(), "session-1", "camera-1", true); err != nil {
+		t.Fatal(err)
+	}
+	if !repo.deleteForce || repo.deleteCamera.Command.GetShutdown().Reason == "camera connection deleted" {
+		t.Fatalf("forced deletion = %v, %+v", repo.deleteForce, repo.deleteCamera.Command.GetShutdown())
 	}
 }
 
@@ -185,6 +200,7 @@ type repositoryStub struct {
 	startTake       repository.StartTakeRequest
 	finishTake      repository.FinishTakeRequest
 	deleteCamera    repository.CameraCommand
+	deleteForce     bool
 	ongoingTake     *domain.OngoingTake
 	lockfileObjects []repository.LockfileObject
 }
@@ -223,8 +239,10 @@ func (r *repositoryStub) RequestCameraDeletion(
 	_, _ string,
 	command repository.CameraCommand,
 	_ time.Time,
+	force bool,
 ) error {
 	r.deleteCamera = command
+	r.deleteForce = force
 	return nil
 }
 

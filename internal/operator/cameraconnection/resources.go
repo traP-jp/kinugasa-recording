@@ -16,7 +16,6 @@ const (
 	runtimeVolumeName = "runtime"
 	gatewayContainer  = "video-gateway"
 	workerContainer   = "video-worker"
-	uploaderContainer = "video-uploader"
 )
 
 func labelsFor(connection *recordingv1alpha1.CameraConnection) map[string]string {
@@ -91,11 +90,6 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 		secretEnvironment("KINUGASA_LIVEKIT_WHIP_URL", connection.Name, previewURLKey),
 		secretEnvironment("KINUGASA_LIVEKIT_WHIP_TOKEN", connection.Name, previewTokenKey),
 	)
-	uploaderEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
-	uploaderEnvironment = append(uploaderEnvironment,
-		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
-	)
-
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      connection.Name,
@@ -147,14 +141,6 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 					},
 					SecurityContext: restrictedContainerSecurityContext(),
 				},
-				{
-					Name:            uploaderContainer,
-					Image:           config.UploaderImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Env:             uploaderEnvironment,
-					VolumeMounts:    []corev1.VolumeMount{{Name: sharedVolumeName, MountPath: config.SharedVolumeMountPath}},
-					SecurityContext: restrictedContainerSecurityContext(),
-				},
 			},
 			Volumes: []corev1.Volume{
 				{
@@ -169,7 +155,7 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 	}
 	if config.ObjectStorageSecret != "" {
 		for index := range pod.Spec.Containers {
-			if pod.Spec.Containers[index].Name == uploaderContainer {
+			if pod.Spec.Containers[index].Name == workerContainer {
 				pod.Spec.Containers[index].EnvFrom = []corev1.EnvFromSource{{
 					SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: config.ObjectStorageSecret}},
 				}}

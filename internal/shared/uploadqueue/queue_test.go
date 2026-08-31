@@ -60,22 +60,6 @@ func TestQueuePublishesAndUpdatesManifestDurably(t *testing.T) {
 	}
 }
 
-func TestQueueWorkerCompletionMarker(t *testing.T) {
-	queue, err := Open(t.TempDir(), "session-id", "camera-id")
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	if complete, err := queue.WorkerComplete(); err != nil || complete {
-		t.Fatalf("WorkerComplete(initial) = %v, %v", complete, err)
-	}
-	if err := queue.MarkWorkerComplete(); err != nil {
-		t.Fatalf("MarkWorkerComplete() error = %v", err)
-	}
-	if complete, err := queue.WorkerComplete(); err != nil || !complete {
-		t.Fatalf("WorkerComplete() = %v, %v", complete, err)
-	}
-}
-
 func TestQueueRejectsChangedManifestAndMissingFile(t *testing.T) {
 	volume := t.TempDir()
 	queue, err := Open(volume, "session-id", "camera-id")
