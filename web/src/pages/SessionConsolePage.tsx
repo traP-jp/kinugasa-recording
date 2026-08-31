@@ -2,7 +2,7 @@ import { Camera, History, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { FinishedTakeDetail, PreviewAccess } from "../api/types";
+import type { PreviewAccess } from "../api/types";
 import { AppShell } from "../components/AppShell";
 import { Button } from "../components/Button";
 import { EmptyState } from "../components/EmptyState";
@@ -19,7 +19,6 @@ export function SessionConsolePage() {
   const { sessionName = "" } = useParams();
   const [actionError, setActionError] = useState<Error | null>(null);
   const [previewAccess, setPreviewAccess] = useState<PreviewAccess | null>(null);
-  const [uploadingDetails, setUploadingDetails] = useState<FinishedTakeDetail[]>([]);
   const loadSession = useCallback(() => api.getSession(sessionName), [sessionName]);
   const loadCameras = useCallback(() => api.listCameras(sessionName), [sessionName]);
   const loadOngoing = useCallback(() => api.getOngoingTake(sessionName), [sessionName]);
@@ -62,36 +61,25 @@ export function SessionConsolePage() {
   }
 
   const uploading = takes.data?.items.filter((take) => take.state === "uploading") ?? [];
-  const uploadingKey = uploading.map((take) => `${take.id}:${take.state}`).join(",");
-
-  useEffect(() => {
-    let active = true;
-    if (uploading.length === 0) {
-      setUploadingDetails([]);
-      return () => { active = false; };
+  async function prepareCameraDeletion(cameraName: string): Promise<string[]> {
+    setActionError(null);
+    try {
+      const page = await api.listTakes(sessionName, 1, 100);
+      const uploadingTakes = page.items.filter((take) => take.state === "uploading");
+      const details = await Promise.all(uploadingTakes.map((take) => api.getTake(sessionName, take.name)));
+      return details
+        .filter((take) => take.videoFiles.some((file) => file.cameraName === cameraName && file.state === "uploading"))
+        .map((take) => take.name);
+    } catch (error) {
+      setActionError(error instanceof Error ? error : new Error(String(error)));
+      throw error;
     }
-    void Promise.all(uploading.map((take) => api.getTake(sessionName, take.name)))
-      .then((details) => { if (active) setUploadingDetails(details); })
-      .catch((error) => {
-        if (active) setActionError(error instanceof Error ? error : new Error(String(error)));
-      });
-    return () => { active = false; };
-  }, [sessionName, uploadingKey]);
+  }
 
   if ((session.loading || cameras.loading || ongoing.loading) && (!session.data || !cameras.data || !ongoing.data)) {
     return <AppShell sessionName={sessionName}><PageLoading /></AppShell>;
   }
   const hasOngoing = ongoing.data?.type === "present";
-
-  const uploadingTakeNamesByCamera = new Map<string, string[]>();
-  for (const take of uploadingDetails) {
-    for (const file of take.videoFiles) {
-      if (file.state !== "uploading") continue;
-      const names = uploadingTakeNamesByCamera.get(file.cameraName) ?? [];
-      names.push(take.name);
-      uploadingTakeNamesByCamera.set(file.cameraName, names);
-    }
-  }
 
   return (
     <AppShell sessionName={sessionName}>
@@ -121,7 +109,7 @@ export function SessionConsolePage() {
                   key={camera.name}
                   camera={camera}
                   deletionDisabled={hasOngoing}
-                  uploadingTakeNames={uploadingTakeNamesByCamera.get(camera.name) ?? []}
+                  onPrepareDelete={prepareCameraDeletion}
                   onDelete={(name, force) => mutate(() => api.deleteCamera(sessionName, name, force))}
                 />
               ))}

@@ -4,28 +4,57 @@ import type { CameraConnection } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { CameraConnectionModal } from "./CameraConnectionModal";
-import { CameraDeletionDialog } from "./CameraDeletionDialog";
+import { CameraDeletionConfirmation } from "./CameraDeletionConfirmation";
 
 interface CameraCardProps {
   camera: CameraConnection;
   deletionDisabled: boolean;
-  uploadingTakeNames: string[];
+  onPrepareDelete: (name: string) => Promise<string[]>;
   onDelete: (name: string, force: boolean) => Promise<void>;
 }
 
-export function CameraCard({ camera, deletionDisabled, uploadingTakeNames, onDelete }: CameraCardProps) {
+export function CameraCard({ camera, deletionDisabled, onPrepareDelete, onDelete }: CameraCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deletionOpen, setDeletionOpen] = useState(false);
+  const [uploadingTakeNames, setUploadingTakeNames] = useState<string[]>([]);
+  const [preparingDeletion, setPreparingDeletion] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  async function prepareRemoval() {
+    setPreparingDeletion(true);
+    try {
+      setUploadingTakeNames(await onPrepareDelete(camera.name));
+      setDeletionOpen(true);
+    } catch {
+      // The page-level error banner reports the failure.
+    } finally {
+      setPreparingDeletion(false);
+    }
+  }
+
   async function remove(force: boolean) {
     setDeleting(true);
     try {
       await onDelete(camera.name, force);
       setDeletionOpen(false);
+    } catch {
+      if (!force) {
+        try {
+          setUploadingTakeNames(await onPrepareDelete(camera.name));
+        } catch {
+          // The page-level error banner reports both failures.
+        }
+      }
     } finally {
       setDeleting(false);
     }
   }
+
+  function cancelRemoval() {
+    setDeletionOpen(false);
+    setUploadingTakeNames([]);
+  }
+
   return (
     <article className={`camera-card camera-${camera.status}`}>
       <div className="camera-card-icon">{camera.status === "connected" ? <Video size={20} /> : <Cable size={20} />}</div>
@@ -44,17 +73,17 @@ export function CameraCard({ camera, deletionDisabled, uploadingTakeNames, onDel
         <Button
           variant="quiet"
           icon={<Trash2 size={17} />}
-          disabled={deletionDisabled || deleting}
-          onClick={() => setDeletionOpen(true)}
-        >削除</Button>
+          disabled={deletionDisabled || deleting || preparingDeletion}
+          onClick={() => void prepareRemoval()}
+        >{preparingDeletion ? "確認中…" : "削除"}</Button>
       </div>
       {modalOpen && <CameraConnectionModal camera={camera} onClose={() => setModalOpen(false)} />}
       {deletionOpen && (
-        <CameraDeletionDialog
+        <CameraDeletionConfirmation
           cameraName={camera.name}
           uploadingTakeNames={uploadingTakeNames}
           deleting={deleting}
-          onCancel={() => setDeletionOpen(false)}
+          onCancel={cancelRemoval}
           onConfirm={remove}
         />
       )}
