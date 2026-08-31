@@ -3,6 +3,7 @@ package cameraconnection
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -59,7 +60,8 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 		t.Fatalf("get preview Secret: %v", err)
 	}
 	if string(previewSecret.Data[previewIngressIDKey]) != "IN_test" ||
-		string(previewSecret.Data[previewTokenKey]) != "stream-key" {
+		string(previewSecret.Data[previewTokenKey]) != "stream-key" ||
+		string(previewSecret.Data[ristSecretKey]) != deriveRISTSecret(connection, testConfig().RISTEncryptionPepper) {
 		t.Fatalf("preview Secret data = %q", previewSecret.Data)
 	}
 	assertControlledBy(t, &previewSecret, connection)
@@ -90,11 +92,16 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 		!hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_TOKEN", previewTokenKey) {
 		t.Fatalf("worker preview environment = %+v", pod.Spec.Containers[1].Env)
 	}
+	if !hasSecretEnvironment(pod.Spec.Containers[0].Env, "KINUGASA_RIST_SECRET", ristSecretKey) {
+		t.Fatalf("gateway RIST environment = %+v", pod.Spec.Containers[0].Env)
+	}
 	if got, want := pod.Spec.Containers[0].Args, []string{
 		"-i", "rist://@0.0.0.0:9000",
 		"-o", "rtp://127.0.0.1:8000",
 		"-p", "1",
 		"-S", "1000",
+		"-s", "$(KINUGASA_RIST_SECRET)",
+		"-e", "256",
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("gateway arguments = %q, want %q", got, want)
 	}
@@ -130,6 +137,41 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	}
 }
 
+func TestEnsureConnectionSecretAddsRISTKeyAndRestartsPod(t *testing.T) {
+	scheme := testScheme(t)
+	connection := testConnection()
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: connection.Name, Namespace: connection.Namespace},
+		Data: map[string][]byte{
+			previewIngressIDKey: []byte("IN_test"),
+			previewURLKey:       []byte("https://ingress.example.com/whip"),
+			previewTokenKey:     []byte("stream-key"),
+		},
+	}
+	if err := controllerutil.SetControllerReference(connection, secret, scheme); err != nil {
+		t.Fatal(err)
+	}
+	pod := desiredPod(connection, testConfig())
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(connection, secret, pod).Build()
+	reconciler := testReconciler(fakeClient, scheme)
+	key := client.ObjectKeyFromObject(connection)
+
+	if err := reconciler.ensureConnectionSecret(context.Background(), connection); err != nil {
+		t.Fatalf("ensureConnectionSecret() error = %v", err)
+	}
+	var updated corev1.Secret
+	if err := fakeClient.Get(context.Background(), key, &updated); err != nil {
+		t.Fatalf("get connection Secret: %v", err)
+	}
+	if got, want := string(updated.Data[ristSecretKey]), deriveRISTSecret(connection, testConfig().RISTEncryptionPepper); got != want {
+		t.Fatalf("RIST secret = %q, want %q", got, want)
+	}
+	var removed corev1.Pod
+	if err := fakeClient.Get(context.Background(), key, &removed); !apierrors.IsNotFound(err) {
+		t.Fatalf("worker Pod still exists or Get failed: %v", err)
+	}
+}
+
 func TestCameraURLForLoadBalancerService(t *testing.T) {
 	service := &corev1.Service{
 		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 9000}}},
@@ -137,9 +179,8 @@ func TestCameraURLForLoadBalancerService(t *testing.T) {
 			Ingress: []corev1.LoadBalancerIngress{{Hostname: "camera.example.com"}},
 		}},
 	}
-	if got := cameraURLForService(service, testConfig()); got != "rist://camera.example.com:9000" {
-		t.Fatalf("cameraURLForService() = %q", got)
-	}
+	connection := testConnection()
+	assertEncryptedRISTURL(t, cameraURLForService(service, connection, testConfig()), connection, "camera.example.com:9000")
 }
 
 func TestReconcileAllocatesDistinctRISTNodePorts(t *testing.T) {
@@ -190,10 +231,11 @@ func TestReconcileAllocatesDistinctRISTNodePorts(t *testing.T) {
 		if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(connection), &updated); err != nil {
 			t.Fatalf("get CameraConnection %s: %v", connection.Name, err)
 		}
-		wantURL := fmt.Sprintf("rist://127.0.0.1:%d", wantPort)
-		if updated.Status.CameraURL != wantURL || updated.Status.Phase != recordingv1alpha1.CameraConnectionPhaseWaiting {
-			t.Fatalf("CameraConnection %s status = %+v, want URL %s", connection.Name, updated.Status, wantURL)
+		wantHost := fmt.Sprintf("127.0.0.1:%d", wantPort)
+		if updated.Status.Phase != recordingv1alpha1.CameraConnectionPhaseWaiting {
+			t.Fatalf("CameraConnection %s status = %+v", connection.Name, updated.Status)
 		}
+		assertEncryptedRISTURL(t, updated.Status.CameraURL, connection, wantHost)
 	}
 }
 
@@ -347,12 +389,13 @@ func deletingConnection() *recordingv1alpha1.CameraConnection {
 
 func testConfig() Config {
 	return Config{
-		GatewayImage:        "registry.example/video-gateway:test",
-		WorkerImage:         "registry.example/video-worker:test",
-		UploaderImage:       "registry.example/video-uploader:test",
-		ConsoleGRPCAddress:  "console-server.recording.svc:9090",
-		ObjectStorageSecret: "object-storage",
-		SharedVolumeSize:    resource.MustParse("20Gi"),
+		GatewayImage:         "registry.example/video-gateway:test",
+		WorkerImage:          "registry.example/video-worker:test",
+		UploaderImage:        "registry.example/video-uploader:test",
+		ConsoleGRPCAddress:   "console-server.recording.svc:9090",
+		ObjectStorageSecret:  "object-storage",
+		SharedVolumeSize:     resource.MustParse("20Gi"),
+		RISTEncryptionPepper: "test-pepper-with-at-least-32-bytes",
 	}.withDefaults()
 }
 
@@ -405,6 +448,23 @@ func environmentValue(environment []corev1.EnvVar, name string) string {
 		}
 	}
 	return ""
+}
+
+func assertEncryptedRISTURL(
+	t *testing.T,
+	rawURL string,
+	connection *recordingv1alpha1.CameraConnection,
+	wantHost string,
+) {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse RIST URL %q: %v", rawURL, err)
+	}
+	if parsed.Scheme != "rist" || parsed.Host != wantHost || parsed.Query().Get("aes-type") != "256" ||
+		parsed.Query().Get("secret") != deriveRISTSecret(connection, testConfig().RISTEncryptionPepper) {
+		t.Fatalf("RIST URL = %q", rawURL)
+	}
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {

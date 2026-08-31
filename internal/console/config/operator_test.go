@@ -13,6 +13,7 @@ func TestOperatorFromEnvironment(t *testing.T) {
 	t.Setenv("VIDEO_GATEWAY_RIST_PUBLIC_HOST", "127.0.0.1")
 	t.Setenv("VIDEO_GATEWAY_RIST_NODE_PORT_MIN", "32000")
 	t.Setenv("VIDEO_GATEWAY_RIST_NODE_PORT_MAX", "32099")
+	t.Setenv("VIDEO_GATEWAY_RIST_ENCRYPTION_PEPPER", "test-pepper-with-at-least-32-bytes")
 
 	config, err := OperatorFromEnvironment()
 	if err != nil {
@@ -25,7 +26,8 @@ func TestOperatorFromEnvironment(t *testing.T) {
 		t.Fatalf("shared volume size = %q, want 20Gi", got)
 	}
 	if cameraConfig := config.Manager.CameraConnection; cameraConfig.RISTPublicHost != "127.0.0.1" ||
-		cameraConfig.RISTNodePortMin != 32000 || cameraConfig.RISTNodePortMax != 32099 {
+		cameraConfig.RISTNodePortMin != 32000 || cameraConfig.RISTNodePortMax != 32099 ||
+		cameraConfig.RISTEncryptionPepper != "test-pepper-with-at-least-32-bytes" {
 		t.Fatalf("RIST publication config = %+v", cameraConfig)
 	}
 }

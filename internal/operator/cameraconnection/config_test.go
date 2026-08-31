@@ -29,6 +29,9 @@ func TestConfigValidatesRISTNodePortPublication(t *testing.T) {
 			config.RISTNodePortMin = 32099
 			config.RISTNodePortMax = 32000
 		}, want: "invalid"},
+		{name: "missing encryption pepper", mutate: func(config *Config) {
+			config.RISTEncryptionPepper = ""
+		}, want: "encryption pepper"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -42,5 +45,26 @@ func TestConfigValidatesRISTNodePortPublication(t *testing.T) {
 				t.Fatalf("validate() error = %v, want containing %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestDeriveRISTSecretUsesStableIDs(t *testing.T) {
+	connection := testConnection()
+	const pepper = "test-pepper-with-at-least-32-bytes"
+	if got, want := deriveRISTSecret(connection, pepper), "6Su4bZRzK9axvHoYBLaWTzMCDZRWJolpsCKrDs2wnz8"; got != want {
+		t.Fatalf("deriveRISTSecret() = %q, want %q", got, want)
+	}
+
+	renamed := connection.DeepCopy()
+	renamed.Spec.SessionName = "renamed-session"
+	renamed.Spec.CameraName = "renamed-camera"
+	if got := deriveRISTSecret(renamed, pepper); got != deriveRISTSecret(connection, pepper) {
+		t.Fatalf("deriveRISTSecret() changed after display name change: %q", got)
+	}
+
+	differentIdentity := connection.DeepCopy()
+	differentIdentity.Spec.CameraIdentityID = "019c240f-3eb4-72d6-a6fa-adfe1df795c8"
+	if got := deriveRISTSecret(differentIdentity, pepper); got == deriveRISTSecret(connection, pepper) {
+		t.Fatal("deriveRISTSecret() did not change with camera identity ID")
 	}
 }
