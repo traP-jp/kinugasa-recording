@@ -3,6 +3,7 @@ package s3store
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -41,6 +42,9 @@ func (s *putObjectStub) PutObject(
 	input *s3.PutObjectInput,
 	_ ...func(*s3.Options),
 ) (*s3.PutObjectOutput, error) {
+	if _, ok := input.Body.(io.ReadSeeker); !ok {
+		return nil, fmt.Errorf("PutObject body does not implement io.ReadSeeker")
+	}
 	s.input = input
 	return &s3.PutObjectOutput{}, nil
 }

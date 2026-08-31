@@ -39,7 +39,8 @@ func (s *Store) ApplyUploadReport(ctx context.Context, report *workerv1.UploadRe
 		return fmt.Errorf("load finalized recording: %w", err)
 	}
 	if relativePath != report.RelativePath || mediaType != "video/mp4" ||
-		!startedAt.Equal(report.StartedAt.AsTime()) || !finishedAt.Equal(report.FinishedAt.AsTime()) {
+		!samePostgresTimestamp(startedAt, report.StartedAt.AsTime()) ||
+		!samePostgresTimestamp(finishedAt, report.FinishedAt.AsTime()) {
 		return repository.ErrUploadReportMismatch
 	}
 
@@ -94,6 +95,10 @@ func (s *Store) ApplyUploadReport(ctx context.Context, report *workerv1.UploadRe
 		return fmt.Errorf("commit upload report: %w", err)
 	}
 	return nil
+}
+
+func samePostgresTimestamp(stored, reported time.Time) bool {
+	return stored.Truncate(time.Microsecond).Equal(reported.Truncate(time.Microsecond))
 }
 
 func sameUploadResult(

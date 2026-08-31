@@ -93,8 +93,8 @@ func TestTakeCommandsAreCommittedWithDesiredState(t *testing.T) {
 	if err := store.RegisterWorker(ctx, hello, now.Add(time.Minute)); err != nil {
 		t.Fatalf("RegisterWorker() error = %v", err)
 	}
-	mediaStartedAt := now.Add(10 * time.Second)
-	mediaFinishedAt := now.Add(70 * time.Second)
+	mediaStartedAt := now.Add(10*time.Second + 123*time.Nanosecond)
+	mediaFinishedAt := now.Add(70*time.Second + 456*time.Nanosecond)
 	event := &workerv1.WorkerEvent{
 		EventId: takeTestEventID, Sequence: 1, OccurredAt: timestamppb.New(mediaFinishedAt),
 		Event: &workerv1.WorkerEvent_RecordingStatusChanged{RecordingStatusChanged: &workerv1.RecordingStatus{

@@ -59,7 +59,7 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
   deleteCamera: (sessionName: string, cameraName: string, force = false) =>
-	request<void>(`/sessions/${segment(sessionName)}/cameras/${segment(cameraName)}${force ? "?force=true" : ""}`, {
+    request<void>(`/sessions/${segment(sessionName)}/cameras/${segment(cameraName)}${force ? "?force=true" : ""}`, {
       method: "DELETE",
     }),
   getOngoingTake: (sessionName: string) =>

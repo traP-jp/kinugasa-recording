@@ -3,6 +3,7 @@ package upload
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,30 +38,35 @@ func (r *Reporter) ReportPending(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	reported := 0
+	var reportErrors []error
 	for _, manifest := range manifests {
 		if !manifest.Terminal() || manifest.Reported() {
 			continue
 		}
 		report, err := reportFromManifest(manifest, r.now().UTC())
 		if err != nil {
-			return reported, err
+			reportErrors = append(reportErrors, fmt.Errorf("build upload report for take %q: %w", manifest.TakeID, err))
+			continue
 		}
 		acknowledgement, err := r.service.ReportUpload(ctx, report)
 		if err != nil {
-			return reported, fmt.Errorf("report terminal upload: %w", err)
+			reportErrors = append(reportErrors, fmt.Errorf("report terminal upload for take %q: %w", manifest.TakeID, err))
+			continue
 		}
 		if acknowledgement.TakeId != manifest.TakeID || acknowledgement.CameraIdentityId != manifest.CameraIdentityID ||
 			acknowledgement.AcceptedAt == nil || acknowledgement.AcceptedAt.CheckValid() != nil {
-			return reported, fmt.Errorf("console returned an invalid upload acknowledgement")
+			reportErrors = append(reportErrors, fmt.Errorf("console returned an invalid upload acknowledgement for take %q", manifest.TakeID))
+			continue
 		}
 		acceptedAt := acknowledgement.AcceptedAt.AsTime().UTC()
 		manifest.ReportedAt = &acceptedAt
 		if err := r.queue.Save(manifest); err != nil {
-			return reported, fmt.Errorf("persist upload acknowledgement: %w", err)
+			reportErrors = append(reportErrors, fmt.Errorf("persist upload acknowledgement for take %q: %w", manifest.TakeID, err))
+			continue
 		}
 		reported++
 	}
-	return reported, nil
+	return reported, errors.Join(reportErrors...)
 }
 
 func reportFromManifest(manifest uploadqueue.Manifest, observedAt time.Time) (*workerv1.UploadReport, error) {

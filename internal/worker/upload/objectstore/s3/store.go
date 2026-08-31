@@ -49,7 +49,7 @@ func New(ctx context.Context, config Config) (*Store, error) {
 func (s *Store) Put(
 	ctx context.Context,
 	key string,
-	body io.Reader,
+	body io.ReadSeeker,
 	size int64,
 	digest string,
 	mediaType string,
