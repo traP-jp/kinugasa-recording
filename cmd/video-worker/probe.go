@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"math/big"
 	"os/exec"
-	"strconv"
-	"strings"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
 )
@@ -70,10 +68,10 @@ func validateProbe(output probeOutput) *workerv1.InputStatus {
 		if rate == "" || rate == "0/0" {
 			rate = stream.ReportedRate
 		}
-		if !isThirtyFPS(rate) {
+		if !isSupportedFrameRate(rate) {
 			return inputError(
 				workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_FRAME_RATE,
-				"camera video frame rate must be 30 fps",
+				"camera video frame rate must be between 30000/1001 and 30/1 fps",
 				false,
 			)
 		}
@@ -95,15 +93,12 @@ func inputError(code workerv1.ErrorCode, message string, retryable bool) *worker
 	}
 }
 
-func isThirtyFPS(value string) bool {
-	parts := strings.Split(value, "/")
-	if len(parts) != 2 {
+func isSupportedFrameRate(value string) bool {
+	rate, ok := new(big.Rat).SetString(value)
+	if !ok || rate.Sign() <= 0 {
 		return false
 	}
-	numerator, numeratorError := strconv.ParseFloat(parts[0], 64)
-	denominator, denominatorError := strconv.ParseFloat(parts[1], 64)
-	if numeratorError != nil || denominatorError != nil || denominator == 0 {
-		return false
-	}
-	return fmt.Sprintf("%.6f", numerator/denominator) == "30.000000"
+	minimum := big.NewRat(30000, 1001)
+	maximum := big.NewRat(30, 1)
+	return rate.Cmp(minimum) >= 0 && rate.Cmp(maximum) <= 0
 }
