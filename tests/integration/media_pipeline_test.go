@@ -22,7 +22,7 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	ffprobe := requireBinary(t, "ffprobe")
 	ristreceiver := requireBinary(t, "ristreceiver")
 	mediamtx := requireBinary(t, "mediamtx")
-	udpPorts := freeUDPPorts(t, 6)
+	udpPorts := freeUDPPorts(t, 4)
 	tcpAddresses := freeTCPAddresses(t, 3)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,7 +37,11 @@ t=0 0
 m=video %d RTP/AVP 96
 a=rtpmap:96 H264/90000
 a=rtcp:%d
-a=recvonly`, udpPorts[2], udpPorts[3])
+a=recvonly
+m=audio %d RTP/AVP 97
+a=rtpmap:97 opus/48000/2
+a=rtcp:%d
+a=recvonly`, udpPorts[2], udpPorts[3], udpPorts[2], udpPorts[3])
 	mediaServer, err := media.Start(ctx, media.Config{
 		BinaryPath:  mediamtx,
 		RTPAddress:  "127.0.0.1:" + strconv.Itoa(udpPorts[2]),
@@ -68,7 +72,7 @@ a=recvonly`, udpPorts[2], udpPorts[3])
 			RISTAddress:      "127.0.0.1:" + strconv.Itoa(udpPorts[0]),
 			RISTOutputURL:    "udp://127.0.0.1:" + strconv.Itoa(udpPorts[1]),
 			VideoRTPURL:      fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", udpPorts[2], udpPorts[3]),
-			AudioRTPURL:      fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", udpPorts[4], udpPorts[5]),
+			AudioRTPURL:      fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", udpPorts[2], udpPorts[3]),
 			StatusAddress:    tcpAddresses[2],
 			RetryInterval:    100 * time.Millisecond,
 		}, logger)
@@ -90,8 +94,10 @@ a=recvonly`, udpPorts[2], udpPorts[3])
 	sender := exec.CommandContext(ctx, ffmpeg,
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-re",
 		"-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+		"-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000",
 		"-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
-		"-pix_fmt", "yuv420p", "-g", "30", "-f", "mpegts", "-rist_profile", "main",
+		"-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k",
+		"-f", "mpegts", "-rist_profile", "main",
 		"rist://127.0.0.1:"+strconv.Itoa(udpPorts[0]),
 	)
 	sender.Stderr = &senderLog
@@ -131,7 +137,8 @@ a=recvonly`, udpPorts[2], udpPorts[3])
 	var receiverLog bytes.Buffer
 	receiver := exec.CommandContext(waitContext, ffmpeg,
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp",
-		"-i", mediaServer.RTSPURL(), "-map", "0:v:0", "-frames:v", "30", "-f", "null", "-",
+		"-i", mediaServer.RTSPURL(), "-map", "0:v:0", "-map", "0:a:0",
+		"-frames:v", "30", "-frames:a", "50", "-f", "null", "-",
 	)
 	receiver.Stderr = &receiverLog
 	if err := receiver.Run(); err != nil {

@@ -21,7 +21,9 @@ func TestFromEnvironment(t *testing.T) {
 		config.ConsoleAddress != "console:9090" || config.InputPollInterval != 100*time.Millisecond {
 		t.Fatalf("FromEnvironment() = %+v", config)
 	}
-	if !strings.Contains(config.RTPSDP, "H264/90000") {
+	if !strings.Contains(config.RTPSDP, "H264/90000") ||
+		!strings.Contains(config.RTPSDP, "m=video 8000 RTP/AVP 96") ||
+		!strings.Contains(config.RTPSDP, "m=audio 8000 RTP/AVP 97") {
 		t.Fatalf("default RTP SDP = %q", config.RTPSDP)
 	}
 }

@@ -3,6 +3,7 @@ package cameraconnection
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,16 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if !hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_URL", previewURLKey) ||
 		!hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_TOKEN", previewTokenKey) {
 		t.Fatalf("worker preview environment = %+v", pod.Spec.Containers[1].Env)
+	}
+	videoRTPURL := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_VIDEO_RTP_URL")
+	audioRTPURL := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_AUDIO_RTP_URL")
+	if videoRTPURL != "rtp://127.0.0.1:8000?rtcpport=8001" || audioRTPURL != videoRTPURL {
+		t.Fatalf("gateway RTP URLs = video %q, audio %q", videoRTPURL, audioRTPURL)
+	}
+	workerSDP := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_RTP_SDP")
+	if !strings.Contains(workerSDP, "m=video 8000 RTP/AVP 96") ||
+		!strings.Contains(workerSDP, "m=audio 8000 RTP/AVP 97") {
+		t.Fatalf("worker RTP SDP does not multiplex video and audio on port 8000: %q", workerSDP)
 	}
 	assertControlledBy(t, &pod, connection)
 
@@ -381,6 +392,15 @@ func hasSecretEnvironment(environment []corev1.EnvVar, name, key string) bool {
 		}
 	}
 	return false
+}
+
+func environmentValue(environment []corev1.EnvVar, name string) string {
+	for _, variable := range environment {
+		if variable.Name == name {
+			return variable.Value
+		}
+	}
+	return ""
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {

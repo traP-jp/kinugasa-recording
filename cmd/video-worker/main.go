@@ -21,7 +21,6 @@ import (
 	workerconfig "github.com/traP-jp/kinugasa-recording/internal/worker/config"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/control"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
-	workerpreview "github.com/traP-jp/kinugasa-recording/internal/worker/preview"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/recording"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/state"
 )
@@ -62,6 +61,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		APIAddress:  config.MediaAPIAddress,
 		PathName:    config.MediaPath,
 		RTPSDP:      config.RTPSDP,
+		WHIPURL:     config.LiveKitWHIPURL,
+		WHIPToken:   config.LiveKitWHIPToken,
 	}, logger)
 	if err != nil {
 		return err
@@ -79,17 +80,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		FFmpegPath:     config.FFmpegBinary,
 		InputArguments: []string{"-rtsp_transport", "tcp", "-i", mediaServer.RTSPURL()},
 	})
-	if err != nil {
-		cancelRuntime()
-		_ = mediaServer.Wait()
-		return err
-	}
-	previewRelay, err := workerpreview.NewRelay(workerpreview.Config{
-		FFmpegPath:     config.FFmpegBinary,
-		InputArguments: []string{"-rtsp_transport", "tcp", "-i", mediaServer.RTSPURL()},
-		WHIPURL:        config.LiveKitWHIPURL,
-		BearerToken:    config.LiveKitWHIPToken,
-	}, logger)
 	if err != nil {
 		cancelRuntime()
 		_ = mediaServer.Wait()
@@ -135,18 +125,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	go func() { controlDone <- controlClient.Run(runtimeContext) }()
 	mediaDone := make(chan error, 1)
 	go func() { mediaDone <- mediaServer.Wait() }()
-	previewDone := make(chan error, 1)
-	go func() { previewDone <- previewRelay.Run(runtimeContext) }()
 	select {
 	case err := <-controlDone:
 		cancelRuntime()
 		mediaError := <-mediaDone
-		previewError := <-previewDone
-		return errors.Join(err, ignoredCanceledProcess(mediaError), previewError)
+		return errors.Join(err, ignoredCanceledProcess(mediaError))
 	case err := <-mediaDone:
 		cancelRuntime()
 		<-controlDone
-		<-previewDone
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -154,23 +140,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			return fmt.Errorf("MediaMTX exited unexpectedly")
 		}
 		return fmt.Errorf("run MediaMTX: %w", err)
-	case err := <-previewDone:
-		cancelRuntime()
-		controlError := <-controlDone
-		mediaError := <-mediaDone
-		if ctx.Err() != nil {
-			return errors.Join(controlError, ignoredCanceledProcess(mediaError))
-		}
-		if err == nil {
-			err = fmt.Errorf("preview relay exited unexpectedly")
-		}
-		return errors.Join(err, controlError, ignoredCanceledProcess(mediaError))
 	case <-ctx.Done():
 		cancelRuntime()
 		controlError := <-controlDone
 		mediaError := <-mediaDone
-		previewError := <-previewDone
-		return errors.Join(controlError, ignoredCanceledProcess(mediaError), previewError)
+		return errors.Join(controlError, ignoredCanceledProcess(mediaError))
 	}
 }
 

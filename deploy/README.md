@@ -36,3 +36,20 @@ VIDEO_GATEWAY_RIST_PUBLIC_HOST=127.0.0.1
 VIDEO_GATEWAY_RIST_NODE_PORT_MIN=32000
 VIDEO_GATEWAY_RIST_NODE_PORT_MAX=32099
 ```
+
+k3dのload balancerは複数のNginx workerでUDPをproxyするため、同一Cameraの
+RISTパケットが複数のupstream socketへ分割される。100ポート全域でUDP sessionを
+維持するため、クラスタ作成後にserver load balancerを1 workerへ固定する。これは
+localhostへ公開したRISTポートを安定させる。
+
+```console
+./scripts/configure-k3d-udp-session-affinity.sh k3d-kinugasa-recording-v2-serverlb
+```
+
+tailnetへ公開するRISTポートはNginxを迂回し、K3s nodeのNodePortへ直接DNATする。
+次の設定はhost再起動で失われるため、クラスタ作成後とhost再起動後に実行する。
+
+```console
+./scripts/configure-k3d-rist-tailnet-dnat.sh \
+  100.79.104.2 k3d-kinugasa-recording-v2-server-0
+```

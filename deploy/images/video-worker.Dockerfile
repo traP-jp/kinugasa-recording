@@ -6,7 +6,7 @@ COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/video-worker ./cmd/video-worker
 
 FROM bluenviron/mediamtx:1.20.1-ffmpeg
-RUN ffmpeg -hide_banner -muxers 2>/dev/null | grep -q whip
+RUN ffmpeg -version >/dev/null
 COPY --from=build /out/video-worker /usr/local/bin/video-worker
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/video-worker"]

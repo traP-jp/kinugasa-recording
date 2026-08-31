@@ -15,7 +15,7 @@ func configFromEnvironment() gateway.Config {
 		RISTAddress:      valueOrDefault(os.Getenv("KINUGASA_RIST_ADDRESS"), "0.0.0.0:9000"),
 		RISTOutputURL:    valueOrDefault(os.Getenv("KINUGASA_RIST_OUTPUT_URL"), "udp://127.0.0.1:10000"),
 		VideoRTPURL:      valueOrDefault(os.Getenv("KINUGASA_VIDEO_RTP_URL"), "rtp://127.0.0.1:8000?rtcpport=8001"),
-		AudioRTPURL:      valueOrDefault(os.Getenv("KINUGASA_AUDIO_RTP_URL"), "rtp://127.0.0.1:8002?rtcpport=8003"),
+		AudioRTPURL:      valueOrDefault(os.Getenv("KINUGASA_AUDIO_RTP_URL"), "rtp://127.0.0.1:8000?rtcpport=8001"),
 		StatusAddress:    valueOrDefault(os.Getenv("KINUGASA_GATEWAY_STATUS_ADDRESS"), "127.0.0.1:9080"),
 		RetryInterval:    2 * time.Second,
 	}

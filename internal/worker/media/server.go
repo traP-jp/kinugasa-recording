@@ -8,10 +8,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +25,8 @@ type Config struct {
 	APIAddress  string
 	PathName    string
 	RTPSDP      string
+	WHIPURL     string
+	WHIPToken   string
 }
 
 type Server struct {
@@ -48,6 +52,14 @@ func Start(ctx context.Context, config Config, logger *slog.Logger) (*Server, er
 	if strings.TrimSpace(config.RTPSDP) == "" {
 		return nil, fmt.Errorf("RTP SDP must be set")
 	}
+	forwardURL, err := mediaMTXWHIPURL(config.WHIPURL)
+	if err != nil {
+		return nil, err
+	}
+	if (forwardURL == "") != (strings.TrimSpace(config.WHIPToken) == "") {
+		return nil, fmt.Errorf("MediaMTX WHIP URL and bearer token must be set together")
+	}
+	config.WHIPURL = forwardURL
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -167,7 +179,32 @@ func renderConfig(config Config) []byte {
 	for line := range strings.SplitSeq(strings.TrimSpace(config.RTPSDP), "\n") {
 		fmt.Fprintf(&output, "      %s\n", line)
 	}
+	if config.WHIPURL != "" {
+		fmt.Fprintf(&output, "    forward:\n")
+		fmt.Fprintf(&output, "      - dest: %s\n", strconv.Quote(config.WHIPURL))
+		fmt.Fprintf(&output, "        whipBearerToken: %s\n", strconv.Quote(config.WHIPToken))
+	}
 	return output.Bytes()
+}
+
+func mediaMTXWHIPURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	endpoint, err := url.Parse(value)
+	if err != nil || endpoint.Host == "" {
+		return "", fmt.Errorf("LiveKit WHIP URL must be an absolute HTTP or HTTPS URL")
+	}
+	switch endpoint.Scheme {
+	case "http":
+		endpoint.Scheme = "whip"
+	case "https":
+		endpoint.Scheme = "whips"
+	default:
+		return "", fmt.Errorf("LiveKit WHIP URL must be an absolute HTTP or HTTPS URL")
+	}
+	return endpoint.String(), nil
 }
 
 type logWriter struct {
