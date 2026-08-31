@@ -10,7 +10,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
-	"github.com/traP-jp/kinugasa-recording/internal/gateway"
 	workercommand "github.com/traP-jp/kinugasa-recording/internal/worker/command"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/control"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
@@ -19,10 +18,8 @@ import (
 
 func observeInput(
 	ctx context.Context,
-	gatewayClient interface {
-		Status(context.Context) (gateway.Status, error)
-	},
 	server *media.Server,
+	ffprobeBinary string,
 	store *state.Store,
 	client *control.Client,
 	executor *workercommand.Executor,
@@ -32,18 +29,13 @@ func observeInput(
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	previous := &workerv1.InputStatus{State: workerv1.InputState_INPUT_STATE_UNSPECIFIED}
+	var validated *workerv1.InputStatus
+	var nextProbe time.Time
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-		}
-		gatewayStatus, err := gatewayClient.Status(ctx)
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Warn("query video gateway input state", "error", err)
-			}
-			continue
 		}
 		online, err := server.Online(ctx)
 		if err != nil {
@@ -52,7 +44,23 @@ func observeInput(
 			}
 			continue
 		}
-		inputStatus := workerInputStatus(gatewayStatus, online)
+		var inputStatus *workerv1.InputStatus
+		if !online {
+			validated = nil
+			nextProbe = time.Time{}
+			inputStatus = &workerv1.InputStatus{State: workerv1.InputState_INPUT_STATE_WAITING}
+		} else {
+			if validated == nil || (validated.State == workerv1.InputState_INPUT_STATE_ERROR && !time.Now().Before(nextProbe)) {
+				probeContext, cancelProbe := context.WithTimeout(ctx, 10*time.Second)
+				validated = probeMedia(probeContext, ffprobeBinary, server.RTSPURL())
+				cancelProbe()
+				if validated == nil {
+					continue
+				}
+				nextProbe = time.Now().Add(2 * time.Second)
+			}
+			inputStatus = proto.Clone(validated).(*workerv1.InputStatus)
+		}
 		if proto.Equal(inputStatus, previous) {
 			continue
 		}
@@ -78,31 +86,5 @@ func observeInput(
 			}
 		}
 		client.NotifyEvents()
-	}
-}
-
-func workerInputStatus(status gateway.Status, mediaOnline bool) *workerv1.InputStatus {
-	if status.State == gateway.StateError {
-		return &workerv1.InputStatus{
-			State: workerv1.InputState_INPUT_STATE_ERROR,
-			Error: &workerv1.WorkerError{Code: gatewayWorkerErrorCode(status.Code), Message: status.Error},
-		}
-	}
-	if status.State == gateway.StateConnected && mediaOnline {
-		return &workerv1.InputStatus{State: workerv1.InputState_INPUT_STATE_CONNECTED}
-	}
-	return &workerv1.InputStatus{State: workerv1.InputState_INPUT_STATE_WAITING}
-}
-
-func gatewayWorkerErrorCode(code gateway.ErrorCode) workerv1.ErrorCode {
-	switch code {
-	case gateway.ErrorCodeUnsupportedCodec:
-		return workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_VIDEO_CODEC
-	case gateway.ErrorCodeUnsupportedFPS:
-		return workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_FRAME_RATE
-	case gateway.ErrorCodeMediaPipeline:
-		return workerv1.ErrorCode_ERROR_CODE_MEDIA_PIPELINE_FAILURE
-	default:
-		return workerv1.ErrorCode_ERROR_CODE_INPUT_UNAVAILABLE
 	}
 }

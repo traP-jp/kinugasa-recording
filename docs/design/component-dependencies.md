@@ -34,7 +34,7 @@ flowchart LR
     pipeline -->|"REST API<br/>lock file取得"| console
 
     camera -->|"RIST Main Profile<br/>H.264 + optional audio"| gateway
-    gateway -->|"RTP"| worker
+    gateway -->|"RTP / MP2T<br/>payload type 33"| worker
     worker -->|"WHIP<br/>preview映像"| livekit
     console -->|"Ingress API<br/>camera ingress作成・削除"| livekit
     console <-->|"gRPC双方向stream<br/>command・event・状態同期"| worker
@@ -55,9 +55,11 @@ flowchart LR
 | console server / video worker           | [`contracts/console-video-worker/v1/console_video_worker.proto`](../../contracts/console-video-worker/v1/console_video_worker.proto)   | gRPCと再送規則を定義済み                      |
 | console server / 後段パイプライン       | [`contracts/lockfile/lockfile.schema.json`](../../contracts/lockfile/lockfile.schema.json)                                             | JSON Schemaで定義済み                         |
 | cameraクライアント / video gateway      | [外部インターフェース要求](../requirements-v2/14-specified-requirements/01-external-interfaces/external-interfaces.md)                 | RIST、H.264、30 fpsを要求                     |
-| video gateway / video worker            | [製品の位置づけ](../requirements-v2/08-product-perspective/product-perspective.md)                                                     | RTP中継を要求。詳細なwire契約は未定義         |
+| video gateway / video worker            | [製品の位置づけ](../requirements-v2/08-product-perspective/product-perspective.md)                                                     | `ristreceiver`が復旧したRTP/MP2TをUDPで中継   |
 | video worker / video uploader           | [機能要求](../requirements-v2/14-specified-requirements/02-functions/functions.md)                                                     | shared volume上の確定済みファイルで連携       |
 | video uploader / console server         | [`contracts/console-video-uploader/v1/console_video_uploader.proto`](../../contracts/console-video-uploader/v1/console_video_uploader.proto) | gRPCと冪等な結果反映を定義済み             |
 | video uploader / オブジェクトストレージ | [製品の位置づけ](../requirements-v2/08-product-perspective/product-perspective.md)                                                     | upload責務を要求。ストレージAPI契約は未定義   |
 
 video workerがgRPC streamを開始し、console serverがそのstream上でcommandを送り、video workerがeventとcommand resultを返す。video uploaderはterminalなupload結果をgRPCで冪等に報告する。内部通信の認証、認可および暗号化はapplication containerでは実装せず、Istioへ委譲する。
+
+video gateway containerはGo製runtimeを持たず、`ristreceiver`を直接実行する。video workerはRTP/MP2TからRTP transport headerを除去してMediaMTXのUDP MPEG-TS inputへ渡す。MPEG-TSのdemux、配信およびfMP4録画はMediaMTXが行い、video workerはMediaMTXのRTSP出力に対して映像形式とframe rateを検証する。

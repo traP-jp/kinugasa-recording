@@ -12,14 +12,14 @@ type Config struct {
 	SharedVolume      string
 	ConsoleAddress    string
 	MediaMTXBinary    string
+	FFprobeBinary     string
 	RTPAddress        string
+	MPEGTSAddress     string
 	RTSPAddress       string
 	MediaAPIAddress   string
 	MediaPath         string
-	GatewayStatusURL  string
 	LiveKitWHIPURL    string
 	LiveKitWHIPToken  string
-	RTPSDP            string
 	InputPollInterval time.Duration
 }
 
@@ -30,11 +30,12 @@ func FromEnvironment() (Config, error) {
 		SharedVolume:      valueOrDefault(os.Getenv("KINUGASA_SHARED_VOLUME"), "/recordings"),
 		ConsoleAddress:    os.Getenv("KINUGASA_CONSOLE_GRPC_ADDRESS"),
 		MediaMTXBinary:    valueOrDefault(os.Getenv("KINUGASA_MEDIAMTX_BINARY"), "mediamtx"),
+		FFprobeBinary:     valueOrDefault(os.Getenv("KINUGASA_FFPROBE_BINARY"), "ffprobe"),
 		RTPAddress:        valueOrDefault(os.Getenv("KINUGASA_RTP_ADDRESS"), "0.0.0.0:8000"),
+		MPEGTSAddress:     valueOrDefault(os.Getenv("KINUGASA_MPEGTS_ADDRESS"), "127.0.0.1:10000"),
 		RTSPAddress:       valueOrDefault(os.Getenv("KINUGASA_RTSP_ADDRESS"), "127.0.0.1:8554"),
 		MediaAPIAddress:   valueOrDefault(os.Getenv("KINUGASA_MEDIA_API_ADDRESS"), "127.0.0.1:9997"),
 		MediaPath:         valueOrDefault(os.Getenv("KINUGASA_MEDIA_PATH"), "camera"),
-		GatewayStatusURL:  valueOrDefault(os.Getenv("KINUGASA_GATEWAY_STATUS_URL"), "http://127.0.0.1:9080/status"),
 		LiveKitWHIPURL:    os.Getenv("KINUGASA_LIVEKIT_WHIP_URL"),
 		LiveKitWHIPToken:  os.Getenv("KINUGASA_LIVEKIT_WHIP_TOKEN"),
 		InputPollInterval: 250 * time.Millisecond,
@@ -51,7 +52,6 @@ func FromEnvironment() (Config, error) {
 	if config.LiveKitWHIPURL == "" || config.LiveKitWHIPToken == "" {
 		return Config{}, fmt.Errorf("KINUGASA_LIVEKIT_WHIP_URL and KINUGASA_LIVEKIT_WHIP_TOKEN are required")
 	}
-	config.RTPSDP = valueOrDefault(os.Getenv("KINUGASA_RTP_SDP"), defaultRTPSDP)
 	if value := os.Getenv("KINUGASA_INPUT_POLL_INTERVAL"); value != "" {
 		interval, err := time.ParseDuration(value)
 		if err != nil || interval <= 0 {
@@ -68,16 +68,3 @@ func valueOrDefault(value, fallback string) string {
 	}
 	return value
 }
-
-const defaultRTPSDP = `v=0
-o=- 0 0 IN IP4 0.0.0.0
-s=Kinugasa H264 Camera
-c=IN IP4 0.0.0.0
-t=0 0
-m=video 8000 RTP/AVP 96
-a=rtpmap:96 H264/90000
-a=rtcp:8001
-m=audio 8000 RTP/AVP 97
-a=rtpmap:97 opus/48000/2
-a=rtcp:8001
-a=recvonly`

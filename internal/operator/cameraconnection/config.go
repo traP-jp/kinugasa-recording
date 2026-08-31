@@ -19,7 +19,7 @@ type Config struct {
 	SharedVolumeSize      resource.Quantity
 	SharedVolumeMountPath string
 	RTPPort               int32
-	RTCPPort              int32
+	MPEGTSPort            int32
 	RISTPort              int32
 	RISTPublicHost        string
 	RISTNodePortMin       int32
@@ -33,8 +33,8 @@ func (c Config) withDefaults() Config {
 	if c.RTPPort == 0 {
 		c.RTPPort = 8000
 	}
-	if c.RTCPPort == 0 {
-		c.RTCPPort = 8001
+	if c.MPEGTSPort == 0 {
+		c.MPEGTSPort = 10000
 	}
 	if c.RISTPort == 0 {
 		c.RISTPort = 9000
@@ -62,8 +62,8 @@ func (c Config) validate() error {
 	if c.RTPPort < 1 || c.RTPPort > 65535 {
 		validationErrors = append(validationErrors, fmt.Errorf("RTP port %d is outside 1..65535", c.RTPPort))
 	}
-	if c.RTCPPort < 1 || c.RTCPPort > 65535 {
-		validationErrors = append(validationErrors, fmt.Errorf("RTCP port %d is outside 1..65535", c.RTCPPort))
+	if c.MPEGTSPort < 1 || c.MPEGTSPort > 65535 {
+		validationErrors = append(validationErrors, fmt.Errorf("MPEG-TS port %d is outside 1..65535", c.MPEGTSPort))
 	}
 	if c.RISTPort < 1 || c.RISTPort > 65535 {
 		validationErrors = append(validationErrors, fmt.Errorf("RIST port %d is outside 1..65535", c.RISTPort))
@@ -83,15 +83,8 @@ func (c Config) validate() error {
 	} else if c.RISTPublicHost != "" {
 		validationErrors = append(validationErrors, errors.New("RIST node port range is required with a public host"))
 	}
-	if c.RTPPort > 65533 || c.RTCPPort > 65533 {
-		validationErrors = append(validationErrors, errors.New("RTP and RTCP ports must leave room for audio ports at +2"))
-	}
-	ports := map[int32]struct{}{}
-	for _, port := range []int32{c.RTPPort, c.RTCPPort, c.RTPPort + 2, c.RTCPPort + 2} {
-		ports[port] = struct{}{}
-	}
-	if len(ports) != 4 {
-		validationErrors = append(validationErrors, errors.New("video and audio RTP/RTCP ports must be distinct"))
+	if c.RTPPort == c.MPEGTSPort || c.RTPPort == c.RISTPort || c.MPEGTSPort == c.RISTPort {
+		validationErrors = append(validationErrors, errors.New("RIST, RTP, and MPEG-TS ports must be distinct"))
 	}
 	return errors.Join(validationErrors...)
 }

@@ -32,9 +32,9 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 	if err != nil {
 		return OperatorConfig{}, fmt.Errorf("VIDEO_WORKER_RTP_PORT: %w", err)
 	}
-	rtcpPort, err := portOrDefault(os.Getenv("VIDEO_WORKER_RTCP_PORT"), 8001)
+	mpegtsPort, err := portOrDefault(os.Getenv("VIDEO_WORKER_MPEGTS_PORT"), 10000)
 	if err != nil {
-		return OperatorConfig{}, fmt.Errorf("VIDEO_WORKER_RTCP_PORT: %w", err)
+		return OperatorConfig{}, fmt.Errorf("VIDEO_WORKER_MPEGTS_PORT: %w", err)
 	}
 	ristPort, err := portOrDefault(os.Getenv("VIDEO_GATEWAY_RIST_PORT"), 9000)
 	if err != nil {
@@ -77,7 +77,7 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 				SharedVolumeSize:      volumeSize,
 				SharedVolumeMountPath: os.Getenv("SHARED_VOLUME_MOUNT_PATH"),
 				RTPPort:               rtpPort,
-				RTCPPort:              rtcpPort,
+				MPEGTSPort:            mpegtsPort,
 				RISTPort:              ristPort,
 				RISTPublicHost:        os.Getenv("VIDEO_GATEWAY_RIST_PUBLIC_HOST"),
 				RISTNodePortMin:       ristNodePortMin,

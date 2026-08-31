@@ -3,7 +3,7 @@ package cameraconnection
 import (
 	"context"
 	"fmt"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
@@ -90,15 +90,19 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 		!hasSecretEnvironment(pod.Spec.Containers[1].Env, "KINUGASA_LIVEKIT_WHIP_TOKEN", previewTokenKey) {
 		t.Fatalf("worker preview environment = %+v", pod.Spec.Containers[1].Env)
 	}
-	videoRTPURL := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_VIDEO_RTP_URL")
-	audioRTPURL := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_AUDIO_RTP_URL")
-	if videoRTPURL != "rtp://127.0.0.1:8000?rtcpport=8001" || audioRTPURL != videoRTPURL {
-		t.Fatalf("gateway RTP URLs = video %q, audio %q", videoRTPURL, audioRTPURL)
+	if got, want := pod.Spec.Containers[0].Args, []string{
+		"-i", "rist://@0.0.0.0:9000",
+		"-o", "rtp://127.0.0.1:8000",
+		"-p", "1",
+		"-S", "1000",
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("gateway arguments = %q, want %q", got, want)
 	}
-	workerSDP := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_RTP_SDP")
-	if !strings.Contains(workerSDP, "m=video 8000 RTP/AVP 96") ||
-		!strings.Contains(workerSDP, "m=audio 8000 RTP/AVP 97") {
-		t.Fatalf("worker RTP SDP does not multiplex video and audio on port 8000: %q", workerSDP)
+	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_MPEGTS_ADDRESS"); got != "127.0.0.1:10000" {
+		t.Fatalf("worker MPEG-TS address = %q", got)
+	}
+	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_FFPROBE_BINARY"); got != "/usr/bin/ffprobe" {
+		t.Fatalf("worker ffprobe binary = %q", got)
 	}
 	assertControlledBy(t, &pod, connection)
 

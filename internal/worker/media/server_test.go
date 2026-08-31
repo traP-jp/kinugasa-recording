@@ -15,13 +15,12 @@ import (
 	"time"
 )
 
-func TestRenderConfigDefinesRTPSourceAndLoopbackServers(t *testing.T) {
+func TestRenderConfigDefinesMPEGTSSourceAndLoopbackServers(t *testing.T) {
 	config := Config{
-		RTPAddress:                 "0.0.0.0:8000",
+		MPEGTSAddress:              "127.0.0.1:10000",
 		RTSPAddress:                "127.0.0.1:8554",
 		APIAddress:                 "127.0.0.1:9997",
 		PathName:                   "camera",
-		RTPSDP:                     testSDP(8000),
 		WHIPURL:                    "whip://livekit-ingress.example.com/w",
 		WHIPToken:                  "stream-key",
 		RecordPath:                 "/recordings/incomplete/recording-%s-%f",
@@ -33,9 +32,8 @@ func TestRenderConfigDefinesRTPSourceAndLoopbackServers(t *testing.T) {
 	rendered := string(renderConfig(config))
 	for _, expected := range []string{
 		"rtspTransports: [tcp]",
-		"source: udp+rtp://0.0.0.0:8000",
+		"source: udp+mpegts://127.0.0.1:10000",
 		"apiAddress: 127.0.0.1:9997",
-		"a=rtpmap:96 H264/90000",
 		`dest: "whip://livekit-ingress.example.com/w"`,
 		`whipBearerToken: "stream-key"`,
 		`recordFormat: fmp4`,
@@ -82,11 +80,10 @@ func TestSetRecordingPatchesConfiguredPath(t *testing.T) {
 func TestStartRejectsRecordPathWithoutMediaPathTemplate(t *testing.T) {
 	_, err := Start(context.Background(), Config{
 		BinaryPath:                 "mediamtx",
-		RTPAddress:                 "127.0.0.1:8000",
+		MPEGTSAddress:              "127.0.0.1:10000",
 		RTSPAddress:                "127.0.0.1:8554",
 		APIAddress:                 "127.0.0.1:9997",
 		PathName:                   "camera",
-		RTPSDP:                     testSDP(8000),
 		RecordPath:                 "/recordings/recording-%s-%f",
 		RunOnRecordSegmentCreate:   "create-hook",
 		RunOnRecordSegmentComplete: "complete-hook",
@@ -123,15 +120,14 @@ func TestServerStartsAndReportsOfflinePath(t *testing.T) {
 	if err != nil {
 		t.Skip("mediamtx is not available")
 	}
-	rtpPort := freeUDPPort(t)
+	mpegtsPort := freeUDPPort(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	server, err := Start(ctx, Config{
-		BinaryPath:  binary,
-		RTPAddress:  "127.0.0.1:" + strconv.Itoa(rtpPort),
-		RTSPAddress: freeTCPAddress(t),
-		APIAddress:  freeTCPAddress(t),
-		PathName:    "camera",
-		RTPSDP:      testSDP(rtpPort),
+		BinaryPath:    binary,
+		MPEGTSAddress: "127.0.0.1:" + strconv.Itoa(mpegtsPort),
+		RTSPAddress:   freeTCPAddress(t),
+		APIAddress:    freeTCPAddress(t),
+		PathName:      "camera",
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		cancel()
@@ -177,15 +173,4 @@ func freeUDPPort(t *testing.T) int {
 	port := connection.LocalAddr().(*net.UDPAddr).Port
 	_ = connection.Close()
 	return port
-}
-
-func testSDP(port int) string {
-	return "v=0\n" +
-		"o=- 0 0 IN IP4 127.0.0.1\n" +
-		"s=Kinugasa Test\n" +
-		"c=IN IP4 127.0.0.1\n" +
-		"t=0 0\n" +
-		"m=video " + strconv.Itoa(port) + " RTP/AVP 96\n" +
-		"a=rtpmap:96 H264/90000\n" +
-		"a=recvonly"
 }

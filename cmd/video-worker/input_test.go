@@ -4,23 +4,40 @@ import (
 	"testing"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
-	"github.com/traP-jp/kinugasa-recording/internal/gateway"
 )
 
-func TestWorkerInputStatusCombinesGatewayAndMediaState(t *testing.T) {
-	connected := workerInputStatus(gateway.Status{State: gateway.StateConnected}, true)
-	if connected.State != workerv1.InputState_INPUT_STATE_CONNECTED {
-		t.Fatalf("connected status = %+v", connected)
+func TestValidateProbeAcceptsH264ThirtyFPSWithOptionalAudio(t *testing.T) {
+	var output probeOutput
+	output.Streams = append(output.Streams,
+		probeStream{CodecType: "video", CodecName: "h264", AverageRate: "30000/1000"},
+		probeStream{CodecType: "audio", CodecName: "aac"},
+	)
+	status := validateProbe(output)
+	if status.State != workerv1.InputState_INPUT_STATE_CONNECTED {
+		t.Fatalf("validateProbe() = %+v", status)
 	}
-	waiting := workerInputStatus(gateway.Status{State: gateway.StateConnected}, false)
-	if waiting.State != workerv1.InputState_INPUT_STATE_WAITING {
-		t.Fatalf("waiting status = %+v", waiting)
+}
+
+func TestValidateProbeRejectsUnsupportedInput(t *testing.T) {
+	tests := []struct {
+		name  string
+		codec string
+		rate  string
+		code  workerv1.ErrorCode
+	}{
+		{name: "codec", codec: "hevc", rate: "30/1", code: workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_VIDEO_CODEC},
+		{name: "frame rate", codec: "h264", rate: "25/1", code: workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_FRAME_RATE},
 	}
-	failure := workerInputStatus(gateway.Status{
-		State: gateway.StateError, Code: gateway.ErrorCodeUnsupportedFPS, Error: "must be 30 fps",
-	}, false)
-	if failure.State != workerv1.InputState_INPUT_STATE_ERROR ||
-		failure.Error.Code != workerv1.ErrorCode_ERROR_CODE_UNSUPPORTED_FRAME_RATE {
-		t.Fatalf("error status = %+v", failure)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output probeOutput
+			output.Streams = append(output.Streams, probeStream{
+				CodecType: "video", CodecName: test.codec, AverageRate: test.rate,
+			})
+			status := validateProbe(output)
+			if status.State != workerv1.InputState_INPUT_STATE_ERROR || status.Error.Code != test.code {
+				t.Fatalf("validateProbe() = %+v", status)
+			}
+		})
 	}
 }

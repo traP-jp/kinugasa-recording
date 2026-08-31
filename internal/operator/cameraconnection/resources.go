@@ -85,16 +85,12 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 	workerEnvironment = append(workerEnvironment,
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
 		corev1.EnvVar{Name: "KINUGASA_MEDIAMTX_BINARY", Value: "/mediamtx"},
+		corev1.EnvVar{Name: "KINUGASA_FFPROBE_BINARY", Value: "/usr/bin/ffprobe"},
 		corev1.EnvVar{Name: "KINUGASA_RTP_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RTPPort)},
-		corev1.EnvVar{Name: "KINUGASA_RTP_SDP", Value: workerRTPSDP(config)},
+		corev1.EnvVar{Name: "KINUGASA_MPEGTS_ADDRESS", Value: fmt.Sprintf("127.0.0.1:%d", config.MPEGTSPort)},
 		secretEnvironment("KINUGASA_LIVEKIT_WHIP_URL", connection.Name, previewURLKey),
 		secretEnvironment("KINUGASA_LIVEKIT_WHIP_TOKEN", connection.Name, previewTokenKey),
 	)
-	gatewayEnvironment := []corev1.EnvVar{
-		{Name: "KINUGASA_RIST_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RISTPort)},
-		{Name: "KINUGASA_VIDEO_RTP_URL", Value: fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", config.RTPPort, config.RTCPPort)},
-		{Name: "KINUGASA_AUDIO_RTP_URL", Value: fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", config.RTPPort, config.RTCPPort)},
-	}
 	uploaderEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
 	uploaderEnvironment = append(uploaderEnvironment,
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
@@ -120,7 +116,12 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 					Name:            gatewayContainer,
 					Image:           config.GatewayImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Env:             gatewayEnvironment,
+					Args: []string{
+						"-i", fmt.Sprintf("rist://@0.0.0.0:%d", config.RISTPort),
+						"-o", fmt.Sprintf("rtp://127.0.0.1:%d", config.RTPPort),
+						"-p", "1",
+						"-S", "1000",
+					},
 					Ports: []corev1.ContainerPort{
 						{Name: "rist", Protocol: corev1.ProtocolUDP, ContainerPort: config.RISTPort},
 					},
@@ -134,7 +135,6 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 					Env:             workerEnvironment,
 					Ports: []corev1.ContainerPort{
 						{Name: "rtp", Protocol: corev1.ProtocolUDP, ContainerPort: config.RTPPort},
-						{Name: "rtcp", Protocol: corev1.ProtocolUDP, ContainerPort: config.RTCPPort},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: sharedVolumeName, MountPath: config.SharedVolumeMountPath},
@@ -182,21 +182,6 @@ func secretEnvironment(name, secretName, key string) corev1.EnvVar {
 			Key:                  key,
 		}},
 	}
-}
-
-func workerRTPSDP(config Config) string {
-	return fmt.Sprintf(`v=0
-o=- 0 0 IN IP4 0.0.0.0
-s=Kinugasa H264 Camera
-c=IN IP4 0.0.0.0
-t=0 0
-m=video %d RTP/AVP 96
-a=rtpmap:96 H264/90000
-a=rtcp:%d
-m=audio %d RTP/AVP 97
-a=rtpmap:97 opus/48000/2
-a=rtcp:%d
-a=recvonly`, config.RTPPort, config.RTCPPort, config.RTPPort, config.RTCPPort)
 }
 
 func restrictedContainerSecurityContext() *corev1.SecurityContext {

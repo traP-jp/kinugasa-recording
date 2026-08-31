@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,10 +15,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/traP-jp/kinugasa-recording/internal/gateway"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/recording"
 )
@@ -27,8 +28,8 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	ffprobe := requireBinary(t, "ffprobe")
 	ristreceiver := requireBinary(t, "ristreceiver")
 	mediamtx := requireBinary(t, "mediamtx")
-	udpPorts := freeUDPPorts(t, 4)
-	tcpAddresses := freeTCPAddresses(t, 3)
+	udpPorts := freeUDPPorts(t, 3)
+	tcpAddresses := freeTCPAddresses(t, 2)
 	sharedVolume := t.TempDir()
 	t.Setenv("KINUGASA_SHARED_VOLUME", sharedVolume)
 	t.Setenv("KINUGASA_HOOK_HELPER", "1")
@@ -45,26 +46,21 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	defer cancel()
 	var serviceLog bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&serviceLog, nil))
-	rtpSDP := fmt.Sprintf(`v=0
-o=- 0 0 IN IP4 127.0.0.1
-s=Kinugasa synthetic integration input
-c=IN IP4 127.0.0.1
-t=0 0
-m=video %d RTP/AVP 96
-a=rtpmap:96 H264/90000
-a=rtcp:%d
-a=recvonly
-m=audio %d RTP/AVP 97
-a=rtpmap:97 opus/48000/2
-a=rtcp:%d
-a=recvonly`, udpPorts[2], udpPorts[3], udpPorts[2], udpPorts[3])
+	bridgeDone := make(chan error, 1)
+	go func() {
+		bridgeDone <- media.RunRTPMPEGTSBridge(
+			ctx,
+			"127.0.0.1:"+strconv.Itoa(udpPorts[1]),
+			"127.0.0.1:"+strconv.Itoa(udpPorts[2]),
+			logger,
+		)
+	}()
 	mediaServer, err := media.Start(ctx, media.Config{
 		BinaryPath:                 mediamtx,
-		RTPAddress:                 "127.0.0.1:" + strconv.Itoa(udpPorts[2]),
+		MPEGTSAddress:              "127.0.0.1:" + strconv.Itoa(udpPorts[2]),
 		RTSPAddress:                tcpAddresses[0],
 		APIAddress:                 tcpAddresses[1],
 		PathName:                   "camera",
-		RTPSDP:                     rtpSDP,
 		RecordPath:                 recordPath,
 		RecordPartDuration:         500 * time.Millisecond,
 		RecordSegmentDuration:      24 * time.Hour,
@@ -84,33 +80,24 @@ a=recvonly`, udpPorts[2], udpPorts[3], udpPorts[2], udpPorts[3])
 		t.Fatalf("wait for MediaMTX: %v; service log: %s", err, serviceLog.String())
 	}
 
-	gatewayDone := make(chan error, 1)
-	go func() {
-		gatewayDone <- gateway.Run(ctx, gateway.Config{
-			FFmpegPath:       ffmpeg,
-			FFprobePath:      ffprobe,
-			RISTReceiverPath: ristreceiver,
-			RISTAddress:      "127.0.0.1:" + strconv.Itoa(udpPorts[0]),
-			RISTOutputURL:    "udp://127.0.0.1:" + strconv.Itoa(udpPorts[1]),
-			VideoRTPURL:      fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", udpPorts[2], udpPorts[3]),
-			AudioRTPURL:      fmt.Sprintf("rtp://127.0.0.1:%d?rtcpport=%d", udpPorts[2], udpPorts[3]),
-			StatusAddress:    tcpAddresses[2],
-			RetryInterval:    100 * time.Millisecond,
-		}, logger)
-	}()
+	gateway := exec.CommandContext(ctx, ristreceiver,
+		"-i", "rist://@127.0.0.1:"+strconv.Itoa(udpPorts[0]),
+		"-o", "rtp://127.0.0.1:"+strconv.Itoa(udpPorts[1]),
+		"-p", "1",
+		"-S", "1000",
+	)
+	gateway.Stdout = &serviceLog
+	gateway.Stderr = &serviceLog
+	if err := gateway.Start(); err != nil {
+		t.Fatalf("start ristreceiver gateway: %v", err)
+	}
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case err := <-gatewayDone:
-			if err != nil {
-				t.Errorf("stop gateway: %v; log: %s", err, serviceLog.String())
-			}
-		case <-time.After(5 * time.Second):
-			t.Error("gateway did not stop")
+		if err := gateway.Wait(); err != nil && ctx.Err() == nil {
+			t.Errorf("stop ristreceiver gateway: %v; log: %s", err, serviceLog.String())
 		}
 	})
 
-	statusClient := waitForGateway(t, ctx, "http://"+tcpAddresses[2]+"/status")
 	var senderLog bytes.Buffer
 	sender := exec.CommandContext(ctx, ffmpeg,
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-re",
@@ -133,26 +120,52 @@ a=recvonly`, udpPorts[2], udpPorts[3], udpPorts[2], udpPorts[3])
 	waitContext, waitCancel := context.WithTimeout(ctx, 20*time.Second)
 	defer waitCancel()
 	for {
-		status, statusError := statusClient.Status(waitContext)
-		if statusError == nil && status.State == gateway.StateConnected {
-			break
-		}
-		select {
-		case <-waitContext.Done():
-			t.Fatalf("gateway did not connect: %v; sender log: %s; service log: %s", statusError, senderLog.String(), serviceLog.String())
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	for {
 		online, onlineError := mediaServer.Online(waitContext)
 		if onlineError == nil && online {
 			break
 		}
 		select {
 		case <-waitContext.Done():
-			t.Fatalf("MediaMTX input did not become ready: %v", onlineError)
+			t.Fatalf("MediaMTX input did not become ready: %v; sender log: %s; service log: %s", onlineError, senderLog.String(), serviceLog.String())
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+	liveProbe := exec.CommandContext(waitContext, ffprobe,
+		"-v", "error",
+		"-rtsp_transport", "tcp",
+		"-analyzeduration", "3000000",
+		"-probesize", "5000000",
+		"-show_streams", "-of", "json", mediaServer.RTSPURL(),
+	)
+	liveMetadata, err := liveProbe.Output()
+	if err != nil {
+		t.Fatalf("probe MediaMTX RTSP input: %v; service log: %s", err, serviceLog.String())
+	}
+	var liveStreams struct {
+		Streams []struct {
+			CodecType    string `json:"codec_type"`
+			CodecName    string `json:"codec_name"`
+			AverageRate  string `json:"avg_frame_rate"`
+			ReportedRate string `json:"r_frame_rate"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(liveMetadata, &liveStreams); err != nil {
+		t.Fatalf("decode MediaMTX RTSP metadata: %v", err)
+	}
+	videoValid := false
+	for _, stream := range liveStreams.Streams {
+		if stream.CodecType != "video" || stream.CodecName != "h264" {
+			continue
+		}
+		rate := stream.AverageRate
+		if rate == "" || rate == "0/0" {
+			rate = stream.ReportedRate
+		}
+		videoValid = rateIsThirty(rate)
+		break
+	}
+	if !videoValid {
+		t.Fatalf("MediaMTX RTSP metadata does not contain H.264/30 fps: %s", liveMetadata)
 	}
 
 	var receiverLog bytes.Buffer
@@ -200,6 +213,19 @@ a=recvonly`, udpPorts[2], udpPorts[3], udpPorts[2], udpPorts[3])
 	if output, err := verify.CombinedOutput(); err != nil || !bytes.Contains(output, []byte("h264")) {
 		t.Fatalf("probe finalized MediaMTX recording: %v, output: %s", err, output)
 	}
+}
+
+func rateIsThirty(value string) bool {
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 {
+		return false
+	}
+	numerator, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return false
+	}
+	denominator, err := strconv.ParseFloat(parts[1], 64)
+	return err == nil && denominator != 0 && numerator/denominator == 30
 }
 
 func TestMediaMTXRecordingHook(t *testing.T) {
@@ -268,26 +294,6 @@ func requireBinary(t *testing.T, name string) string {
 		t.Fatalf("%s is required for integration tests: %v", name, err)
 	}
 	return path
-}
-
-func waitForGateway(t *testing.T, ctx context.Context, statusURL string) *gateway.Client {
-	t.Helper()
-	client, err := gateway.NewClient(statusURL)
-	if err != nil {
-		t.Fatalf("create gateway client: %v", err)
-	}
-	waitContext, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	for {
-		if _, err := client.Status(waitContext); err == nil {
-			return client
-		}
-		select {
-		case <-waitContext.Done():
-			t.Fatalf("gateway status server did not start: %v", waitContext.Err())
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 }
 
 func freeUDPPorts(t *testing.T, count int) []int {

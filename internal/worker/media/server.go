@@ -20,11 +20,10 @@ import (
 
 type Config struct {
 	BinaryPath                 string
-	RTPAddress                 string
+	MPEGTSAddress              string
 	RTSPAddress                string
 	APIAddress                 string
 	PathName                   string
-	RTPSDP                     string
 	WHIPURL                    string
 	WHIPToken                  string
 	RecordPath                 string
@@ -48,14 +47,11 @@ func Start(ctx context.Context, config Config, logger *slog.Logger) (*Server, er
 	if config.BinaryPath == "" {
 		config.BinaryPath = "mediamtx"
 	}
-	if config.RTPAddress == "" || config.RTSPAddress == "" || config.APIAddress == "" {
-		return nil, fmt.Errorf("MediaMTX RTP, RTSP, and API addresses must be set")
+	if config.MPEGTSAddress == "" || config.RTSPAddress == "" || config.APIAddress == "" {
+		return nil, fmt.Errorf("MediaMTX MPEG-TS, RTSP, and API addresses must be set")
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(config.PathName) {
 		return nil, fmt.Errorf("MediaMTX path name must be a single non-empty component")
-	}
-	if strings.TrimSpace(config.RTPSDP) == "" {
-		return nil, fmt.Errorf("RTP SDP must be set")
 	}
 	forwardURL, err := mediaMTXWHIPURL(config.WHIPURL)
 	if err != nil {
@@ -233,10 +229,7 @@ func renderConfig(config Config) []byte {
 	fmt.Fprintf(&output, "api: true\napiAddress: %s\n", config.APIAddress)
 	fmt.Fprintf(&output, "rtsp: true\nrtspTransports: [tcp]\nrtspAddress: %s\n", config.RTSPAddress)
 	fmt.Fprintf(&output, "rtmp: false\nhls: false\nwebrtc: false\nsrt: false\nplayback: false\n")
-	fmt.Fprintf(&output, "paths:\n  %s:\n    source: udp+rtp://%s\n    rtpSDP: |\n", config.PathName, config.RTPAddress)
-	for line := range strings.SplitSeq(strings.TrimSpace(config.RTPSDP), "\n") {
-		fmt.Fprintf(&output, "      %s\n", line)
-	}
+	fmt.Fprintf(&output, "paths:\n  %s:\n    source: udp+mpegts://%s\n", config.PathName, config.MPEGTSAddress)
 	if config.WHIPURL != "" {
 		fmt.Fprintf(&output, "    forward:\n")
 		fmt.Fprintf(&output, "      - dest: %s\n", strconv.Quote(config.WHIPURL))

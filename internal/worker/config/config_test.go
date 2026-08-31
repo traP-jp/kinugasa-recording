@@ -1,7 +1,6 @@
 package config
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -18,13 +17,9 @@ func TestFromEnvironment(t *testing.T) {
 		t.Fatalf("FromEnvironment() error = %v", err)
 	}
 	if config.SharedVolume != "/recordings" || config.RTPAddress != "0.0.0.0:8000" ||
+		config.MPEGTSAddress != "127.0.0.1:10000" || config.FFprobeBinary != "ffprobe" ||
 		config.ConsoleAddress != "console:9090" || config.InputPollInterval != 100*time.Millisecond {
 		t.Fatalf("FromEnvironment() = %+v", config)
-	}
-	if !strings.Contains(config.RTPSDP, "H264/90000") ||
-		!strings.Contains(config.RTPSDP, "m=video 8000 RTP/AVP 96") ||
-		!strings.Contains(config.RTPSDP, "m=audio 8000 RTP/AVP 97") {
-		t.Fatalf("default RTP SDP = %q", config.RTPSDP)
 	}
 }
 

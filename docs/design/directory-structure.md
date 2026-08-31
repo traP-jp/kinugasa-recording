@@ -6,12 +6,10 @@
 kinugasa-recording/
 ├── cmd/                               # Goコンポーネントのentry point
 │   ├── console-server/
-│   ├── video-gateway/
 │   ├── video-worker/
 │   └── video-uploader/
 ├── internal/                          # Goの内部実装
 │   ├── console/                       # REST API、domain、DB、reconciliation
-│   ├── gateway/                       # RIST受信とRTP中継
 │   ├── worker/                        # 録画、preview、gRPC control
 │   ├── uploader/                      # hash計算とobject upload
 │   └── shared/                        # 複数componentで共有する基盤処理
@@ -26,4 +24,4 @@ kinugasa-recording/
 └── flake.nix                          # 開発・build toolchain
 ```
 
-`cmd/`と`internal/`はGoの標準的な構成に寄せ、実行単位ごとに入口と内部実装を分離する。コンポーネント間で共有するデータ形式は実装packageではなく`contracts/`を正とする。生成物、ローカル依存関係および一時ファイルは上図に含めない。
+`cmd/`と`internal/`はGoの標準的な構成に寄せ、実行単位ごとに入口と内部実装を分離する。video gatewayはGoでは実装せず、containerからlibristの`ristreceiver`を直接実行する。コンポーネント間で共有するデータ形式は実装packageではなく`contracts/`を正とする。生成物、ローカル依存関係および一時ファイルは上図に含めない。

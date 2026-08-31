@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	workerv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_worker/v1"
-	"github.com/traP-jp/kinugasa-recording/internal/gateway"
 	"github.com/traP-jp/kinugasa-recording/internal/shared/uploadqueue"
 	workercommand "github.com/traP-jp/kinugasa-recording/internal/worker/command"
 	workerconfig "github.com/traP-jp/kinugasa-recording/internal/worker/config"
@@ -63,6 +62,15 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	defer cancelRuntime()
+	bridgeDone := make(chan error, 1)
+	go func() {
+		bridgeDone <- media.RunRTPMPEGTSBridge(
+			runtimeContext,
+			config.RTPAddress,
+			config.MPEGTSAddress,
+			logger,
+		)
+	}()
 	recordPath, err := recording.MediaMTXRecordPath(config.SharedVolume)
 	if err != nil {
 		return fmt.Errorf("prepare MediaMTX recording path: %w", err)
@@ -73,11 +81,10 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	mediaServer, err := media.Start(runtimeContext, media.Config{
 		BinaryPath:                 config.MediaMTXBinary,
-		RTPAddress:                 config.RTPAddress,
+		MPEGTSAddress:              config.MPEGTSAddress,
 		RTSPAddress:                config.RTSPAddress,
 		APIAddress:                 config.MediaAPIAddress,
 		PathName:                   config.MediaPath,
-		RTPSDP:                     config.RTPSDP,
 		WHIPURL:                    config.LiveKitWHIPURL,
 		WHIPToken:                  config.LiveKitWHIPToken,
 		RecordPath:                 recordPath,
@@ -110,12 +117,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
-	gatewayClient, err := gateway.NewClient(config.GatewayStatusURL)
-	if err != nil {
-		cancelRuntime()
-		_ = mediaServer.Wait()
-		return err
-	}
 	connection, err := grpc.NewClient(
 		config.ConsoleAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -139,7 +140,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
-	go observeInput(runtimeContext, gatewayClient, mediaServer, store, controlClient, executor, config.InputPollInterval, logger)
+	go observeInput(
+		runtimeContext,
+		mediaServer,
+		config.FFprobeBinary,
+		store,
+		controlClient,
+		executor,
+		config.InputPollInterval,
+		logger,
+	)
 	controlDone := make(chan error, 1)
 	go func() { controlDone <- controlClient.Run(runtimeContext) }()
 	mediaDone := make(chan error, 1)
@@ -159,6 +169,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			return fmt.Errorf("MediaMTX exited unexpectedly")
 		}
 		return fmt.Errorf("run MediaMTX: %w", err)
+	case err := <-bridgeDone:
+		cancelRuntime()
+		mediaError := <-mediaDone
+		<-controlDone
+		if ctx.Err() != nil && err == nil {
+			return ignoredCanceledProcess(mediaError)
+		}
+		if err == nil {
+			err = fmt.Errorf("RTP/MP2T bridge exited unexpectedly")
+		}
+		return errors.Join(err, ignoredCanceledProcess(mediaError))
 	case <-ctx.Done():
 		cancelRuntime()
 		controlError := <-controlDone
