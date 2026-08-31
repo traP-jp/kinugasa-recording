@@ -8,3 +8,13 @@ func TestRISTURLUsesLibRISTListenerSyntax(t *testing.T) {
 		t.Fatalf("ristURL() = %q, want %q", got, want)
 	}
 }
+
+func TestConfigDefaultsToRISTReceiverUDPOutput(t *testing.T) {
+	config := (Config{}).withDefaults()
+	if got, want := config.RISTReceiverPath, "ristreceiver"; got != want {
+		t.Fatalf("RISTReceiverPath = %q, want %q", got, want)
+	}
+	if got, want := config.RISTOutputURL, "udp://127.0.0.1:10000"; got != want {
+		t.Fatalf("RISTOutputURL = %q, want %q", got, want)
+	}
+}

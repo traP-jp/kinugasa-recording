@@ -33,30 +33,50 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		defer cancel()
 		_ = server.Shutdown(shutdownContext)
 	}()
+	runContext, cancelRun := context.WithCancel(ctx)
+	receiverDone, err := startRISTReceiver(runContext, config, logger)
+	if err != nil {
+		cancelRun()
+		return err
+	}
+	monitoredReceiverDone := make(chan error, 1)
+	go func() {
+		receiverError := <-receiverDone
+		monitoredReceiverDone <- receiverError
+		cancelRun()
+	}()
 
-	for ctx.Err() == nil {
+	for runContext.Err() == nil {
 		statuses.set(Status{State: StateWaiting})
-		result, failure := probe(ctx, config)
+		result, failure := probe(runContext, config)
 		if failure != nil {
 			statuses.set(*failure)
 			logger.Warn("camera input probe failed", "code", failure.Code, "error", failure.Error)
-			if !waitRetry(ctx, config.RetryInterval) {
+			if !waitRetry(runContext, config.RetryInterval) {
 				break
 			}
 			continue
 		}
-		if ctx.Err() != nil {
+		if runContext.Err() != nil {
 			break
 		}
-		if err := relay(ctx, config, result, statuses, logger); err != nil && ctx.Err() == nil {
+		if err := relay(runContext, config, result, statuses, logger); err != nil && runContext.Err() == nil {
 			statuses.set(Status{State: StateError, Code: ErrorCodeMediaPipeline, Error: "camera RTP relay failed"})
 			logger.Warn("camera RTP relay stopped", "error", err)
 		}
-		if !waitRetry(ctx, config.RetryInterval) {
+		if !waitRetry(runContext, config.RetryInterval) {
 			break
 		}
 	}
-	return nil
+	cancelRun()
+	receiverError := <-monitoredReceiverDone
+	if ctx.Err() != nil {
+		return nil
+	}
+	if receiverError != nil {
+		return fmt.Errorf("ristreceiver stopped: %w", receiverError)
+	}
+	return fmt.Errorf("ristreceiver stopped unexpectedly")
 }
 
 func relay(
@@ -68,7 +88,7 @@ func relay(
 ) error {
 	arguments := []string{
 		"-nostdin", "-hide_banner", "-loglevel", "warning", "-progress", "pipe:1",
-		"-rist_profile", "main", "-i", config.ristURL(),
+		"-i", config.RISTOutputURL,
 		"-map", "0:v:0", "-c:v", "copy", "-an", "-f", "rtp", config.VideoRTPURL,
 	}
 	if probe.HasAudio {
