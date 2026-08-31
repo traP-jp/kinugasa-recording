@@ -1,6 +1,7 @@
 package cameraconnection
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ const (
 	previewIngressIDKey = "ingress-id"
 	previewURLKey       = "url"
 	previewTokenKey     = "token"
+	ristSecretKey       = "rist-secret"
 )
 
 type PreviewIngress interface {
@@ -26,7 +28,7 @@ type PreviewIngress interface {
 	Delete(context.Context, string) error
 }
 
-func (r *Reconciler) ensurePreviewSecret(
+func (r *Reconciler) ensureConnectionSecret(
 	ctx context.Context,
 	connection *recordingv1alpha1.CameraConnection,
 ) error {
@@ -35,17 +37,31 @@ func (r *Reconciler) ensurePreviewSecret(
 	}
 	var existing corev1.Secret
 	key := client.ObjectKeyFromObject(connection)
+	ristSecret := []byte(deriveRISTSecret(connection, r.Config.RISTEncryptionPepper))
 	if err := r.Get(ctx, key, &existing); err == nil {
 		if !metav1.IsControlledBy(&existing, connection) {
-			return fmt.Errorf("preview Secret %s is not controlled by CameraConnection", existing.Name)
+			return fmt.Errorf("connection Secret %s is not controlled by CameraConnection", existing.Name)
 		}
 		if len(existing.Data[previewIngressIDKey]) == 0 || len(existing.Data[previewURLKey]) == 0 ||
 			len(existing.Data[previewTokenKey]) == 0 {
-			return fmt.Errorf("preview Secret %s is incomplete", existing.Name)
+			return fmt.Errorf("connection Secret %s is incomplete", existing.Name)
+		}
+		if !bytes.Equal(existing.Data[ristSecretKey], ristSecret) {
+			base := existing.DeepCopy()
+			if existing.Data == nil {
+				existing.Data = make(map[string][]byte)
+			}
+			existing.Data[ristSecretKey] = ristSecret
+			if err := r.Patch(ctx, &existing, client.MergeFrom(base)); err != nil {
+				return fmt.Errorf("update RIST secret: %w", err)
+			}
+			if err := r.restartWorkerPod(ctx, key); err != nil {
+				return err
+			}
 		}
 		return nil
 	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("get preview Secret: %w", err)
+		return fmt.Errorf("get connection Secret: %w", err)
 	}
 
 	endpoint, err := r.PreviewIngress.Create(
@@ -68,23 +84,28 @@ func (r *Reconciler) ensurePreviewSecret(
 			previewIngressIDKey: []byte(endpoint.IngressID),
 			previewURLKey:       []byte(endpoint.URL),
 			previewTokenKey:     []byte(endpoint.StreamKey),
+			ristSecretKey:       ristSecret,
 		},
 	}
 	if err := controllerutil.SetControllerReference(connection, secret, r.Scheme); err != nil {
 		cleanupError := r.PreviewIngress.Delete(ctx, endpoint.IngressID)
-		return errors.Join(fmt.Errorf("set preview Secret owner: %w", err), cleanupError)
+		return errors.Join(fmt.Errorf("set connection Secret owner: %w", err), cleanupError)
 	}
 	if err := r.Create(ctx, secret); err != nil {
 		cleanupError := r.PreviewIngress.Delete(ctx, endpoint.IngressID)
-		return errors.Join(fmt.Errorf("create preview Secret: %w", err), cleanupError)
+		return errors.Join(fmt.Errorf("create connection Secret: %w", err), cleanupError)
 	}
+	return r.restartWorkerPod(ctx, key)
+}
+
+func (r *Reconciler) restartWorkerPod(ctx context.Context, key client.ObjectKey) error {
 	var stalePod corev1.Pod
 	if err := r.Get(ctx, key, &stalePod); err == nil {
 		if err := r.Delete(ctx, &stalePod); err != nil {
-			return fmt.Errorf("restart worker Pod after replacing preview ingress: %w", err)
+			return fmt.Errorf("restart worker Pod after updating connection Secret: %w", err)
 		}
 	} else if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("get worker Pod after replacing preview ingress: %w", err)
+		return fmt.Errorf("get worker Pod after updating connection Secret: %w", err)
 	}
 	return nil
 }

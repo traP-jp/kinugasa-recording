@@ -79,6 +79,7 @@ func OperatorFromEnvironment() (OperatorConfig, error) {
 				RTPPort:               rtpPort,
 				MPEGTSPort:            mpegtsPort,
 				RISTPort:              ristPort,
+				RISTEncryptionPepper:  os.Getenv("VIDEO_GATEWAY_RIST_ENCRYPTION_PEPPER"),
 				RISTPublicHost:        os.Getenv("VIDEO_GATEWAY_RIST_PUBLIC_HOST"),
 				RISTNodePortMin:       ristNodePortMin,
 				RISTNodePortMax:       ristNodePortMax,

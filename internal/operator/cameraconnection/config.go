@@ -9,6 +9,8 @@ import (
 
 const defaultSharedVolumeMountPath = "/var/lib/kinugasa-recording"
 
+const minimumRISTEncryptionPepperLength = 32
+
 type Config struct {
 	GatewayImage          string
 	WorkerImage           string
@@ -21,6 +23,7 @@ type Config struct {
 	RTPPort               int32
 	MPEGTSPort            int32
 	RISTPort              int32
+	RISTEncryptionPepper  string
 	RISTPublicHost        string
 	RISTNodePortMin       int32
 	RISTNodePortMax       int32
@@ -67,6 +70,11 @@ func (c Config) validate() error {
 	}
 	if c.RISTPort < 1 || c.RISTPort > 65535 {
 		validationErrors = append(validationErrors, fmt.Errorf("RIST port %d is outside 1..65535", c.RISTPort))
+	}
+	if len(c.RISTEncryptionPepper) < minimumRISTEncryptionPepperLength {
+		validationErrors = append(validationErrors, fmt.Errorf(
+			"RIST encryption pepper must be at least %d bytes", minimumRISTEncryptionPepperLength,
+		))
 	}
 	if (c.RISTNodePortMin == 0) != (c.RISTNodePortMax == 0) {
 		validationErrors = append(validationErrors, errors.New("RIST node port minimum and maximum must be configured together"))

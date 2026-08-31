@@ -18,7 +18,7 @@ docker build -f deploy/images/web.Dockerfile -t registry.example/kinugasa/web:VE
 
 ## Apply
 
-1. [`secrets.example.yaml`](./secrets.example.yaml)をコピーし、実値をSecret managerなどから投入する。
+1. [`secrets.example.yaml`](./secrets.example.yaml)をコピーし、実値をSecret managerなどから投入する。`VIDEO_GATEWAY_RIST_ENCRYPTION_PEPPER`には`openssl rand -base64 32`などで生成した32 byte以上のランダム値を設定する。
 2. `deploy/base`のimage名と、必要に応じてPVC容量・StorageClassをoverlayで変更する。
 3. CRD、RBAC、console server、web consoleを適用する。
 
@@ -27,9 +27,9 @@ kubectl apply -f deploy/secrets.yaml
 kubectl apply -k deploy
 ```
 
-Web consoleのServiceはClusterIPで作成される。tailnet内のIngressまたはGatewayを`web-console:80`へ接続する。CameraごとのRIST ServiceはoperatorがLoadBalancerとして作成する。
+Web consoleのServiceはClusterIPで作成される。tailnet内のIngressまたはGatewayを`web-console:80`へ接続する。CameraごとのRIST ServiceはoperatorがLoadBalancerとして作成する。RIST Main ProfileのAES-256 PSKはpepper、session ID、camera identity IDからCameraごとに導出され、Camera URLの`secret`および`aes-type` query parameterとして返される。pepperを変更すると既存URLが無効になり、Cameraのworker Podも再作成されるため、収録中にはrotationしないこと。
 
-テスト環境などで単一ホストのNodePort範囲をCameraごとのRIST接続先として使う場合は、次の3変数を設定する。operatorは範囲内の未使用NodePortをCameraごとに1つ割り当て、`rist://<public-host>:<node-port>`を返す。この範囲はkinugasa-recording専用とし、ホスト側でも同じUDP範囲をKubernetes nodeへ転送する。
+テスト環境などで単一ホストのNodePort範囲をCameraごとのRIST接続先として使う場合は、次の3変数を設定する。operatorは範囲内の未使用NodePortをCameraごとに1つ割り当て、暗号化parameterを含む`rist://<public-host>:<node-port>?aes-type=256&secret=...`を返す。この範囲はkinugasa-recording専用とし、ホスト側でも同じUDP範囲をKubernetes nodeへ転送する。
 
 ```text
 VIDEO_GATEWAY_RIST_PUBLIC_HOST=127.0.0.1

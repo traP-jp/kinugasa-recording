@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"reflect"
 	"time"
 
@@ -92,7 +93,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if err := r.ensureService(ctx, &connection, config); err != nil {
 		return r.resourceFailure(ctx, &connection, err)
 	}
-	if err := r.ensurePreviewSecret(ctx, &connection); err != nil {
+	if err := r.ensureConnectionSecret(ctx, &connection); err != nil {
 		return r.resourceFailure(ctx, &connection, err)
 	}
 	if err := r.ensurePod(ctx, &connection, config); err != nil {
@@ -116,7 +117,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if err := r.Get(ctx, client.ObjectKeyFromObject(&connection), &service); err != nil {
 		return r.resourceFailure(ctx, &connection, fmt.Errorf("load RIST Service status: %w", err))
 	}
-	if cameraURL := cameraURLForService(&service, config); cameraURL != "" {
+	if cameraURL := cameraURLForService(&service, &connection, config); cameraURL != "" {
 		connection.Status.CameraURL = cameraURL
 		if connection.Status.Phase == "" || connection.Status.Phase == recordingv1alpha1.CameraConnectionPhaseActivating {
 			connection.Status.Phase = recordingv1alpha1.CameraConnectionPhaseWaiting
@@ -171,28 +172,40 @@ func observeWorkerRestart(status *recordingv1alpha1.CameraConnectionStatus, pod 
 	return ""
 }
 
-func cameraURLForService(service *corev1.Service, config Config) string {
+func cameraURLForService(
+	service *corev1.Service,
+	connection *recordingv1alpha1.CameraConnection,
+	config Config,
+) string {
+	var host string
 	if config.usesNodePort() {
 		if len(service.Spec.Ports) == 0 || service.Spec.Ports[0].NodePort == 0 {
 			return ""
 		}
-		return "rist://" + net.JoinHostPort(config.RISTPublicHost, fmt.Sprintf("%d", service.Spec.Ports[0].NodePort))
+		host = net.JoinHostPort(config.RISTPublicHost, fmt.Sprintf("%d", service.Spec.Ports[0].NodePort))
+	} else {
+		if len(service.Status.LoadBalancer.Ingress) == 0 {
+			return ""
+		}
+		address := service.Status.LoadBalancer.Ingress[0].IP
+		if address == "" {
+			address = service.Status.LoadBalancer.Ingress[0].Hostname
+		}
+		if address == "" {
+			return ""
+		}
+		port := config.RISTPort
+		if len(service.Spec.Ports) != 0 {
+			port = service.Spec.Ports[0].Port
+		}
+		host = net.JoinHostPort(address, fmt.Sprintf("%d", port))
 	}
-	if len(service.Status.LoadBalancer.Ingress) == 0 {
-		return ""
-	}
-	address := service.Status.LoadBalancer.Ingress[0].IP
-	if address == "" {
-		address = service.Status.LoadBalancer.Ingress[0].Hostname
-	}
-	if address == "" {
-		return ""
-	}
-	port := config.RISTPort
-	if len(service.Spec.Ports) != 0 {
-		port = service.Spec.Ports[0].Port
-	}
-	return "rist://" + net.JoinHostPort(address, fmt.Sprintf("%d", port))
+	result := url.URL{Scheme: "rist", Host: host}
+	query := result.Query()
+	query.Set("secret", deriveRISTSecret(connection, config.RISTEncryptionPepper))
+	query.Set("aes-type", "256")
+	result.RawQuery = query.Encode()
+	return result.String()
 }
 
 func (r *Reconciler) ensurePVC(ctx context.Context, connection *recordingv1alpha1.CameraConnection, config Config) error {

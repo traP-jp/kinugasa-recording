@@ -121,6 +121,11 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 						"-o", fmt.Sprintf("rtp://127.0.0.1:%d", config.RTPPort),
 						"-p", "1",
 						"-S", "1000",
+						"-s", "$(KINUGASA_RIST_SECRET)",
+						"-e", "256",
+					},
+					Env: []corev1.EnvVar{
+						secretEnvironment("KINUGASA_RIST_SECRET", connection.Name, ristSecretKey),
 					},
 					Ports: []corev1.ContainerPort{
 						{Name: "rist", Protocol: corev1.ProtocolUDP, ContainerPort: config.RISTPort},
