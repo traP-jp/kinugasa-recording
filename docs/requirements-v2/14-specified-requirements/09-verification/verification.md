@@ -19,9 +19,19 @@
 - presentation timestampが単調増加していることを確認し、隣接frame間の時間差からframe落ちの回数を算出する。
 - frame落ちの回数をcameraごとに検証結果へ記録する。frame落ちは時間軸ドリフトとは別に評価し、合否の閾値は設けない。
 
-## video worker container正常終了後のupload継続
+## video workerによるuploadと削除
 
 - video worker Podの作成時に1つのPersistentVolumeClaimが作成され、takeの開始時には追加のPersistentVolumeClaimが作成されないことを確認する。
-- 録画を終了してvideo uploader containerによるuploadを開始した後、同じPod内のvideo worker containerを正常終了させる。
-- video worker containerが再起動されず、同じPod内でvideo uploader containerとshared volumeが残り、uploadが中断されずにcompletedへ遷移することを確認する。
-- video worker Podとshared volumeがuploadの完了前には削除されず、volume上のすべての録画ファイルがcompletedまたはerroredになり、video uploader containerが終了した後に削除されることを確認する。
+- video worker containerが録画ファイルの確定、ハッシュ計算およびuploadを行い、独立したvideo uploader containerが作成されないことを確認する。
+- uploadingなVideoFileを持つcameraを通常削除しようとした場合、削除が拒否され、video worker Pod、PersistentVolumeClaimおよびVideoFileの状態が維持されることを確認する。
+- Session Consoleで対象cameraを削除しようとした場合、影響を受けるVideoFile、uploadのabortおよびオブジェクトストレージ上のデータ整合性を保証しないことが警告されることを確認する。
+- 確認文字列が一致しない間は強制削除できず、`I_do_understand_the_danger_of_data_inconsistency_and_really_want_to_delete_this_camera`と完全一致した場合のみ強制削除できることを確認する。
+- 強制削除後に対象のuploadingなVideoFileがすべてerroredになり、uploadがabortされ、video worker Pod、PersistentVolumeClaimおよびCameraConnectionが削除されることを確認する。
+- 強制削除時のオブジェクトストレージ上のobjectまたはmultipart uploadの存在、完全性および後始末は検証対象としない。
+
+## video workerの予期しない停止
+
+- uploadingなVideoFileを処理中のvideo worker processを異常終了させる。
+- 対象workerが処理していたuploadingなVideoFileがすべてerroredになり、それらのuploadが再開されないことを確認する。
+- 同じworkerが録画中であった場合は対応するRecordingCameraもerroredになり、OngoingTake、他のRecordingCameraおよび他のVideoFileの状態が維持されることを確認する。
+- video workerが再起動され、新しいUUIDがCameraConnectionのvideoWorkerIdに反映されることを確認する。

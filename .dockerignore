@@ -1,0 +1,9 @@
+.git
+.direnv
+result
+result-*
+output/
+web/node_modules
+web/dist
+web/coverage
+**/*.local

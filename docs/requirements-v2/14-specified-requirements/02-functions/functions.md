@@ -26,7 +26,7 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 | --- | --- | --- |
 | `GET` | `/api/sessions/{sessionName}/cameras` | 現在のCameraConnectionの一覧を取得する。 |
 | `POST` | `/api/sessions/{sessionName}/cameras` | cameraを追加する。 |
-| `DELETE` | `/api/sessions/{sessionName}/cameras/{cameraName}` | cameraを削除する。 |
+| `DELETE` | `/api/sessions/{sessionName}/cameras/{cameraName}` | cameraを削除する。uploadingなVideoFileがある場合の強制削除を含む。 |
 | `GET` | `/api/sessions/{sessionName}/cameras/{cameraName}/connection` | cameraクライアントの接続先と接続状態を取得する。 |
 
 ### take
@@ -45,13 +45,15 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 | --- | --- | --- |
 | `POST` | `/api/sessions/{sessionName}/preview-access` | LiveKitの接続先と短期アクセストークンを取得する。 |
 
-## 録画ファイルの受け渡し
+## 録画ファイルの保持とupload
 
-- console serverは、video worker Podの作成に先立ってPodごとに1つのPersistentVolumeClaimを作成し、shared volumeとしてPod specから静的に参照させる。takeの開始ごとにPersistentVolumeClaimを作成してはならない。
-- video workerは、録画ファイルをshared volumeへ書き込み、録画終了時にflushしてファイルを確定してからvideo uploaderへ引き渡す。
-- video workerとvideo uploaderは、同じPod内の独立したapplication containerとして動作し、同じshared volumeをmountする。
-- video worker containerが正常終了した場合もPodを終了してはならず、video uploader containerは進行中または未開始のuploadを継続する。正常終了したvideo worker containerを再起動してはならない。
-- video worker Podとshared volumeは、そのvolume上にあるすべての録画ファイルのuploadがcompletedまたはerroredになり、video uploader containerが終了するまで削除してはならない。
+- console serverは、video worker Podの作成に先立ってPodごとに1つのPersistentVolumeClaimを作成し、work volumeとしてPod specから静的に参照させる。takeの開始ごとにPersistentVolumeClaimを作成してはならない。
+- video workerは、録画ファイルをwork volumeへ書き込み、録画終了時にflushしてファイルを確定してから、同じprocessでハッシュの計算とオブジェクトストレージへのuploadを行う。
+- video workerの録画処理とupload処理は同じapplication container内で動作する。独立したvideo uploader processまたはcontainerを作成してはならない。
+- 対応するCameraIdentityにuploadingなVideoFileが存在する間、console serverは通常のcamera削除を拒否する。強制削除が明示的に指定された場合に限り、削除を受け付ける。
+- console serverは強制削除の受付時に、対象のvideo workerが処理しているすべてのuploadingなVideoFileをerroredに遷移させ、そのuploadをabortしてからPod、PersistentVolumeClaimおよびCameraConnectionを削除する。
+- 強制削除によってabortされたuploadについては、オブジェクトストレージ上のobjectまたはmultipart uploadの存在、完全性および後始末を保証しない。
+- 強制削除しない場合、video worker PodとPersistentVolumeClaimは、対応するすべてのVideoFileがcompletedまたはerroredになるまで削除してはならない。
 
 ## console server - video worker間通信
 
@@ -61,6 +63,6 @@ console serverとvideo worker間のcommand、event、状態同期および障害
 
 - console serverは、DBに永続化されたドメイン状態を正としてKubernetes上のリソースをreconcileする。
 - console serverの起動時および再起動時には、DBから状態を復元して全リソースをreconcileする。
-- console serverが停止している間も、video gateway、video workerおよびvideo uploaderは処理を継続する。console serverの停止だけを理由にOngoingTakeを終了してはならない。
-- video workerの予期しない停止を検出した場合、対応するRecordingCameraがあればそのRecordingCameraだけをerroredとし、OngoingTakeおよび他のRecordingCameraを継続する。その他のドメイン状態は維持したままvideo workerを再起動する。
+- console serverが停止している間も、video gatewayおよびvideo workerは録画、preview中継およびuploadを継続する。console serverの停止だけを理由にOngoingTakeを終了してはならない。
+- video workerの予期しない停止を検出した場合、対応するRecordingCameraがあればそのRecordingCameraだけをerroredとし、そのvideo workerが処理していたすべてのuploadingなVideoFileもerroredに遷移させる。OngoingTake、他のRecordingCameraおよび他のVideoFileの状態は維持したままvideo workerを再起動する。erroredに遷移したuploadは再開しない。
 - 再起動したvideo workerが新しいUUIDを通知した場合、対応するCameraConnectionのvideoWorkerIdを更新する。
