@@ -43,6 +43,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(`/api${path}`);
+  if (!response.ok) {
+    let message = `リクエストに失敗しました (${response.status})`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) message = body.error;
+    } catch {
+      // Keep the status-based fallback when the server did not return JSON.
+    }
+    throw new APIError(message, response.status);
+  }
+  return response.text();
+}
+
 const segment = encodeURIComponent;
 
 export const api = {
@@ -77,6 +92,8 @@ export const api = {
     ),
   getTake: (sessionName: string, takeName: string) =>
     request<FinishedTakeDetail>(`/sessions/${segment(sessionName)}/takes/${segment(takeName)}`),
+  getSessionLockfile: (sessionName: string) =>
+    requestText(`/sessions/${segment(sessionName)}/lockfile`),
   createPreviewAccess: (sessionName: string) =>
     request<PreviewAccess>(`/sessions/${segment(sessionName)}/preview-access`, { method: "POST" }),
 };

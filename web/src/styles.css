@@ -46,6 +46,7 @@ code { font-family: var(--mono); }
 .hero-metric span { display: block; font: 500 36px var(--mono); }
 .hero-metric small { color: var(--muted); text-transform: uppercase; font: 10px var(--mono); letter-spacing: .08em; }
 .compact-hero h1 { font-size: clamp(34px, 4vw, 52px); }
+.takes-page-actions { display: flex; align-items: flex-end; gap: 18px; }
 
 .panel { background: linear-gradient(145deg, rgba(23, 30, 32, .9), rgba(15, 21, 23, .96)); border: 1px solid var(--line); border-radius: 15px; }
 .panel-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 20px; }
