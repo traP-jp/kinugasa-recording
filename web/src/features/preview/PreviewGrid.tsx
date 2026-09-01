@@ -1,7 +1,9 @@
 import { LiveKitRoom, VideoTrack, useTracks } from "@livekit/components-react";
 import { SignalZero, VideoOff } from "lucide-react";
 import { Track } from "livekit-client";
+import type { ReactNode } from "react";
 import type { CameraConnection, PreviewAccess } from "../../api/types";
+import { previewGridColumnCount } from "../../lib/previewGrid";
 
 interface PreviewGridProps {
   cameras: CameraConnection[];
@@ -31,7 +33,7 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraConnection[] }) {
   const tracksByIdentity = new Map(tracks.map((track) => [track.participant.identity, track]));
   if (cameras.length === 0) return <PreviewPlaceholders cameras={[]} message="Cameraを追加すると映像が表示されます" />;
   return (
-    <div className="preview-grid">
+    <PreviewTileGrid itemCount={cameras.length}>
       {cameras.map((camera) => {
         const track = tracksByIdentity.get(camera.name);
         return (
@@ -46,19 +48,28 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraConnection[] }) {
           </article>
         );
       })}
-    </div>
+    </PreviewTileGrid>
   );
 }
 
 function PreviewPlaceholders({ cameras, message }: { cameras: CameraConnection[]; message: string }) {
   return (
-    <div className="preview-grid">
+    <PreviewTileGrid itemCount={cameras.length}>
       {(cameras.length ? cameras : [{ name: "preview" }]).map((camera) => (
         <article className="preview-tile" key={camera.name}>
           <div className="preview-waiting"><VideoOff size={28} /><span>{message}</span></div>
           {camera.name !== "preview" && <div className="preview-label">{camera.name}</div>}
         </article>
       ))}
+    </PreviewTileGrid>
+  );
+}
+
+function PreviewTileGrid({ itemCount, children }: { itemCount: number; children: ReactNode }) {
+  const columns = previewGridColumnCount(itemCount);
+  return (
+    <div className="preview-grid" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+      {children}
     </div>
   );
 }
