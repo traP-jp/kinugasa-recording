@@ -4,11 +4,12 @@ import { createPortal } from "react-dom";
 
 interface ModalProps {
   title: string;
+  className?: string;
   children: ReactNode;
   onClose: () => void;
 }
 
-export function Modal({ title, children, onClose }: ModalProps) {
+export function Modal({ title, className = "", children, onClose }: ModalProps) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -20,7 +21,7 @@ export function Modal({ title, children, onClose }: ModalProps) {
   return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="modal-card"
+        className={`modal-card ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
