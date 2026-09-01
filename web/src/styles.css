@@ -184,7 +184,7 @@ input::placeholder { color: #586365; }
 .modal-card > header h2 { margin: 0; font-size: 15px; }
 .modal-card > header button { color: var(--muted); }
 .video-preview-modal { width: min(1100px, 100%); }
-.video-preview-modal-body { padding: 18px; }
+.video-preview-modal-body { padding: 9px; }
 .video-preview-expanded { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: #050708; border: 1px solid #273032; border-radius: 10px; }
 .video-preview-expanded video { width: 100%; height: 100%; object-fit: contain; background: black; }
 .connection-modal-body { padding: 22px; display: grid; justify-items: center; gap: 14px; }
