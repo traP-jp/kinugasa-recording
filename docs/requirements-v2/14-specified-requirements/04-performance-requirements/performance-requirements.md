@@ -7,3 +7,9 @@
 H.264形式、30 fpsの2つの映像を10分間録画した場合、規定のネットワークジッタ条件下におけるcamera間の時間軸ドリフトは、2 frame以下を目標とする。この目標は、cameraクライアントによる撮影とエンコードを含むend-to-endの録画品質を対象とする。
 
 時間軸ドリフトは、録画区間におけるcamera間の時間オフセットの変化を線形モデルで推定した値として定義する。30 fpsにおける2 frameは約66.7 msである。
+
+## RIST統計の更新
+
+- RIST統計は、重複しない5秒区間を単位として更新する。
+- console serverは、最終の有効なtelemetry dataを受信して5秒を超えた統計をstaleとする。
+- OpenTelemetry Metricsの記録およびexportは、RIST packetの受信とRTP出力の処理をblockしてはならない。
