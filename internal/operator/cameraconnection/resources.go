@@ -78,9 +78,16 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 	labels := labelsFor(connection)
 	sharedEnvironment := []corev1.EnvVar{
 		{Name: "KINUGASA_SESSION_ID", Value: connection.Spec.SessionID},
+		{Name: "KINUGASA_SESSION_NAME", Value: connection.Spec.SessionName},
 		{Name: "KINUGASA_CAMERA_IDENTITY_ID", Value: connection.Spec.CameraIdentityID},
+		{Name: "KINUGASA_CAMERA_NAME", Value: connection.Spec.CameraName},
 		{Name: "KINUGASA_SHARED_VOLUME", Value: config.SharedVolumeMountPath},
 	}
+	gatewayEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
+	gatewayEnvironment = append(gatewayEnvironment,
+		corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: "http://" + config.ConsoleGRPCAddress},
+		corev1.EnvVar{Name: "KINUGASA_GATEWAY_INSTANCE", ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.uid"}}},
+	)
 	workerEnvironment := append([]corev1.EnvVar{}, sharedEnvironment...)
 	workerEnvironment = append(workerEnvironment,
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
@@ -117,11 +124,11 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 					Image:           config.GatewayImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Args: []string{
-						"-i", fmt.Sprintf("rist://@0.0.0.0:%d", config.RISTPort),
-						"-o", fmt.Sprintf("rtp://127.0.0.1:%d", config.RTPPort),
-						"-p", "1",
-						"-S", "1000",
+						"--input-url", fmt.Sprintf("rist://@0.0.0.0:%d", config.RISTPort),
+						"--output-address", fmt.Sprintf("127.0.0.1:%d", config.RTPPort),
+						"--recovery-buffer-ms", "1000",
 					},
+					Env: gatewayEnvironment,
 					Ports: []corev1.ContainerPort{
 						{Name: "rist", Protocol: corev1.ProtocolUDP, ContainerPort: config.RISTPort},
 					},

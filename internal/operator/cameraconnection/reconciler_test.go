@@ -91,12 +91,20 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 		t.Fatalf("worker preview environment = %+v", pod.Spec.Containers[1].Env)
 	}
 	if got, want := pod.Spec.Containers[0].Args, []string{
-		"-i", "rist://@0.0.0.0:9000",
-		"-o", "rtp://127.0.0.1:8000",
-		"-p", "1",
-		"-S", "1000",
+		"--input-url", "rist://@0.0.0.0:9000",
+		"--output-address", "127.0.0.1:8000",
+		"--recovery-buffer-ms", "1000",
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("gateway arguments = %q, want %q", got, want)
+	}
+	if got := environmentValue(pod.Spec.Containers[0].Env, "OTEL_EXPORTER_OTLP_ENDPOINT"); got != "http://console-server.recording.svc:9090" {
+		t.Fatalf("gateway OTLP endpoint = %q", got)
+	}
+	if got := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_SESSION_NAME"); got != "session-1" {
+		t.Fatalf("gateway session name = %q", got)
+	}
+	if got := environmentValue(pod.Spec.Containers[0].Env, "KINUGASA_CAMERA_NAME"); got != "camera-1" {
+		t.Fatalf("gateway camera name = %q", got)
 	}
 	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_MPEGTS_ADDRESS"); got != "127.0.0.1:10000" {
 		t.Fatalf("worker MPEG-TS address = %q", got)

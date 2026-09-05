@@ -14,6 +14,7 @@ kinugasa-recording/
 │   ├── uploader/                      # hash計算とobject upload
 │   └── shared/                        # 複数componentで共有する基盤処理
 ├── web/                               # Reactによるweb console
+├── video-gateway/                     # rist-rsを使用するRust製RIST receiver
 ├── contracts/                         # OpenAPI、Protocol Buffers、JSON Schema
 ├── deploy/                            # Kubernetes manifestと環境別設定
 ├── tests/                             # component間のintegration / end-to-end test
@@ -24,4 +25,4 @@ kinugasa-recording/
 └── flake.nix                          # 開発・build toolchain
 ```
 
-`cmd/`と`internal/`はGoの標準的な構成に寄せ、実行単位ごとに入口と内部実装を分離する。video gatewayはGoでは実装せず、containerからlibristの`ristreceiver`を直接実行する。コンポーネント間で共有するデータ形式は実装packageではなく`contracts/`を正とする。生成物、ローカル依存関係および一時ファイルは上図に含めない。
+`cmd/`と`internal/`はGoの標準的な構成に寄せ、実行単位ごとに入口と内部実装を分離する。video gatewayはGoでは実装せず、`video-gateway/`のRust crateからbuildする。コンポーネント間で共有するデータ形式は実装packageではなく`contracts/`を正とする。生成物、ローカル依存関係および一時ファイルは上図に含めない。
