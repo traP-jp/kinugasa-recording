@@ -31,6 +31,19 @@ export interface CameraConnection {
   error: string | null;
 }
 
+export interface RISTStatistics {
+  cameraName: string;
+  gatewayInstance: string;
+  flowId: number;
+  intervalStart: string;
+  intervalEnd: string;
+  outputPackets: number;
+  lostPackets: number;
+  recoveredPackets: number;
+  discontinuities: number;
+  stale: boolean;
+}
+
 export interface RecordingCamera {
   name: string;
   state: "recording" | "errored";

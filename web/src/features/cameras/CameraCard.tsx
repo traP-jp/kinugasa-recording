@@ -1,17 +1,19 @@
 import { Cable, QrCode, Trash2, Video } from "lucide-react";
 import { useState } from "react";
-import type { CameraConnection } from "../../api/types";
+import type { CameraConnection, RISTStatistics } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { CameraConnectionModal } from "./CameraConnectionModal";
+import { RISTStatisticsPanel } from "./RISTStatisticsPanel";
 
 interface CameraCardProps {
   camera: CameraConnection;
   deletionDisabled: boolean;
+  ristStatistics: RISTStatistics[];
   onDelete: (name: string) => Promise<void>;
 }
 
-export function CameraCard({ camera, deletionDisabled, onDelete }: CameraCardProps) {
+export function CameraCard({ camera, deletionDisabled, ristStatistics, onDelete }: CameraCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   async function remove() {
@@ -30,6 +32,7 @@ export function CameraCard({ camera, deletionDisabled, onDelete }: CameraCardPro
         <div className="camera-card-title"><h3>{camera.name}</h3><StatusBadge status={camera.status} /></div>
         {camera.error && <p className="inline-error">{camera.error}</p>}
         {!camera.error && <p>{camera.status === "connected" ? "映像を受信しています" : "Camera clientの接続を待っています"}</p>}
+        <RISTStatisticsPanel statistics={ristStatistics} />
       </div>
       <div className="camera-card-actions">
         <Button

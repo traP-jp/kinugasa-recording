@@ -6,6 +6,7 @@ import type {
   OngoingTake,
   OngoingTakeResult,
   PreviewAccess,
+  RISTStatistics,
   Session,
   SessionDetail,
   SessionPage,
@@ -53,6 +54,8 @@ export const api = {
   getSession: (sessionName: string) => request<SessionDetail>(`/sessions/${segment(sessionName)}`),
   listCameras: (sessionName: string) =>
     request<CameraConnection[]>(`/sessions/${segment(sessionName)}/cameras`),
+  listRISTStatistics: (sessionName: string) =>
+    request<RISTStatistics[]>(`/sessions/${segment(sessionName)}/rist-statistics`),
   createCamera: (sessionName: string, name: string) =>
     request<CameraConnection>(`/sessions/${segment(sessionName)}/cameras`, {
       method: "POST",

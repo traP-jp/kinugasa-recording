@@ -127,6 +127,20 @@ input::placeholder { color: #586365; }
 .camera-card-title h3 { margin: 0; font-size: 14px; }
 .camera-card-main p { color: var(--muted); margin: 4px 0 0; font-size: 11px; }
 .camera-card-actions { display: flex; gap: 6px; }
+.rist-statistics-list { display: grid; gap: 7px; margin-top: 10px; }
+.rist-statistics { border: 1px solid #293436; border-radius: 8px; background: #0a0e0f; padding: 9px 10px; font-family: var(--mono); }
+.rist-statistics header { display: flex; align-items: baseline; gap: 8px; }
+.rist-statistics header > span:first-child { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
+.rist-statistics header strong { color: var(--lime); font-size: 16px; margin-left: auto; }
+.rist-stale-label { color: var(--red); border: 1px solid currentColor; border-radius: 99px; padding: 2px 5px; font-size: 8px; text-transform: uppercase; }
+.rist-statistics dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 9px 0 0; }
+.rist-statistics dl div { min-width: 0; }
+.rist-statistics dt { color: var(--muted); font-size: 8px; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; }
+.rist-statistics dd { margin: 3px 0 0; color: var(--text); font-size: 11px; }
+.rist-statistics footer { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 8px; margin-top: 8px; }
+.rist-statistics footer span { display: inline-flex; align-items: center; gap: 4px; }
+.rist-statistics-stale { opacity: .58; }
+.rist-statistics-empty { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 9px; margin-top: 10px; }
 
 .take-start { display: grid; gap: 16px; }
 .take-start-heading { display: flex; gap: 12px; }
