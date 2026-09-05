@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	collectormetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
 
 	upv1 "github.com/traP-jp/kinugasa-recording/gen/console_video_uploader/v1"
@@ -22,6 +23,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/config"
 	"github.com/traP-jp/kinugasa-recording/internal/console/preview"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository/postgres"
+	"github.com/traP-jp/kinugasa-recording/internal/console/riststats"
 	"github.com/traP-jp/kinugasa-recording/internal/console/uploadreport"
 	"github.com/traP-jp/kinugasa-recording/internal/console/workercontrol"
 	livekitingress "github.com/traP-jp/kinugasa-recording/internal/livekit/ingress"
@@ -83,6 +85,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		workercontrol.NewServer(repository, workerRegistry),
 	)
 	upv1.RegisterConsoleVideoUploaderServiceServer(grpcServer, uploadreport.NewServer(repository))
+	ristStatistics := riststats.NewStore()
+	collectormetricsv1.RegisterMetricsServiceServer(grpcServer, riststats.NewServer(ristStatistics, logger))
 	operatorConfig, err := config.OperatorFromEnvironment()
 	if err != nil {
 		return fmt.Errorf("load operator configuration: %w", err)
@@ -105,7 +109,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		WithPreviewAccess(serverConfig.LiveKitURL, serverConfig.PreviewTTL, previewIssuer)
 	server := &http.Server{
 		Addr:              serverConfig.ListenAddress,
-		Handler:           api.NewHandler(service, logger),
+		Handler:           api.NewHandler(service, logger, ristStatistics),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

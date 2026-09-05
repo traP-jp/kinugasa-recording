@@ -15,6 +15,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
+	"github.com/traP-jp/kinugasa-recording/internal/console/riststats"
 )
 
 func TestCreateSessionEndpoint(t *testing.T) {
@@ -116,6 +117,36 @@ func TestCameraEndpointsUseNullableFields(t *testing.T) {
 		if body["url"] != nil || body["error"] != nil || body["status"] != "activating" {
 			t.Fatalf("camera body = %#v", body)
 		}
+	}
+}
+
+func TestListRISTStatisticsReturnsRawFiveSecondQuantities(t *testing.T) {
+	start := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	service := &serviceStub{getSession: func(_ context.Context, name string) (repository.SessionDetail, error) {
+		if name != "session-1" {
+			t.Fatalf("GetSession name = %q", name)
+		}
+		return repository.SessionDetail{}, nil
+	}}
+	statistics := statisticsReaderStub{items: []riststats.Snapshot{{
+		Statistics: riststats.Statistics{
+			SessionName: "session-1", CameraName: "camera-1", GatewayInstance: "pod-uid", FlowID: 42,
+			IntervalStart: start, IntervalEnd: start.Add(5 * time.Second), OutputPackets: 100,
+			LostPackets: 2, RecoveredPackets: 7, Discontinuities: 1,
+		},
+	}}}
+	response := request(t, NewHandler(service, discardLogger(), statistics), http.MethodGet, "/api/sessions/session-1/rist-statistics", "")
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body []map[string]any
+	decodeResponse(t, response, &body)
+	if len(body) != 1 || body[0]["cameraName"] != "camera-1" || body[0]["outputPackets"] != float64(100) || body[0]["lostPackets"] != float64(2) {
+		t.Fatalf("body = %#v", body)
+	}
+	if _, exists := body[0]["lossRate"]; exists {
+		t.Fatalf("packet loss rate must not cross the cluster API: %#v", body[0])
 	}
 }
 
@@ -276,6 +307,14 @@ type serviceStub struct {
 	getFinishedTake     func(context.Context, string, string) (repository.FinishedTakeDetail, error)
 	getLockfile         func(context.Context, string) (application.Lockfile, error)
 	createPreviewAccess func(context.Context, string) (application.PreviewAccess, error)
+}
+
+type statisticsReaderStub struct {
+	items []riststats.Snapshot
+}
+
+func (s statisticsReaderStub) List(string) []riststats.Snapshot {
+	return s.items
 }
 
 func (s *serviceStub) CreateSession(ctx context.Context, name string) (domain.Session, error) {

@@ -6,6 +6,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
+	"github.com/traP-jp/kinugasa-recording/internal/console/riststats"
 )
 
 type errorResponse struct {
@@ -91,6 +92,29 @@ type cameraConnectionResponse struct {
 	URL    *string                       `json:"url"`
 	Status domain.CameraConnectionStatus `json:"status"`
 	Error  *string                       `json:"error"`
+}
+
+type ristStatisticsResponse struct {
+	CameraName       string    `json:"cameraName"`
+	GatewayInstance  string    `json:"gatewayInstance"`
+	FlowID           uint32    `json:"flowId"`
+	IntervalStart    time.Time `json:"intervalStart"`
+	IntervalEnd      time.Time `json:"intervalEnd"`
+	OutputPackets    uint64    `json:"outputPackets"`
+	LostPackets      uint64    `json:"lostPackets"`
+	RecoveredPackets uint64    `json:"recoveredPackets"`
+	Discontinuities  uint64    `json:"discontinuities"`
+	Stale            bool      `json:"stale"`
+}
+
+func newRISTStatisticsResponse(snapshot riststats.Snapshot) ristStatisticsResponse {
+	return ristStatisticsResponse{
+		CameraName: snapshot.CameraName, GatewayInstance: snapshot.GatewayInstance,
+		FlowID: snapshot.FlowID, IntervalStart: snapshot.IntervalStart, IntervalEnd: snapshot.IntervalEnd,
+		OutputPackets: snapshot.OutputPackets, LostPackets: snapshot.LostPackets,
+		RecoveredPackets: snapshot.RecoveredPackets, Discontinuities: snapshot.Discontinuities,
+		Stale: snapshot.Stale,
+	}
 }
 
 func newCameraConnectionResponse(camera repository.Camera) cameraConnectionResponse {
