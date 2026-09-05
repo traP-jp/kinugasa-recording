@@ -56,7 +56,7 @@ flowchart LR
 | console server / video worker           | [`contracts/console-video-worker/v1/console_video_worker.proto`](../../contracts/console-video-worker/v1/console_video_worker.proto)   | gRPCと再送規則を定義済み                      |
 | console server / 後段パイプライン       | [`contracts/lockfile/lockfile.schema.json`](../../contracts/lockfile/lockfile.schema.json)                                             | JSON Schemaで定義済み                         |
 | cameraクライアント / video gateway      | [外部インターフェース要求](../requirements-v2/14-specified-requirements/01-external-interfaces/external-interfaces.md)                 | RIST、H.264、30 fpsを要求                     |
-| video gateway / video worker            | [製品の位置づけ](../requirements-v2/08-product-perspective/product-perspective.md)                                                     | `ristreceiver`が復旧したRTP/MP2TをUDPで中継   |
+| video gateway / video worker            | [製品の位置づけ](../requirements-v2/08-product-perspective/product-perspective.md)                                                     | Rust video gatewayが復旧したRTP/MP2TをUDPで中継 |
 | video gateway / console server           | [`contracts/rist-telemetry/README.md`](../../contracts/rist-telemetry/README.md)                                                       | OTLP/gRPC Metricsで5秒ごとの統計を送信        |
 | video worker / video uploader           | [機能要求](../requirements-v2/14-specified-requirements/02-functions/functions.md)                                                     | shared volume上の確定済みファイルで連携       |
 | video uploader / console server         | [`contracts/console-video-uploader/v1/console_video_uploader.proto`](../../contracts/console-video-uploader/v1/console_video_uploader.proto) | gRPCと冪等な結果反映を定義済み             |

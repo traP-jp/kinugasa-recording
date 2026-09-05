@@ -1,11 +1,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, MeterProvider};
-use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::Resource;
+use opentelemetry_sdk::error::OTelSdkResult;
+use opentelemetry_sdk::metrics::data::ResourceMetrics;
+use opentelemetry_sdk::metrics::exporter::PushMetricExporter;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider, Temporality};
+use tokio::runtime::Runtime;
 
 pub const OUTPUT_PACKETS: &str = "kinugasa.rist.output.packets";
 pub const LOST_PACKETS: &str = "kinugasa.rist.lost.packets";
@@ -56,6 +60,31 @@ fn flow_attributes(flow_id: u32) -> [KeyValue; 1] {
 pub struct GatewayMetrics {
     provider: SdkMeterProvider,
     counters: Arc<MetricCounters>,
+    runtime: Runtime,
+}
+
+#[derive(Debug)]
+struct RuntimeMetricExporter {
+    exporter: opentelemetry_otlp::MetricExporter,
+    runtime: tokio::runtime::Handle,
+}
+
+impl PushMetricExporter for RuntimeMetricExporter {
+    async fn export(&self, metrics: &ResourceMetrics) -> OTelSdkResult {
+        self.runtime.block_on(self.exporter.export(metrics))
+    }
+
+    fn force_flush(&self) -> OTelSdkResult {
+        self.exporter.force_flush()
+    }
+
+    fn shutdown_with_timeout(&self, timeout: Duration) -> OTelSdkResult {
+        self.exporter.shutdown_with_timeout(timeout)
+    }
+
+    fn temporality(&self) -> Temporality {
+        self.exporter.temporality()
+    }
 }
 
 impl GatewayMetrics {
@@ -64,6 +93,13 @@ impl GatewayMetrics {
         identity: GatewayIdentity,
         interval: Duration,
     ) -> Result<Self, String> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("otel-metrics")
+            .enable_all()
+            .build()
+            .map_err(|error| format!("create OpenTelemetry runtime: {error}"))?;
+        let runtime_guard = runtime.enter();
         let exporter = opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_endpoint(endpoint)
@@ -71,6 +107,10 @@ impl GatewayMetrics {
             .with_temporality(Temporality::Delta)
             .build()
             .map_err(|error| format!("create OTLP metrics exporter: {error}"))?;
+        let exporter = RuntimeMetricExporter {
+            exporter,
+            runtime: runtime.handle().clone(),
+        };
         let reader = PeriodicReader::builder(exporter)
             .with_interval(interval)
             .build();
@@ -86,7 +126,6 @@ impl GatewayMetrics {
             .with_resource(resource)
             .with_reader(reader)
             .build();
-        global::set_meter_provider(provider.clone());
         let meter = provider.meter("kinugasa-video-gateway");
         let counters = Arc::new(MetricCounters {
             output_packets: meter
@@ -106,7 +145,12 @@ impl GatewayMetrics {
                 .with_unit("{event}")
                 .build(),
         });
-        Ok(Self { provider, counters })
+        drop(runtime_guard);
+        Ok(Self {
+            provider,
+            counters,
+            runtime,
+        })
     }
 
     pub fn metrics(&self) -> Arc<MetricCounters> {
@@ -114,8 +158,11 @@ impl GatewayMetrics {
     }
 
     pub fn shutdown(self) -> Result<(), String> {
-        self.provider
+        let result = self
+            .provider
             .shutdown()
-            .map_err(|error| format!("shut down metrics exporter: {error}"))
+            .map_err(|error| format!("shut down metrics exporter: {error}"));
+        self.runtime.shutdown_timeout(Duration::from_secs(3));
+        result
     }
 }

@@ -691,6 +691,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "rist-rs",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

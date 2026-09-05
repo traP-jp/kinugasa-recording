@@ -19,6 +19,10 @@ import (
 	"testing"
 	"time"
 
+	collectormetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	"google.golang.org/grpc"
+
+	"github.com/traP-jp/kinugasa-recording/internal/console/riststats"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/media"
 	"github.com/traP-jp/kinugasa-recording/internal/worker/recording"
 )
@@ -26,10 +30,10 @@ import (
 func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	ffmpeg := requireBinary(t, "ffmpeg")
 	ffprobe := requireBinary(t, "ffprobe")
-	ristreceiver := requireBinary(t, "ristreceiver")
+	videoGateway := requireVideoGateway(t)
 	mediamtx := requireBinary(t, "mediamtx")
 	udpPorts := freeUDPPorts(t, 3)
-	tcpAddresses := freeTCPAddresses(t, 2)
+	tcpAddresses := freeTCPAddresses(t, 3)
 	sharedVolume := t.TempDir()
 	t.Setenv("KINUGASA_SHARED_VOLUME", sharedVolume)
 	t.Setenv("KINUGASA_HOOK_HELPER", "1")
@@ -46,6 +50,20 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	defer cancel()
 	var serviceLog bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&serviceLog, nil))
+	statisticsStore := riststats.NewStore()
+	otlpListener, err := net.Listen("tcp", tcpAddresses[2])
+	if err != nil {
+		t.Fatalf("listen for OTLP metrics: %v", err)
+	}
+	otlpServer := grpc.NewServer()
+	collectormetricsv1.RegisterMetricsServiceServer(otlpServer, riststats.NewServer(statisticsStore, logger))
+	go func() {
+		if serveError := otlpServer.Serve(otlpListener); serveError != nil {
+			logger.Error("OTLP metrics server stopped", "error", serveError)
+		}
+	}()
+	t.Cleanup(otlpServer.GracefulStop)
+
 	bridgeDone := make(chan error, 1)
 	go func() {
 		bridgeDone <- media.RunRTPMPEGTSBridge(
@@ -80,21 +98,24 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 		t.Fatalf("wait for MediaMTX: %v; service log: %s", err, serviceLog.String())
 	}
 
-	gateway := exec.CommandContext(ctx, ristreceiver,
-		"-i", "rist://@127.0.0.1:"+strconv.Itoa(udpPorts[0]),
-		"-o", "rtp://127.0.0.1:"+strconv.Itoa(udpPorts[1]),
-		"-p", "1",
-		"-S", "1000",
+	gateway := exec.CommandContext(ctx, videoGateway,
+		"--input-url", "rist://@127.0.0.1:"+strconv.Itoa(udpPorts[0]),
+		"--output-address", "127.0.0.1:"+strconv.Itoa(udpPorts[1]),
+		"--recovery-buffer-ms", "1000",
+		"--otlp-endpoint", "http://"+tcpAddresses[2],
+		"--session-name", "integration",
+		"--camera-name", "camera",
+		"--gateway-instance", "integration-gateway",
 	)
 	gateway.Stdout = &serviceLog
 	gateway.Stderr = &serviceLog
 	if err := gateway.Start(); err != nil {
-		t.Fatalf("start ristreceiver gateway: %v", err)
+		t.Fatalf("start Rust video gateway: %v", err)
 	}
 	t.Cleanup(func() {
 		cancel()
 		if err := gateway.Wait(); err != nil && ctx.Err() == nil {
-			t.Errorf("stop ristreceiver gateway: %v; log: %s", err, serviceLog.String())
+			t.Errorf("stop Rust video gateway: %v; log: %s", err, serviceLog.String())
 		}
 	})
 
@@ -168,6 +189,27 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 		t.Fatalf("MediaMTX RTSP metadata does not contain H.264/30 fps: %s", liveMetadata)
 	}
 
+	statisticsContext, statisticsCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer statisticsCancel()
+	for {
+		statistics := statisticsStore.List("integration")
+		if len(statistics) == 1 && statistics[0].CameraName == "camera" && statistics[0].OutputPackets > 0 {
+			if statistics[0].LostPackets != 0 {
+				t.Fatalf("loss-free local RIST stream reported %d post-recovery lost packets", statistics[0].LostPackets)
+			}
+			intervalDuration := statistics[0].IntervalEnd.Sub(statistics[0].IntervalStart)
+			if intervalDuration < 4*time.Second || intervalDuration > 6*time.Second {
+				t.Fatalf("RIST statistics interval duration = %s, want approximately 5s", intervalDuration)
+			}
+			break
+		}
+		select {
+		case <-statisticsContext.Done():
+			t.Fatalf("RIST statistics did not reach Console receiver: %v; service log: %s", statisticsContext.Err(), serviceLog.String())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
 	var receiverLog bytes.Buffer
 	receiver := exec.CommandContext(waitContext, ffmpeg,
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp",
@@ -213,6 +255,24 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	if output, err := verify.CombinedOutput(); err != nil || !bytes.Contains(output, []byte("h264")) {
 		t.Fatalf("probe finalized MediaMTX recording: %v, output: %s", err, output)
 	}
+}
+
+func requireVideoGateway(t *testing.T) string {
+	t.Helper()
+	if path := os.Getenv("KINUGASA_VIDEO_GATEWAY_BINARY"); path != "" {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("KINUGASA_VIDEO_GATEWAY_BINARY %q is unavailable: %v", path, err)
+		}
+		return path
+	}
+	path, err := filepath.Abs("../../video-gateway/target/debug/kinugasa-video-gateway")
+	if err != nil {
+		t.Fatalf("resolve Rust video gateway path: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("Rust video gateway is required at %s; run cargo build --locked --manifest-path video-gateway/Cargo.toml: %v", path, err)
+	}
+	return path
 }
 
 func rateIsThirty(value string) bool {

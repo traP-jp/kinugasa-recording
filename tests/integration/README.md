@@ -6,8 +6,11 @@
 FFmpeg RIST sender -> Rust video gateway (rist-rs/librist) -> RTP/MP2T -> video worker -> MediaMTX -> RTSP -> FFmpeg decoder
 ```
 
-録画品質、frame drop、camera間driftは評価しない。必要なbinaryはNix development shellに含まれる。
+さらに、Rust video gatewayが5秒区間のRIST統計をOTLP/gRPCで送信し、console serverのreceiverが受信できることを確認する。録画品質、frame drop、camera間driftは評価しない。FFmpeg、FFprobeおよびMediaMTXはNix development shellに含まれる。video gatewayは先にbuildしておく。
 
 ```console
+nix develop -c cargo build --locked --manifest-path video-gateway/Cargo.toml
 nix develop -c go test -tags=integration -v ./tests/integration
 ```
+
+別のvideo gateway binaryを使用する場合は、`KINUGASA_VIDEO_GATEWAY_BINARY`にそのpathを指定する。
