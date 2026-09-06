@@ -69,8 +69,6 @@ type pointKey struct {
 	cameraName      string
 	gatewayInstance string
 	flowID          uint32
-	start           uint64
-	end             uint64
 }
 
 func parseMetrics(request *collectormetricsv1.ExportMetricsServiceRequest) ([]Statistics, int64, string) {
@@ -108,16 +106,24 @@ func parseMetrics(request *collectormetricsv1.ExportMetricsServiceRequest) ([]St
 					key := pointKey{
 						sessionName: attributes[sessionAttribute], cameraName: attributes[cameraAttribute],
 						gatewayInstance: attributes[instanceAttribute], flowID: flowID,
-						start: point.StartTimeUnixNano, end: point.TimeUnixNano,
 					}
+					intervalStart := unixNano(point.StartTimeUnixNano)
+					intervalEnd := unixNano(point.TimeUnixNano)
 					statistics := points[key]
 					if statistics == nil {
 						statistics = &Statistics{
 							SessionName: key.sessionName, CameraName: key.cameraName,
 							GatewayInstance: key.gatewayInstance, FlowID: key.flowID,
-							IntervalStart: unixNano(key.start), IntervalEnd: unixNano(key.end),
+							IntervalStart: intervalStart, IntervalEnd: intervalEnd,
 						}
 						points[key] = statistics
+					} else {
+						if intervalStart.Before(statistics.IntervalStart) {
+							statistics.IntervalStart = intervalStart
+						}
+						if intervalEnd.After(statistics.IntervalEnd) {
+							statistics.IntervalEnd = intervalEnd
+						}
 					}
 					field.add(statistics, value)
 				}

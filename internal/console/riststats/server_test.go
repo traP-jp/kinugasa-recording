@@ -31,6 +31,20 @@ func TestServerAcceptsAndGroupsRISTDeltaMetrics(t *testing.T) {
 		recoveredMetric:     7,
 		discontinuityMetric: 1,
 	})
+	for _, metric := range request.ResourceMetrics[0].ScopeMetrics[0].Metrics {
+		point := metric.GetSum().DataPoints[0]
+		switch metric.Name {
+		case lostPacketsMetric:
+			point.StartTimeUnixNano += uint64(10 * time.Microsecond)
+			point.TimeUnixNano += uint64(10 * time.Microsecond)
+		case recoveredMetric:
+			point.StartTimeUnixNano += uint64(20 * time.Microsecond)
+			point.TimeUnixNano += uint64(20 * time.Microsecond)
+		case discontinuityMetric:
+			point.StartTimeUnixNano += uint64(30 * time.Microsecond)
+			point.TimeUnixNano += uint64(30 * time.Microsecond)
+		}
+	}
 
 	response, err := server.Export(context.Background(), request)
 	if err != nil {
@@ -45,7 +59,7 @@ func TestServerAcceptsAndGroupsRISTDeltaMetrics(t *testing.T) {
 	got := recorder.statistics[0]
 	if got.SessionName != "session-1" || got.CameraName != "camera-1" || got.GatewayInstance != "pod-uid" || got.FlowID != 42 ||
 		got.OutputPackets != 100 || got.LostPackets != 2 || got.RecoveredPackets != 7 || got.Discontinuities != 1 ||
-		!got.IntervalStart.Equal(start) || !got.IntervalEnd.Equal(start.Add(5*time.Second)) {
+		!got.IntervalStart.Equal(start) || !got.IntervalEnd.Equal(start.Add(5*time.Second+30*time.Microsecond)) {
 		t.Fatalf("statistics = %+v", got)
 	}
 }
