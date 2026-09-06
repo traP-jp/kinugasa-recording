@@ -13,7 +13,7 @@ docker build -f deploy/images/video-worker.Dockerfile -t registry.example/kinuga
 docker build -f deploy/images/web.Dockerfile -t registry.example/kinugasa/web:VERSION .
 ```
 
-`video-gateway` imageはlibristの`ristreceiver`だけをruntimeとして含み、FFmpeg、FFprobeおよびGo製binaryを含まない。`video-worker` imageはMediaMTX、入力検証用のFFprobe、録画ファイルのhash計算およびobject storageへのupload機能を含む。
+`video-gateway` imageは、`rist-rs`を通じてlibristを使用するRust製gatewayをruntimeとして含む。gatewayは暗号化されたRISTを受信して復旧済みRTP/MP2Tをvideo workerへ中継し、5秒ごとのRIST統計をconsole serverのOTLP/gRPC endpointへ送信する。`video-worker` imageはMediaMTX、入力検証用のFFprobe、録画ファイルのhash計算およびobject storageへのupload機能を含む。
 
 ## Apply
 

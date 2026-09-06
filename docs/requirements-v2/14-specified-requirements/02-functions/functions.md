@@ -28,6 +28,7 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 | `POST` | `/api/sessions/{sessionName}/cameras` | cameraを追加する。 |
 | `DELETE` | `/api/sessions/{sessionName}/cameras/{cameraName}` | cameraを削除する。uploadingなVideoFileがある場合の強制削除を含む。 |
 | `GET` | `/api/sessions/{sessionName}/cameras/{cameraName}/connection` | cameraクライアントの接続先と接続状態を取得する。 |
+| `GET` | `/api/sessions/{sessionName}/rist-statistics` | Sessionに属するcameraごとの直近のRIST統計を取得する。 |
 
 ### take
 
@@ -58,6 +59,21 @@ REST APIのエンドポイント、リクエスト、レスポンスおよびエ
 ## console server - video worker間通信
 
 console serverとvideo worker間のcommand、event、状態同期および障害時の再送規則は、[console-server - video-worker gRPC contract](../../../../contracts/console-video-worker/README.md)に定義する。
+
+## RIST統計
+
+cameraごとのRIST統計として、次の量を扱う。
+
+| 量 | 単位 | 定義 |
+| --- | --- | --- |
+| 復旧後出力packet数 | packet | RISTのARQと並べ替え後に出力されたpacketの数 |
+| RIST回復後packet loss数 | packet | 復旧後のsequence列のgapに対応するpacketの数 |
+| 回復packet数 | packet | 一度欠落し、ARQによる再送で復旧後のsequence列に復帰したpacketの数 |
+| 不連続回数 | event | packet lossとして扱えないsequenceまたはtimestampの不連続の回数 |
+
+- 観測の時間軸は、連続する5秒の半開区間に分割する。隣接する区間は重複せず、各packetおよびeventは1つの区間にのみ属する。
+- 同じflowに対する各量は、共通の区間境界を用いて区間ごとに求める。
+- flowで最初に観測したpacketより前のpacket、sequence numberの正常なwrap-around、flowの開始または再作成、cameraクライアントの再起動、timestampのreset、duplicateおよび遅延した過去のpacketは、RIST回復後packet loss数に含めない。
 
 ## reconciliation
 

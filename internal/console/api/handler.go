@@ -13,6 +13,7 @@ import (
 	"github.com/traP-jp/kinugasa-recording/internal/console/application"
 	"github.com/traP-jp/kinugasa-recording/internal/console/domain"
 	"github.com/traP-jp/kinugasa-recording/internal/console/repository"
+	"github.com/traP-jp/kinugasa-recording/internal/console/riststats"
 )
 
 type Service interface {
@@ -33,15 +34,24 @@ type Service interface {
 }
 
 type Handler struct {
-	service Service
-	logger  *slog.Logger
+	service        Service
+	logger         *slog.Logger
+	ristStatistics RISTStatisticsReader
 }
 
-func NewHandler(service Service, logger *slog.Logger) http.Handler {
+type RISTStatisticsReader interface {
+	List(string) []riststats.Snapshot
+}
+
+func NewHandler(service Service, logger *slog.Logger, statistics ...RISTStatisticsReader) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	handler := &Handler{service: service, logger: logger}
+	var statisticsReader RISTStatisticsReader
+	if len(statistics) > 0 {
+		statisticsReader = statistics[0]
+	}
+	handler := &Handler{service: service, logger: logger, ristStatistics: statisticsReader}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.health)
 	mux.HandleFunc("GET /api/sessions", handler.listSessions)
@@ -51,6 +61,7 @@ func NewHandler(service Service, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{sessionName}/cameras", handler.createCamera)
 	mux.HandleFunc("DELETE /api/sessions/{sessionName}/cameras/{cameraName}", handler.deleteCamera)
 	mux.HandleFunc("GET /api/sessions/{sessionName}/cameras/{cameraName}/connection", handler.getCameraConnection)
+	mux.HandleFunc("GET /api/sessions/{sessionName}/rist-statistics", handler.listRISTStatistics)
 	mux.HandleFunc("GET /api/sessions/{sessionName}/ongoing-take", handler.getOngoingTake)
 	mux.HandleFunc("POST /api/sessions/{sessionName}/ongoing-take/start", handler.startTake)
 	mux.HandleFunc("POST /api/sessions/{sessionName}/ongoing-take/finish", handler.finishTake)

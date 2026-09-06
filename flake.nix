@@ -32,7 +32,18 @@
             protobuf
             protoc-gen-go
             protoc-gen-go-grpc
+            rustc
+            cargo
+            rustfmt
+            clippy
+            clang
+            libclang.lib
+            meson
+            ninja
           ];
+          shellHook = ''
+            export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
+          '';
         };
       };
     };

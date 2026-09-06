@@ -3,6 +3,7 @@
 /web/coverage/
 /web/dist/
 /web/node_modules/
+/video-gateway/target/
 
 *.tsbuildinfo
 *.local

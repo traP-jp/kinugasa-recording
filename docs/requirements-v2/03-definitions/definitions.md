@@ -1,1 +1,13 @@
 # 定義
+
+## RIST回復後packet loss
+
+video gatewayがlibristによるARQと並べ替えを完了した後の出力をflowごとに観測したとき、packetのsequence numberに残るgapに対応するpacket lossを、RIST回復後packet lossと呼ぶ。ARQにより回復したpacketはsequence列に復帰するため、RIST回復後packet lossには含めない。
+
+## RIST回復後packet loss率
+
+1つの5秒区間における、RIST回復後packet loss数の、復旧後出力packet数とRIST回復後packet loss数の合計に対する比率を、RIST回復後packet loss率と呼ぶ。この値はweb consoleが表示時に算出する派生値であり、クラスタ内で受け渡すRIST統計には含めない。区間内にpacketがない場合は0とみなさず、計測不能とする。
+
+## 不連続
+
+flowの開始または再作成、cameraクライアントの再起動、sequence numberの正常なwrap-around、またはtimestampのresetにより、前のpacketとの差分をpacket lossとして扱えない状態を不連続と呼ぶ。不連続はpacket lossとは別に観測する。

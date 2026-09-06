@@ -21,10 +21,12 @@ export function SessionConsolePage() {
   const [previewAccess, setPreviewAccess] = useState<PreviewAccess | null>(null);
   const loadSession = useCallback(() => api.getSession(sessionName), [sessionName]);
   const loadCameras = useCallback(() => api.listCameras(sessionName), [sessionName]);
+  const loadRISTStatistics = useCallback(() => api.listRISTStatistics(sessionName), [sessionName]);
   const loadOngoing = useCallback(() => api.getOngoingTake(sessionName), [sessionName]);
   const loadTakes = useCallback(() => api.listTakes(sessionName, 1, 100), [sessionName]);
   const session = usePollingResource(loadSession, 5000);
   const cameras = usePollingResource(loadCameras, 2000);
+  const ristStatistics = usePollingResource(loadRISTStatistics, 5000);
   const ongoing = usePollingResource(loadOngoing, 1500);
   const takes = usePollingResource(loadTakes, 3000);
 
@@ -53,7 +55,7 @@ export function SessionConsolePage() {
     setActionError(null);
     try {
       await operation();
-      await Promise.all([session.reload(), cameras.reload(), ongoing.reload(), takes.reload()]);
+      await Promise.all([session.reload(), cameras.reload(), ristStatistics.reload(), ongoing.reload(), takes.reload()]);
     } catch (error) {
       setActionError(error instanceof Error ? error : new Error(String(error)));
       throw error;
@@ -85,9 +87,9 @@ export function SessionConsolePage() {
     <AppShell sessionName={sessionName}>
       <header className="console-header">
         <div><span className="eyebrow">Session console</span><h1>{session.data?.name ?? sessionName}</h1><p>{session.data?.id}</p></div>
-        <Button variant="quiet" icon={<RefreshCw size={16} />} onClick={() => void Promise.all([cameras.reload(), ongoing.reload(), takes.reload()])}>更新</Button>
+        <Button variant="quiet" icon={<RefreshCw size={16} />} onClick={() => void Promise.all([cameras.reload(), ristStatistics.reload(), ongoing.reload(), takes.reload()])}>更新</Button>
       </header>
-      <ErrorBanner error={actionError ?? session.error ?? cameras.error ?? ongoing.error ?? takes.error} onDismiss={() => setActionError(null)} />
+      <ErrorBanner error={actionError ?? session.error ?? cameras.error ?? ristStatistics.error ?? ongoing.error ?? takes.error} onDismiss={() => setActionError(null)} />
       <section className="console-layout">
         <div className="console-main">
           <section className="panel preview-panel">
@@ -110,6 +112,7 @@ export function SessionConsolePage() {
                   sessionName={sessionName}
                   camera={camera}
                   deletionDisabled={hasOngoing}
+                  ristStatistics={(ristStatistics.data ?? []).filter((item) => item.cameraName === camera.name)}
                   onPrepareDelete={prepareCameraDeletion}
                   onDelete={(name, force) => mutate(() => api.deleteCamera(sessionName, name, force))}
                 />

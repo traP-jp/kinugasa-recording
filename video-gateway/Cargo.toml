@@ -1,0 +1,15 @@
+[package]
+name = "kinugasa-video-gateway"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.47", features = ["derive", "env"] }
+ctrlc = "3.5.0"
+opentelemetry = { version = "0.31.0", features = ["metrics"] }
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "metrics"] }
+opentelemetry_sdk = { version = "0.31.0", features = ["metrics"] }
+rist-rs = { git = "https://github.com/comavius/rist-rs.git", rev = "28b670e428438e96c88d5a91cf5d18623452c875" }
+tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }

@@ -38,6 +38,8 @@ paths:
     $ref: ./paths/camera.yaml
   /sessions/{sessionName}/cameras/{cameraName}/connection:
     $ref: ./paths/camera-connection.yaml
+  /sessions/{sessionName}/rist-statistics:
+    $ref: ./paths/rist-statistics.yaml
   /sessions/{sessionName}/ongoing-take:
     $ref: ./paths/ongoing-take.yaml
   /sessions/{sessionName}/ongoing-take/start:

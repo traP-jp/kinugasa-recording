@@ -35,3 +35,18 @@
 - 対象workerが処理していたuploadingなVideoFileがすべてerroredになり、それらのuploadが再開されないことを確認する。
 - 同じworkerが録画中であった場合は対応するRecordingCameraもerroredになり、OngoingTake、他のRecordingCameraおよび他のVideoFileの状態が維持されることを確認する。
 - video workerが再起動され、新しいUUIDがCameraConnectionのvideoWorkerIdに反映されることを確認する。
+
+## RIST回復後packet lossの観測
+
+- 既知のsequence numberとtimestampを持つpacket列を用い、gapがない場合、複数のgapがある場合、duplicateがある場合、遅延packetがある場合およびsequence numberがwrap-aroundする場合を検証する。
+- flowの開始と再作成、cameraクライアントの再起動およびtimestampのresetがpacket lossとして数えられないことを確認する。
+- RISTの往路と復路の間に制御可能なUDP loss proxyを配置し、ARQで回復可能なpacket lossと、recovery bufferの期限を超えるburst lossを別々付加する。
+- ARQで回復可能なpacket lossでは、libristの回復packet数が増加し、復旧後sequence列にそのpacketのgapが残らないことを確認する。
+- recovery bufferの期限を超えるburst lossでは、復旧後sequence列のgapとOpenTelemetry MetricsのRIST回復後packet loss数が一致することを確認する。
+- video gatewayが出力するRTPのsequence number、timestampおよびSSRCが、RIST回復後packetのsequence number、NTP timestampおよびflow IDから要求どおりに生成されていることを確認する。
+- クラスタ内で受け渡すRIST統計にRIST回復後packet loss率が含まれないことを確認する。
+- 報告される各量の5秒区間が連続し、隣接区間で重複しないこと、および同じpacketまたはeventが複数の区間に計上されないことを確認する。
+- web consoleが、同じ5秒区間の復旧後出力packet数とRIST回復後packet loss数からRIST回復後packet loss率を正しく算出することを確認する。
+- gatewayまたはconsole serverを再起動した際に、再起動前後のCounterを差し引いた異常値が表示されないことを確認する。
+- console serverを停止した状態でも、video gatewayがRISTの受信とvideo workerへのRTP送信を継続することを確認する。
+- telemetry dataが5秒を超えて更新されない場合にweb consoleがstaleを表示し、分母が0の場合に0% packet lossと表示しないことを確認する。

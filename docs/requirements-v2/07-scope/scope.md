@@ -4,6 +4,7 @@
 
 - cameraクライアントが接続するためのURLの払い出しと、cameraごとのvideo workerの起動
 - RISTを用いて送信される映像および音声の受信
+- RISTのARQによる回復後に残ったpacket loss率の観測とweb consoleでの逐次表示
 - cameraごとの映像の録画と、take単位での録画の一括開始・停止
 - video worker Podに割り当てたPersistentVolumeClaim上での録画ファイルの一時保持
 - 録画のハッシュ計算とオブジェクトストレージへのアップロード

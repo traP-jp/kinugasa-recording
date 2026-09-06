@@ -1,20 +1,22 @@
 import { Cable, QrCode, Trash2, Video } from "lucide-react";
 import { useState } from "react";
-import type { CameraConnection } from "../../api/types";
+import type { CameraConnection, RISTStatistics } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { CameraConnectionModal } from "./CameraConnectionModal";
 import { CameraDeletionConfirmation } from "./CameraDeletionConfirmation";
+import { RISTStatisticsPanel } from "./RISTStatisticsPanel";
 
 interface CameraCardProps {
   sessionName: string;
   camera: CameraConnection;
   deletionDisabled: boolean;
+  ristStatistics: RISTStatistics[];
   onPrepareDelete: (name: string) => Promise<string[]>;
   onDelete: (name: string, force: boolean) => Promise<void>;
 }
 
-export function CameraCard({ sessionName, camera, deletionDisabled, onPrepareDelete, onDelete }: CameraCardProps) {
+export function CameraCard({ sessionName, camera, deletionDisabled, ristStatistics, onPrepareDelete, onDelete }: CameraCardProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [deletionOpen, setDeletionOpen] = useState(false);
   const [uploadingTakeNames, setUploadingTakeNames] = useState<string[]>([]);
@@ -63,6 +65,7 @@ export function CameraCard({ sessionName, camera, deletionDisabled, onPrepareDel
         <div className="camera-card-title"><h3>{camera.name}</h3><StatusBadge status={camera.status} /></div>
         {camera.error && <p className="inline-error">{camera.error}</p>}
         {!camera.error && <p>{camera.status === "connected" ? "映像を受信しています" : "Camera clientの接続を待っています"}</p>}
+        <RISTStatisticsPanel statistics={ristStatistics} />
       </div>
       <div className="camera-card-actions">
         <Button
