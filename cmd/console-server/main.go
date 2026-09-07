@@ -103,7 +103,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	service := application.New(repository).
 		WithCommandDispatcher(workerRegistry).
 		WithObjectBucket(serverConfig.ObjectBucket).
-		WithPreviewAccess(serverConfig.LiveKitURL, serverConfig.PreviewTTL, previewIssuer)
+		WithPreviewAccess(serverConfig.LiveKitPublicURL, serverConfig.PreviewTTL, previewIssuer)
 	server := &http.Server{
 		Addr:              serverConfig.ListenAddress,
 		Handler:           api.NewHandler(service, logger, ristStatistics),

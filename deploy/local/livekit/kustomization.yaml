@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kinugasa-recording
+
+resources:
+- namespace.yaml
+- redis.yaml
+- livekit.yaml
+- livekit-ingress.yaml
+
+configMapGenerator:
+- name: livekit-local-public
+  literals:
+  - nodeIP=172.18.0.2
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+replacements:
+- source:
+    kind: ConfigMap
+    name: livekit-local-public
+    fieldPath: data.nodeIP
+  targets:
+  - select:
+      kind: Deployment
+      name: livekit
+    fieldPaths:
+    - spec.template.spec.containers.[name=livekit].env.[name=NODE_IP].value

@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit-ingress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: livekit-ingress
+  template:
+    metadata:
+      labels:
+        app: livekit-ingress
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: ingress
+        image: comavius/ingress:2004984
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: INGRESS_CONFIG_BODY
+          value: |
+            log_level: info
+            api_key: devkey
+            api_secret: local-livekit-secret-0123456789abcd
+            ws_url: ws://livekit:7880
+            redis:
+              address: redis:6379
+        ports:
+        - name: whip
+          containerPort: 8080
+          protocol: TCP
+        - name: rtmp
+          containerPort: 1935
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit-ingress
+spec:
+  type: ClusterIP
+  selector:
+    app: livekit-ingress
+  ports:
+  - name: whip
+    port: 8080
+    targetPort: whip
+    protocol: TCP
+  - name: rtmp
+    port: 1935
+    targetPort: rtmp
+    protocol: TCP

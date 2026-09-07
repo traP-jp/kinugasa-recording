@@ -15,28 +15,30 @@ const (
 )
 
 type Config struct {
-	DatabaseURL   string
-	ObjectBucket  string
-	LiveKitURL    string
-	LiveKitAPIKey string
-	LiveKitSecret string
-	PreviewTTL    time.Duration
-	ListenAddress string
-	GRPCAddress   string
-	ShutdownWait  time.Duration
+	DatabaseURL      string
+	ObjectBucket     string
+	LiveKitURL       string
+	LiveKitPublicURL string
+	LiveKitAPIKey    string
+	LiveKitSecret    string
+	PreviewTTL       time.Duration
+	ListenAddress    string
+	GRPCAddress      string
+	ShutdownWait     time.Duration
 }
 
 func FromEnvironment() (Config, error) {
 	config := Config{
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		ObjectBucket:  os.Getenv("KINUGASA_S3_BUCKET"),
-		LiveKitURL:    os.Getenv("LIVEKIT_URL"),
-		LiveKitAPIKey: os.Getenv("LIVEKIT_API_KEY"),
-		LiveKitSecret: os.Getenv("LIVEKIT_API_SECRET"),
-		PreviewTTL:    defaultPreviewTokenTTL,
-		ListenAddress: valueOrDefault(os.Getenv("LISTEN_ADDRESS"), defaultListenAddress),
-		GRPCAddress:   valueOrDefault(os.Getenv("GRPC_LISTEN_ADDRESS"), defaultGRPCAddress),
-		ShutdownWait:  defaultShutdownTimeout,
+		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		ObjectBucket:     os.Getenv("KINUGASA_S3_BUCKET"),
+		LiveKitURL:       os.Getenv("LIVEKIT_URL"),
+		LiveKitPublicURL: os.Getenv("LIVEKIT_PUBLIC_URL"),
+		LiveKitAPIKey:    os.Getenv("LIVEKIT_API_KEY"),
+		LiveKitSecret:    os.Getenv("LIVEKIT_API_SECRET"),
+		PreviewTTL:       defaultPreviewTokenTTL,
+		ListenAddress:    valueOrDefault(os.Getenv("LISTEN_ADDRESS"), defaultListenAddress),
+		GRPCAddress:      valueOrDefault(os.Getenv("GRPC_LISTEN_ADDRESS"), defaultGRPCAddress),
+		ShutdownWait:     defaultShutdownTimeout,
 	}
 	if config.DatabaseURL == "" || config.ObjectBucket == "" || config.LiveKitURL == "" ||
 		config.LiveKitAPIKey == "" || config.LiveKitSecret == "" {
@@ -45,6 +47,13 @@ func FromEnvironment() (Config, error) {
 	liveKitURL, err := url.Parse(config.LiveKitURL)
 	if err != nil || liveKitURL.Host == "" || (liveKitURL.Scheme != "ws" && liveKitURL.Scheme != "wss") {
 		return Config{}, fmt.Errorf("LIVEKIT_URL must be an absolute ws or wss URL")
+	}
+	if config.LiveKitPublicURL == "" {
+		config.LiveKitPublicURL = config.LiveKitURL
+	}
+	liveKitPublicURL, err := url.Parse(config.LiveKitPublicURL)
+	if err != nil || liveKitPublicURL.Host == "" || (liveKitPublicURL.Scheme != "ws" && liveKitPublicURL.Scheme != "wss") {
+		return Config{}, fmt.Errorf("LIVEKIT_PUBLIC_URL must be an absolute ws or wss URL")
 	}
 	if value := os.Getenv("SHUTDOWN_TIMEOUT"); value != "" {
 		duration, err := time.ParseDuration(value)
