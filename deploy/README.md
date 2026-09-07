@@ -17,7 +17,7 @@ docker build -f deploy/images/web.Dockerfile -t registry.example/kinugasa/web:VE
 
 ## Apply
 
-1. [`secrets.example.yaml`](./secrets.example.yaml)をコピーし、実値をSecret managerなどから投入する。`LIVEKIT_URL`にはconsole serverから到達できるLiveKit URLを設定する。web consoleのbrowserへ返すURLが異なる場合は`LIVEKIT_PUBLIC_URL`に公開URLを設定する。未設定の場合は`LIVEKIT_URL`を公開URLとしても使用する。`VIDEO_GATEWAY_RIST_ENCRYPTION_PEPPER`には`openssl rand -base64 32`などで生成した32 byte以上のランダム値を設定する。
+1. [`secrets.example.yaml`](./secrets.example.yaml)をコピーし、実値をSecret managerなどから投入する。base manifestはクラスタ内にLiveKit serverとcomavius/ingressを配置するため、`LIVEKIT_URL`には通常`ws://livekit:7880`を設定する。web consoleのbrowserへ返すURLが異なる場合は`LIVEKIT_PUBLIC_URL`に公開URLを設定する。未設定の場合は`LIVEKIT_URL`を公開URLとしても使用する。`LIVEKIT_API_KEY`と`LIVEKIT_API_SECRET`は`base/livekit`内のLiveKit server / comavius/ingress設定と同じ値にする。`VIDEO_GATEWAY_RIST_ENCRYPTION_PEPPER`には`openssl rand -base64 32`などで生成した32 byte以上のランダム値を設定する。
 2. `deploy/base`のimage名と、必要に応じてPVC容量・StorageClassをoverlayで変更する。
 3. CRD、RBAC、console server、web consoleを適用する。
 

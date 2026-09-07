@@ -29,6 +29,9 @@ spec:
         app: livekit
     spec:
       enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: livekit
         image: livekit/livekit-server:latest
@@ -36,27 +39,23 @@ spec:
         args:
         - --config
         - /etc/livekit/livekit.yaml
-        env:
-        - name: NODE_IP
-          value: 172.18.0.2
-        - name: LIVEKIT_RTC_TCP_PORT
-          value: "31877"
-        - name: LIVEKIT_RTC_PORT_RANGE_START
-          value: "50000"
-        - name: LIVEKIT_RTC_PORT_RANGE_END
-          value: "50020"
-        - name: LIVEKIT_RTC_USE_EXTERNAL_IP
-          value: "false"
+        envFrom:
+        - configMapRef:
+            name: livekit-runtime-env
         ports:
         - name: signal
           containerPort: 7880
           protocol: TCP
         - name: rtc-tcp
-          containerPort: 31877
+          containerPort: 7881
           protocol: TCP
         volumeMounts:
         - name: config
           mountPath: /etc/livekit
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
       volumes:
       - name: config
         configMap:
@@ -67,17 +66,15 @@ kind: Service
 metadata:
   name: livekit
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: livekit
   ports:
   - name: signal
     port: 7880
     targetPort: signal
-    nodePort: 30780
     protocol: TCP
   - name: rtc-tcp
     port: 7881
     targetPort: rtc-tcp
-    nodePort: 31877
     protocol: TCP

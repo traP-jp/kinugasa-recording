@@ -13,6 +13,9 @@ spec:
         app: redis
     spec:
       enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: redis
         image: redis:7-alpine

@@ -4,26 +4,21 @@ namespace: kinugasa-recording
 
 resources:
 - namespace.yaml
-- redis.yaml
-- livekit.yaml
-- livekit-ingress.yaml
+- ../../base/livekit
 
 configMapGenerator:
-- name: livekit-local-public
+- name: livekit-runtime-env
+  behavior: merge
   literals:
-  - nodeIP=172.18.0.2
+  - NODE_IP=172.18.0.2
+  - LIVEKIT_RTC_TCP_PORT=31877
 
 generatorOptions:
   disableNameSuffixHash: true
 
-replacements:
-- source:
-    kind: ConfigMap
-    name: livekit-local-public
-    fieldPath: data.nodeIP
-  targets:
-  - select:
-      kind: Deployment
-      name: livekit
-    fieldPaths:
-    - spec.template.spec.containers.[name=livekit].env.[name=NODE_IP].value
+patches:
+- target:
+    kind: Deployment
+    name: livekit
+  path: livekit-rtc-container-port-patch.yaml
+- path: livekit-nodeport-service-patch.yaml

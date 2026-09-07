@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- redis.yaml
+- livekit.yaml
+- livekit-ingress.yaml
+
+configMapGenerator:
+- name: livekit-runtime-env
+  literals:
+  - LIVEKIT_RTC_TCP_PORT=7881
+  - LIVEKIT_RTC_PORT_RANGE_START=50000
+  - LIVEKIT_RTC_PORT_RANGE_END=50020
+  - LIVEKIT_RTC_USE_EXTERNAL_IP=false
+
+generatorOptions:
+  disableNameSuffixHash: true

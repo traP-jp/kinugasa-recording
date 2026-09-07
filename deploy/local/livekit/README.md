@@ -1,6 +1,6 @@
 # Local LiveKit
 
-`deploy/local/livekit`は、local / k3dでLiveKit previewを動かすためのKustomize overlayである。production向けの`deploy/base`は外部LiveKit利用を前提にしているため、このoverlayは独立して適用する。LiveKit server、comavius/ingress、Redisを含む。
+`deploy/local/livekit`は、local / k3dでLiveKit previewを動かすためのKustomize overlayである。LiveKit server、comavius/ingress、Redisの共通定義は`deploy/base/livekit`に置き、このoverlayではlocal向けのNodePortとadvertised IPだけを上書きする。
 
 ```console
 kubectl apply -k deploy/local/livekit
@@ -24,4 +24,4 @@ LIVEKIT_PUBLIC_URL=ws://127.0.0.1:7880
 
 LiveKitはRTC candidateのadvertise portをlisten portから独立して指定する設定を持たない。そのため、local NodePort経由でブラウザ受信を成立させるには、`LIVEKIT_RTC_TCP_PORT`、`livekit` containerの`rtc-tcp` port、`livekit` Serviceの`rtc-tcp.nodePort`を同じ値にする。
 
-`nodeIP`は`kustomization.yaml`の`livekit-local-public` ConfigMap generatorで指定し、`NODE_IP`環境変数へ反映する。k3d nodeのIPが変わった場合はこの値を更新する。
+`NODE_IP`は`kustomization.yaml`の`livekit-runtime-env` ConfigMap generatorで指定する。k3d nodeのIPが変わった場合はこの値を更新する。

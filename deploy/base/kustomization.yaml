@@ -4,5 +4,6 @@ namespace: kinugasa-recording
 resources:
 - namespace.yaml
 - service-account.yaml
+- livekit
 - console-server.yaml
 - web.yaml
