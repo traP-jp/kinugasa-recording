@@ -25,6 +25,7 @@ const (
 
 type PreviewIngress interface {
 	Create(context.Context, string, string, string) (livekitingress.Endpoint, error)
+	Exists(context.Context, string) (bool, error)
 	Delete(context.Context, string) error
 }
 
@@ -45,6 +46,13 @@ func (r *Reconciler) ensureConnectionSecret(
 		if len(existing.Data[previewIngressIDKey]) == 0 || len(existing.Data[previewURLKey]) == 0 ||
 			len(existing.Data[previewTokenKey]) == 0 {
 			return fmt.Errorf("connection Secret %s is incomplete", existing.Name)
+		}
+		exists, err := r.PreviewIngress.Exists(ctx, string(existing.Data[previewIngressIDKey]))
+		if err != nil {
+			return fmt.Errorf("verify LiveKit WHIP ingress: %w", err)
+		}
+		if !exists {
+			return r.refreshConnectionSecret(ctx, connection, &existing, ristSecret)
 		}
 		if !bytes.Equal(existing.Data[ristSecretKey], ristSecret) {
 			base := existing.DeepCopy()
@@ -96,6 +104,36 @@ func (r *Reconciler) ensureConnectionSecret(
 		return errors.Join(fmt.Errorf("create connection Secret: %w", err), cleanupError)
 	}
 	return r.restartWorkerPod(ctx, key)
+}
+
+func (r *Reconciler) refreshConnectionSecret(
+	ctx context.Context,
+	connection *recordingv1alpha1.CameraConnection,
+	secret *corev1.Secret,
+	ristSecret []byte,
+) error {
+	endpoint, err := r.PreviewIngress.Create(
+		ctx,
+		connection.Spec.SessionName,
+		connection.Spec.CameraName,
+		"kinugasa-"+connection.Name,
+	)
+	if err != nil {
+		return fmt.Errorf("recreate LiveKit WHIP ingress: %w", err)
+	}
+	base := secret.DeepCopy()
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+	secret.Data[previewIngressIDKey] = []byte(endpoint.IngressID)
+	secret.Data[previewURLKey] = []byte(endpoint.URL)
+	secret.Data[previewTokenKey] = []byte(endpoint.StreamKey)
+	secret.Data[ristSecretKey] = ristSecret
+	if err := r.Patch(ctx, secret, client.MergeFrom(base)); err != nil {
+		cleanupError := r.PreviewIngress.Delete(ctx, endpoint.IngressID)
+		return errors.Join(fmt.Errorf("refresh connection Secret: %w", err), cleanupError)
+	}
+	return r.restartWorkerPod(ctx, client.ObjectKeyFromObject(connection))
 }
 
 func (r *Reconciler) restartWorkerPod(ctx context.Context, key client.ObjectKey) error {

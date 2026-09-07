@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-func TestClientCreatesAndDeletesWHIPIngress(t *testing.T) {
-	methods := make(chan string, 2)
+func TestClientCreatesChecksAndDeletesWHIPIngress(t *testing.T) {
+	methods := make(chan string, 3)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		methods <- request.URL.Path
 		assertAdminToken(t, request.Header.Get("Authorization"))
@@ -27,6 +27,15 @@ func TestClientCreatesAndDeletesWHIPIngress(t *testing.T) {
 				t.Errorf("create request = %+v", body)
 			}
 			_, _ = response.Write([]byte(`{"ingressId":"IN_1","url":"https://ingress.example.com/whip","streamKey":"stream-key"}`))
+		case "/twirp/livekit.Ingress/ListIngress":
+			var body listIngressRequest
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Errorf("decode list request: %v", err)
+			}
+			if body.IngressID != "IN_1" {
+				t.Errorf("list request = %+v", body)
+			}
+			_, _ = response.Write([]byte(`{"items":[{"ingress_id":"IN_1","url":"https://ingress.example.com/whip","stream_key":"stream-key"}]}`))
 		case "/twirp/livekit.Ingress/DeleteIngress":
 			_, _ = response.Write([]byte(`{"ingressId":"IN_1"}`))
 		default:
@@ -47,16 +56,20 @@ func TestClientCreatesAndDeletesWHIPIngress(t *testing.T) {
 	if endpoint.IngressID != "IN_1" || endpoint.StreamKey != "stream-key" {
 		t.Fatalf("Create() = %+v", endpoint)
 	}
+	exists, err := client.Exists(context.Background(), endpoint.IngressID)
+	if err != nil || !exists {
+		t.Fatalf("Exists() = %t, %v", exists, err)
+	}
 	if err := client.Delete(context.Background(), endpoint.IngressID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	close(methods)
-	if len(methods) != 2 {
+	if len(methods) != 3 {
 		t.Fatalf("API call count = %d", len(methods))
 	}
 }
 
-func TestClientTreatsMissingIngressAsDeleted(t *testing.T) {
+func TestClientTreatsMissingIngressAsDeletedAndAbsent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 		response.WriteHeader(http.StatusNotFound)
 		_, _ = response.Write([]byte(`{"code":"not_found","msg":"missing"}`))
@@ -68,6 +81,10 @@ func TestClientTreatsMissingIngressAsDeleted(t *testing.T) {
 	}
 	if err := client.Delete(context.Background(), "IN_missing"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
+	}
+	exists, err := client.Exists(context.Background(), "IN_missing")
+	if err != nil || exists {
+		t.Fatalf("Exists() = %t, %v", exists, err)
 	}
 }
 

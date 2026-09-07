@@ -93,6 +93,26 @@ func (c *Client) Delete(ctx context.Context, ingressID string) error {
 	return err
 }
 
+func (c *Client) Exists(ctx context.Context, ingressID string) (bool, error) {
+	if ingressID == "" {
+		return false, fmt.Errorf("ingress ID must be set")
+	}
+	var response listIngressResponse
+	err := c.call(ctx, "ListIngress", listIngressRequest{IngressID: ingressID}, &response)
+	if apiError, ok := err.(*APIError); ok && apiError.Code == "not_found" {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, item := range response.Items {
+		if item.endpoint().IngressID == ingressID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (c *Client) call(ctx context.Context, method string, body, response any) error {
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -164,6 +184,14 @@ type createRequest struct {
 
 type deleteRequest struct {
 	IngressID string `json:"ingressId"`
+}
+
+type listIngressRequest struct {
+	IngressID string `json:"ingressId"`
+}
+
+type listIngressResponse struct {
+	Items []ingressResponse `json:"items"`
 }
 
 type ingressResponse struct {

@@ -180,6 +180,52 @@ func TestEnsureConnectionSecretAddsRISTKeyAndRestartsPod(t *testing.T) {
 	}
 }
 
+func TestEnsureConnectionSecretRefreshesMissingLiveKitIngress(t *testing.T) {
+	scheme := testScheme(t)
+	connection := testConnection()
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: connection.Name, Namespace: connection.Namespace},
+		Data: map[string][]byte{
+			previewIngressIDKey: []byte("IN_stale"),
+			previewURLKey:       []byte("https://stale-ingress.example.com/whip"),
+			previewTokenKey:     []byte("stale-stream-key"),
+			ristSecretKey:       []byte(deriveRISTSecret(connection, testConfig().RISTEncryptionPepper)),
+		},
+	}
+	if err := controllerutil.SetControllerReference(connection, secret, scheme); err != nil {
+		t.Fatal(err)
+	}
+	pod := desiredPod(connection, testConfig())
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(connection, secret, pod).Build()
+	previewIngress := &previewIngressStub{exists: false}
+	reconciler := &Reconciler{
+		Client: fakeClient, APIReader: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: previewIngress,
+		WorkerFailures: workerFailureStub{},
+	}
+	key := client.ObjectKeyFromObject(connection)
+
+	if err := reconciler.ensureConnectionSecret(context.Background(), connection); err != nil {
+		t.Fatalf("ensureConnectionSecret() error = %v", err)
+	}
+	var updated corev1.Secret
+	if err := fakeClient.Get(context.Background(), key, &updated); err != nil {
+		t.Fatalf("get connection Secret: %v", err)
+	}
+	if got, want := string(updated.Data[previewIngressIDKey]), "IN_test"; got != want {
+		t.Fatalf("preview ingress ID = %q, want %q", got, want)
+	}
+	if got, want := string(updated.Data[previewTokenKey]), "stream-key"; got != want {
+		t.Fatalf("preview token = %q, want %q", got, want)
+	}
+	if previewIngress.created != 1 {
+		t.Fatalf("created ingress count = %d, want 1", previewIngress.created)
+	}
+	var removed corev1.Pod
+	if err := fakeClient.Get(context.Background(), key, &removed); !apierrors.IsNotFound(err) {
+		t.Fatalf("worker Pod still exists or Get failed: %v", err)
+	}
+}
+
 func TestCameraURLForLoadBalancerService(t *testing.T) {
 	service := &corev1.Service{
 		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 9000}}},
@@ -351,7 +397,7 @@ func testConfig() Config {
 
 func testReconciler(fakeClient client.Client, scheme *runtime.Scheme) *Reconciler {
 	return &Reconciler{
-		Client: fakeClient, APIReader: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{},
+		Client: fakeClient, APIReader: fakeClient, Scheme: scheme, Config: testConfig(), PreviewIngress: &previewIngressStub{exists: true},
 		WorkerFailures: workerFailureStub{},
 	}
 }
@@ -361,6 +407,8 @@ type workerFailureStub struct{}
 func (workerFailureStub) MarkWorkerFailure(context.Context, string, string) error { return nil }
 
 type previewIngressStub struct {
+	exists  bool
+	created int
 	deleted []string
 }
 
@@ -371,9 +419,14 @@ func (s *previewIngressStub) Create(
 	if room == "" || participantIdentity == "" || name == "" {
 		return livekitingress.Endpoint{}, fmt.Errorf("incomplete ingress identity")
 	}
+	s.created++
 	return livekitingress.Endpoint{
 		IngressID: "IN_test", URL: "https://ingress.example.com/whip", StreamKey: "stream-key",
 	}, nil
+}
+
+func (s *previewIngressStub) Exists(_ context.Context, _ string) (bool, error) {
+	return s.exists, nil
 }
 
 func (s *previewIngressStub) Delete(_ context.Context, ingressID string) error {
