@@ -5,6 +5,10 @@ export function packetLossRate(statistics: RISTStatistics): number | null {
   return total === 0 ? null : statistics.lostPackets / total;
 }
 
+export function hasPacketRecoveryFailure(statistics: RISTStatistics[]): boolean {
+  return statistics.some((item) => !item.stale && item.lostPackets > 0);
+}
+
 export function formatPacketLossRate(rate: number | null): string {
   if (rate === null) return "計測不能";
   return new Intl.NumberFormat("ja-JP", {

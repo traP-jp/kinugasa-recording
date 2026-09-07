@@ -1,22 +1,23 @@
 import { CircleStop, Radio, Video } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { CameraConnection, OngoingTakeResult } from "../../api/types";
+import type { OngoingTakeResult } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
 import { formatDateTime } from "../../lib/format";
 import { loadLastTakeCameras, storeLastTakeCameras } from "../../lib/takeCameraSelection";
+import type { CameraDisplayState } from "../cameras/cameraDisplayState";
 import { CameraSelectionActions } from "./CameraSelectionActions";
 
 interface TakeControlsProps {
   sessionName: string;
-  cameras: CameraConnection[];
+  cameras: CameraDisplayState[];
   ongoing: OngoingTakeResult;
   onStart: (name: string, cameras: string[]) => Promise<void>;
   onFinish: () => Promise<void>;
 }
 
 export function TakeControls({ sessionName, cameras, ongoing, onStart, onFinish }: TakeControlsProps) {
-  const connected = useMemo(() => cameras.filter((camera) => camera.status === "connected"), [cameras]);
+  const connected = useMemo(() => cameras.filter((camera) => camera.camera.status === "connected"), [cameras]);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>(() => loadLastTakeCameras(sessionName));
   const [busy, setBusy] = useState(false);
@@ -24,7 +25,7 @@ export function TakeControls({ sessionName, cameras, ongoing, onStart, onFinish 
     setSelected(loadLastTakeCameras(sessionName));
   }, [sessionName]);
   useEffect(() => {
-    setSelected((current) => current.filter((item) => connected.some((camera) => camera.name === item)));
+    setSelected((current) => current.filter((item) => connected.some((camera) => camera.camera.name === item)));
   }, [connected]);
 
   if (ongoing.type === "present") {
@@ -81,18 +82,18 @@ export function TakeControls({ sessionName, cameras, ongoing, onStart, onFinish 
           <CameraSelectionActions
             allSelected={selected.length === connected.length}
             noneSelected={selected.length === 0}
-            onSelectAll={() => setSelected(connected.map((camera) => camera.name))}
+            onSelectAll={() => setSelected(connected.map((camera) => camera.camera.name))}
             onClear={() => setSelected([])}
           />
         )}
-        {connected.length === 0 ? <p className="muted">接続済みのCameraがありません。</p> : connected.map((camera) => (
-          <label className="camera-check" key={camera.name}>
+        {connected.length === 0 ? <p className="muted">接続済みのCameraがありません。</p> : connected.map((cameraDisplay) => (
+          <label className="camera-check" key={cameraDisplay.camera.name}>
             <input
               type="checkbox"
-              checked={selected.includes(camera.name)}
-              onChange={(event) => setSelected((current) => event.target.checked ? [...current, camera.name] : current.filter((name) => name !== camera.name))}
+              checked={selected.includes(cameraDisplay.camera.name)}
+              onChange={(event) => setSelected((current) => event.target.checked ? [...current, cameraDisplay.camera.name] : current.filter((name) => name !== cameraDisplay.camera.name))}
             />
-            <span>{camera.name}</span><span className="signal-dot signal-connected" />
+            <span>{cameraDisplay.camera.name}</span><span className={`signal-dot signal-${cameraDisplay.status}`} />
           </label>
         ))}
       </fieldset>

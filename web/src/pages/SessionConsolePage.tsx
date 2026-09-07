@@ -1,5 +1,5 @@
 import { Camera, History, Plus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { PreviewAccess } from "../api/types";
@@ -10,6 +10,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { PageLoading } from "../components/PageLoading";
 import { ResourceNameForm } from "../components/ResourceNameForm";
 import { CameraCard } from "../features/cameras/CameraCard";
+import { deriveCameraDisplayStates } from "../features/cameras/cameraDisplayState";
 import { PreviewGrid } from "../features/preview/PreviewGrid";
 import { TakeControls } from "../features/takes/TakeControls";
 import { TakeListItem } from "../features/takes/TakeListItem";
@@ -29,6 +30,10 @@ export function SessionConsolePage() {
   const ristStatistics = usePollingResource(loadRISTStatistics, 5000);
   const ongoing = usePollingResource(loadOngoing, 1500);
   const takes = usePollingResource(loadTakes, 3000);
+  const cameraDisplays = useMemo(
+    () => deriveCameraDisplayStates(cameras.data ?? [], ristStatistics.data ?? []),
+    [cameras.data, ristStatistics.data],
+  );
 
   useEffect(() => {
     let active = true;
@@ -94,7 +99,7 @@ export function SessionConsolePage() {
         <div className="console-main">
           <section className="panel preview-panel">
             <div className="panel-heading"><div><span className="eyebrow">Live preview</span><h2>Camera feeds</h2></div><span className="panel-count">{cameras.data?.filter((camera) => camera.status === "connected").length ?? 0} / {cameras.data?.length ?? 0} online</span></div>
-            <PreviewGrid cameras={cameras.data ?? []} access={previewAccess} />
+            <PreviewGrid cameras={cameraDisplays} access={previewAccess} />
           </section>
           <section className="panel cameras-panel">
             <div className="panel-heading"><div className="section-icon"><Camera size={19} /></div><div><h2>Cameras</h2><p>RIST接続状態と送信先を管理します。</p></div></div>
@@ -106,13 +111,12 @@ export function SessionConsolePage() {
               onSubmit={(name) => mutate(() => api.createCamera(sessionName, name))}
             />
             <div className="camera-list">
-              {(cameras.data ?? []).map((camera) => (
+              {cameraDisplays.map((cameraDisplay) => (
                 <CameraCard
-                  key={camera.name}
+                  key={cameraDisplay.camera.name}
                   sessionName={sessionName}
-                  camera={camera}
+                  cameraDisplay={cameraDisplay}
                   deletionDisabled={hasOngoing}
-                  ristStatistics={(ristStatistics.data ?? []).filter((item) => item.cameraName === camera.name)}
                   onPrepareDelete={prepareCameraDeletion}
                   onDelete={(name, force) => mutate(() => api.deleteCamera(sessionName, name, force))}
                 />
@@ -126,7 +130,7 @@ export function SessionConsolePage() {
             {ongoing.data && (
               <TakeControls
                 sessionName={sessionName}
-                cameras={cameras.data ?? []}
+                cameras={cameraDisplays}
                 ongoing={ongoing.data}
                 onStart={(name, selected) => mutate(() => api.startTake(sessionName, name, selected))}
                 onFinish={() => mutate(() => api.finishTake(sessionName))}

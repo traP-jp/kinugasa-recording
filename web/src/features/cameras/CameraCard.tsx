@@ -1,22 +1,22 @@
-import { Cable, QrCode, Trash2, Video } from "lucide-react";
+import { Cable, QrCode, Trash2, TriangleAlert, Video } from "lucide-react";
 import { useState } from "react";
-import type { CameraConnection, RISTStatistics } from "../../api/types";
 import { Button } from "../../components/Button";
 import { StatusBadge } from "../../components/StatusBadge";
+import type { CameraDisplayState } from "./cameraDisplayState";
 import { CameraConnectionModal } from "./CameraConnectionModal";
 import { CameraDeletionConfirmation } from "./CameraDeletionConfirmation";
 import { RISTStatisticsPanel } from "./RISTStatisticsPanel";
 
 interface CameraCardProps {
   sessionName: string;
-  camera: CameraConnection;
+  cameraDisplay: CameraDisplayState;
   deletionDisabled: boolean;
-  ristStatistics: RISTStatistics[];
   onPrepareDelete: (name: string) => Promise<string[]>;
   onDelete: (name: string, force: boolean) => Promise<void>;
 }
 
-export function CameraCard({ sessionName, camera, deletionDisabled, ristStatistics, onPrepareDelete, onDelete }: CameraCardProps) {
+export function CameraCard({ sessionName, cameraDisplay, deletionDisabled, onPrepareDelete, onDelete }: CameraCardProps) {
+  const { camera, ristStatistics, packetRecoveryFailed, status } = cameraDisplay;
   const [modalOpen, setModalOpen] = useState(false);
   const [deletionOpen, setDeletionOpen] = useState(false);
   const [uploadingTakeNames, setUploadingTakeNames] = useState<string[]>([]);
@@ -59,12 +59,19 @@ export function CameraCard({ sessionName, camera, deletionDisabled, ristStatisti
   }
 
   return (
-    <article className={`camera-card camera-${camera.status}`}>
-      <div className="camera-card-icon">{camera.status === "connected" ? <Video size={20} /> : <Cable size={20} />}</div>
+    <article className={`camera-card camera-${status}`}>
+      <div className="camera-card-icon">
+        {packetRecoveryFailed || camera.status === "error"
+          ? <TriangleAlert size={20} />
+          : camera.status === "connected" ? <Video size={20} /> : <Cable size={20} />}
+      </div>
       <div className="camera-card-main">
-        <div className="camera-card-title"><h3>{camera.name}</h3><StatusBadge status={camera.status} /></div>
+        <div className="camera-card-title">
+          <h3>{camera.name}</h3>
+          <StatusBadge status={camera.status} />
+          {packetRecoveryFailed && <StatusBadge status="packet-loss" />}
+        </div>
         {camera.error && <p className="inline-error">{camera.error}</p>}
-        {!camera.error && <p>{camera.status === "connected" ? "映像を受信しています" : "Camera clientの接続を待っています"}</p>}
         <RISTStatisticsPanel statistics={ristStatistics} />
       </div>
       <div className="camera-card-actions">

@@ -89,7 +89,7 @@ input::placeholder { color: #586365; }
 .status-inactive, .status-waiting, .status-activating { color: #a5b0b2; background: rgba(165, 176, 178, .06); }
 .status-recording { color: #ff8e81; background: rgba(255, 112, 95, .08); }
 .status-uploading { color: var(--cyan); background: rgba(80, 213, 199, .08); }
-.status-error, .status-errored { color: var(--red); background: rgba(255, 112, 95, .08); }
+.status-error, .status-errored, .status-packet-loss { color: var(--red); background: rgba(255, 112, 95, .08); }
 .spin { animation: spin 1.3s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -116,14 +116,17 @@ input::placeholder { color: #586365; }
 .preview-label { position: absolute; left: 9px; bottom: 8px; display: flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 5px; background: rgba(3, 5, 6, .75); backdrop-filter: blur(8px); font: 10px var(--mono); }
 .signal-dot { width: 7px; height: 7px; border-radius: 50%; background: #657073; display: inline-block; }
 .signal-connected { background: var(--lime); box-shadow: 0 0 8px rgba(199, 240, 74, .5); }
-.signal-error { background: var(--red); }
+.signal-waiting, .signal-activating { background: var(--amber); }
+.signal-error, .signal-packet-loss { background: var(--red); }
 
 .cameras-panel .resource-form { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
 .camera-list { margin-top: 10px; display: grid; }
-.camera-card { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 13px 2px; border-bottom: 1px solid var(--line); }
+.camera-card { --camera-state-color: #839092; --camera-state-bg: transparent; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 13px 8px 13px 10px; border-bottom: 1px solid var(--line); border-left: 2px solid var(--camera-state-color); background: linear-gradient(90deg, var(--camera-state-bg), transparent 48%); transition: color .18s ease, background .18s ease, border-color .18s ease; }
 .camera-card:last-child { border-bottom: 0; }
-.camera-card-icon { width: 34px; height: 34px; border-radius: 9px; background: #0c1112; color: #839092; display: grid; place-items: center; }
-.camera-connected .camera-card-icon { color: var(--lime); }
+.camera-connected { --camera-state-color: var(--lime); --camera-state-bg: rgba(199, 240, 74, .055); }
+.camera-waiting, .camera-activating { --camera-state-color: var(--amber); --camera-state-bg: rgba(241, 189, 85, .05); }
+.camera-error, .camera-packet-loss { --camera-state-color: var(--red); --camera-state-bg: rgba(255, 112, 95, .085); }
+.camera-card-icon { width: 34px; height: 34px; border-radius: 9px; background: #0c1112; color: var(--camera-state-color); display: grid; place-items: center; }
 .camera-card-title { display: flex; align-items: center; gap: 9px; }
 .camera-card-title h3 { margin: 0; font-size: 14px; }
 .camera-card-main p { color: var(--muted); margin: 4px 0 0; font-size: 11px; }
@@ -133,6 +136,8 @@ input::placeholder { color: #586365; }
 .rist-statistics header { display: flex; align-items: baseline; gap: 8px; }
 .rist-statistics header > span:first-child { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .05em; }
 .rist-statistics header strong { color: var(--lime); font-size: 16px; margin-left: auto; }
+.rist-statistics-error { border-color: rgba(255, 112, 95, .55); background: rgba(104, 30, 25, .16); }
+.rist-statistics-error header strong, .rist-statistics-error dl div:nth-child(2) dd { color: var(--red); }
 .rist-stale-label { color: var(--red); border: 1px solid currentColor; border-radius: 99px; padding: 2px 5px; font-size: 8px; text-transform: uppercase; }
 .rist-statistics dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 9px 0 0; }
 .rist-statistics dl div { min-width: 0; }

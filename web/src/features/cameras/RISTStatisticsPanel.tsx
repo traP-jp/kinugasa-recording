@@ -8,7 +8,8 @@ interface RISTStatisticsPanelProps {
 }
 
 export function RISTStatisticsPanel({ statistics }: RISTStatisticsPanelProps) {
-  if (statistics.length === 0) {
+  const activeStatistics = statistics.filter((item) => !item.stale);
+  if (activeStatistics.length === 0) {
     return (
       <div className="rist-statistics rist-statistics-empty">
         <Activity size={14} />
@@ -18,14 +19,17 @@ export function RISTStatisticsPanel({ statistics }: RISTStatisticsPanelProps) {
   }
   return (
     <div className="rist-statistics-list">
-      {statistics.map((item) => {
+      {activeStatistics.map((item) => {
         const rate = packetLossRate(item);
+        const recoveryFailed = item.lostPackets > 0;
         return (
-          <section className={`rist-statistics${item.stale ? " rist-statistics-stale" : ""}`} key={`${item.gatewayInstance}:${item.flowId}`}>
+          <section
+            className={`rist-statistics${recoveryFailed ? " rist-statistics-error" : ""}`}
+            key={`${item.gatewayInstance}:${item.flowId}`}
+          >
             <header>
               <span>回復後 packet loss</span>
               <strong>{formatPacketLossRate(rate)}</strong>
-              {item.stale && <span className="rist-stale-label">stale</span>}
             </header>
             <dl>
               <div><dt>output</dt><dd>{item.outputPackets.toLocaleString()}</dd></div>

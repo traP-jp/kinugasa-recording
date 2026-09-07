@@ -4,10 +4,11 @@ import { Track } from "livekit-client";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { CameraConnection, PreviewAccess } from "../../api/types";
 import { previewGridColumnCount } from "../../lib/previewGrid";
+import type { CameraDisplayState } from "../cameras/cameraDisplayState";
 import { VideoPreviewModal } from "./VideoPreviewModal";
 
 interface PreviewGridProps {
-  cameras: CameraConnection[];
+  cameras: CameraDisplayState[];
   access: PreviewAccess | null;
 }
 
@@ -29,29 +30,30 @@ export function PreviewGrid({ cameras, access }: PreviewGridProps) {
   );
 }
 
-function ConnectedPreviewGrid({ cameras }: { cameras: CameraConnection[] }) {
+function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
   const [expandedCameraName, setExpandedCameraName] = useState<string | null>(null);
   const tracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
   const tracksByIdentity = new Map(tracks.map((track) => [track.participant.identity, track]));
   if (cameras.length === 0) return <PreviewPlaceholders cameras={[]} message="Cameraを追加すると映像が表示されます" />;
-  const expandedCamera = cameras.find((camera) => camera.name === expandedCameraName);
+  const expandedCamera = cameras.find((camera) => camera.camera.name === expandedCameraName);
   return (
     <>
       <PreviewTileGrid itemCount={cameras.length}>
-        {cameras.map((camera) => {
+        {cameras.map((cameraDisplay) => {
+          const camera = cameraDisplay.camera;
           const track = tracksByIdentity.get(camera.name);
           return (
             <PreviewTile key={camera.name} cameraName={camera.name} onOpen={() => setExpandedCameraName(camera.name)}>
               <CameraPreviewContent camera={camera} track={track} />
-              <div className="preview-label"><span className={`signal-dot signal-${camera.status}`} />{camera.name}</div>
+              <PreviewLabel cameraDisplay={cameraDisplay} />
             </PreviewTile>
           );
         })}
       </PreviewTileGrid>
       {expandedCamera && (
-        <VideoPreviewModal cameraName={expandedCamera.name} onClose={() => setExpandedCameraName(null)}>
+        <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
           <div className="video-preview-expanded">
-            <CameraPreviewContent camera={expandedCamera} track={tracksByIdentity.get(expandedCamera.name)} />
+            <CameraPreviewContent camera={expandedCamera.camera} track={tracksByIdentity.get(expandedCamera.camera.name)} />
           </div>
         </VideoPreviewModal>
       )}
@@ -59,27 +61,36 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraConnection[] }) {
   );
 }
 
-function PreviewPlaceholders({ cameras, message }: { cameras: CameraConnection[]; message: string }) {
+function PreviewPlaceholders({ cameras, message }: { cameras: CameraDisplayState[]; message: string }) {
   const [expandedCameraName, setExpandedCameraName] = useState<string | null>(null);
-  const expandedCamera = cameras.find((camera) => camera.name === expandedCameraName);
+  const expandedCamera = cameras.find((camera) => camera.camera.name === expandedCameraName);
   return (
     <>
       <PreviewTileGrid itemCount={cameras.length}>
-        {cameras.length ? cameras.map((camera) => (
-          <PreviewTile key={camera.name} cameraName={camera.name} onOpen={() => setExpandedCameraName(camera.name)}>
+        {cameras.length ? cameras.map((cameraDisplay) => (
+          <PreviewTile key={cameraDisplay.camera.name} cameraName={cameraDisplay.camera.name} onOpen={() => setExpandedCameraName(cameraDisplay.camera.name)}>
             <PreviewWaiting message={message} />
-            <div className="preview-label">{camera.name}</div>
+            <PreviewLabel cameraDisplay={cameraDisplay} />
           </PreviewTile>
         )) : (
           <article className="preview-tile"><PreviewWaiting message={message} /></article>
         )}
       </PreviewTileGrid>
       {expandedCamera && (
-        <VideoPreviewModal cameraName={expandedCamera.name} onClose={() => setExpandedCameraName(null)}>
+        <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
           <div className="video-preview-expanded"><PreviewWaiting message={message} /></div>
         </VideoPreviewModal>
       )}
     </>
+  );
+}
+
+function PreviewLabel({ cameraDisplay }: { cameraDisplay: CameraDisplayState }) {
+  return (
+    <div className="preview-label">
+      <span className={`signal-dot signal-${cameraDisplay.status}`} />
+      {cameraDisplay.camera.name}
+    </div>
   );
 }
 

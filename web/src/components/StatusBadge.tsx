@@ -1,15 +1,16 @@
 import { AlertCircle, CheckCircle2, LoaderCircle, Radio, UploadCloud } from "lucide-react";
 
 type Status = "active" | "inactive" | "activating" | "waiting" | "connected" | "error" |
-  "recording" | "errored" | "uploading" | "completed";
+  "packet-loss" | "recording" | "errored" | "uploading" | "completed";
 
 const labels: Record<Status, string> = {
   active: "Active",
   inactive: "Inactive",
   activating: "Activating",
-  waiting: "Waiting",
+  waiting: "Waiting connection",
   connected: "Connected",
   error: "Error",
+  "packet-loss": "Packet loss",
   recording: "Recording",
   errored: "Errored",
   uploading: "Uploading",
