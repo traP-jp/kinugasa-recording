@@ -29,8 +29,11 @@ struct Args {
     input_url: String,
     #[arg(short = 'o', long, value_name = "HOST:PORT")]
     output_address: SocketAddr,
-    #[arg(long, default_value_t = 1_000, value_name = "MILLISECONDS")]
+    #[arg(long, default_value_t = 5_000, value_name = "MILLISECONDS")]
     recovery_buffer_ms: u64,
+    /// Wait for out-of-order packets before requesting retransmission.
+    #[arg(long, default_value_t = 200, value_name = "MILLISECONDS")]
+    reorder_buffer_ms: u64,
     #[arg(long, env = "KINUGASA_RIST_SECRET", hide_env_values = true)]
     rist_secret: Option<String>,
     #[arg(long, env = "OTEL_EXPORTER_OTLP_ENDPOINT")]
@@ -57,11 +60,21 @@ fn main() -> ExitCode {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.recovery_buffer_ms == 0 || args.reorder_buffer_ms >= args.recovery_buffer_ms {
+        return Err("recovery buffer must be positive and larger than reorder buffer".into());
+    }
     let mut peer = PeerConfig::parse(&args.input_url)
         .map_err(|error| format!("parse RIST input URL: {error}"))?;
     let recovery = Duration::from_millis(args.recovery_buffer_ms);
     peer.set_recovery_length(recovery, recovery)
         .map_err(|error| format!("configure RIST recovery buffer: {error}"))?;
+    peer.set_reorder_buffer(Duration::from_millis(args.reorder_buffer_ms))
+        .map_err(|error| format!("configure RIST reorder buffer: {error}"))?;
+    info!(
+        recovery_buffer_ms = args.recovery_buffer_ms,
+        reorder_buffer_ms = args.reorder_buffer_ms,
+        "configured RIST receive buffers"
+    );
     if let Some(secret) = args.rist_secret.as_deref() {
         peer.set_encryption(EncryptionKeySize::Aes256, secret)
             .map_err(|error| format!("configure RIST encryption: {error}"))?;

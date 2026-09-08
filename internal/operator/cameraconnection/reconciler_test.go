@@ -100,7 +100,8 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if got, want := pod.Spec.Containers[0].Args, []string{
 		"--input-url", "rist://@0.0.0.0:9000",
 		"--output-address", "127.0.0.1:8000",
-		"--recovery-buffer-ms", "1000",
+		"--recovery-buffer-ms", "5000",
+		"--reorder-buffer-ms", "200",
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("gateway arguments = %q, want %q", got, want)
 	}

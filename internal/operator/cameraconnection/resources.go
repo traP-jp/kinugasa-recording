@@ -121,7 +121,8 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 					Args: []string{
 						"--input-url", fmt.Sprintf("rist://@0.0.0.0:%d", config.RISTPort),
 						"--output-address", fmt.Sprintf("127.0.0.1:%d", config.RTPPort),
-						"--recovery-buffer-ms", "1000",
+						"--recovery-buffer-ms", "5000",
+						"--reorder-buffer-ms", "200",
 					},
 					Env: gatewayEnvironment,
 					Ports: []corev1.ContainerPort{
