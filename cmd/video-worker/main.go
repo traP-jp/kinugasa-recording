@@ -72,15 +72,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	runtimeContext, cancelRuntime := context.WithCancel(ctx)
 	defer cancelRuntime()
-	bridgeDone := make(chan error, 1)
-	go func() {
-		bridgeDone <- media.RunRTPMPEGTSBridge(
-			runtimeContext,
-			config.RTPAddress,
-			config.MPEGTSAddress,
-			logger,
-		)
-	}()
 	recordPath, err := recording.MediaMTXRecordPath(config.SharedVolume)
 	if err != nil {
 		return fmt.Errorf("prepare MediaMTX recording path: %w", err)
@@ -112,6 +103,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		_ = mediaServer.Wait()
 		return err
 	}
+	// Live RIST input can arrive immediately. Do not forward it before MediaMTX
+	// has started, since an ICMP port-unreachable would terminate the bridge.
+	bridgeDone := make(chan error, 1)
+	go func() {
+		bridgeDone <- media.RunRTPMPEGTSBridge(
+			runtimeContext,
+			config.RTPAddress,
+			config.MPEGTSAddress,
+			logger,
+		)
+	}()
 	recorder, err := recording.NewRecorder(recording.Config{
 		SharedVolume: config.SharedVolume,
 		Controller:   mediaServer,
