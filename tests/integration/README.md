@@ -13,4 +13,6 @@ nix develop -c cargo build --locked --manifest-path video-gateway/Cargo.toml
 nix develop -c go test -tags=integration -v ./tests/integration
 ```
 
+MediaMTX 1.20以降では、LiveKitプレビュー用の経路がH.264映像とOpus音声になることも検証する。別のMediaMTX binaryを使う場合は、`KINUGASA_MEDIAMTX_BINARY`にpathを指定する。
+
 別のvideo gateway binaryを使用する場合は、`KINUGASA_VIDEO_GATEWAY_BINARY`にそのpathを指定する。

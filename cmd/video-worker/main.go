@@ -82,6 +82,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	mediaServer, err := media.Start(runtimeContext, media.Config{
 		BinaryPath:                 config.MediaMTXBinary,
+		FFmpegBinary:               config.FFmpegBinary,
 		MPEGTSAddress:              config.MPEGTSAddress,
 		RTSPAddress:                config.RTSPAddress,
 		APIAddress:                 config.MediaAPIAddress,

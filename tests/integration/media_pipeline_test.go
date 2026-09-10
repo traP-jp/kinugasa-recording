@@ -31,7 +31,14 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	ffmpeg := requireBinary(t, "ffmpeg")
 	ffprobe := requireBinary(t, "ffprobe")
 	videoGateway := requireVideoGateway(t)
-	mediamtx := requireBinary(t, "mediamtx")
+	mediamtx := os.Getenv("KINUGASA_MEDIAMTX_BINARY")
+	if mediamtx == "" {
+		mediamtx = requireBinary(t, "mediamtx")
+	}
+	previewSupported := mediaMTXSupportsPreviewTranscoding(mediamtx)
+	if !previewSupported {
+		t.Log("MediaMTX is older than 1.20; skipping the preview H.264/Opus assertion")
+	}
 	udpPorts := freeUDPPorts(t, 3)
 	tcpAddresses := freeTCPAddresses(t, 3)
 	sharedVolume := t.TempDir()
@@ -73,7 +80,7 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 			logger,
 		)
 	}()
-	mediaServer, err := media.Start(ctx, media.Config{
+	mediaConfig := media.Config{
 		BinaryPath:                 mediamtx,
 		MPEGTSAddress:              "127.0.0.1:" + strconv.Itoa(udpPorts[2]),
 		RTSPAddress:                tcpAddresses[0],
@@ -84,7 +91,13 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 		RecordSegmentDuration:      24 * time.Hour,
 		RunOnRecordSegmentCreate:   testHookCommand(testExecutable, recording.SegmentCreatedHookArgument),
 		RunOnRecordSegmentComplete: testHookCommand(testExecutable, recording.SegmentCompletedHookArgument),
-	}, logger)
+	}
+	if previewSupported {
+		mediaConfig.FFmpegBinary = ffmpeg
+		mediaConfig.WHIPURL = "http://127.0.0.1:1/preview"
+		mediaConfig.WHIPToken = "integration-token"
+	}
+	mediaServer, err := media.Start(ctx, mediaConfig, logger)
 	if err != nil {
 		t.Fatalf("start MediaMTX: %v", err)
 	}
@@ -188,6 +201,46 @@ func TestSyntheticRISTReachesWorkerRTSP(t *testing.T) {
 	}
 	if !videoValid {
 		t.Fatalf("MediaMTX RTSP metadata does not contain H.264/30 fps: %s", liveMetadata)
+	}
+
+	if previewSupported {
+		previewContext, previewCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer previewCancel()
+		var previewMetadata []byte
+		for {
+			previewProbe := exec.CommandContext(previewContext, ffprobe,
+				"-v", "error",
+				"-rtsp_transport", "tcp",
+				"-analyzeduration", "3000000",
+				"-probesize", "5000000",
+				"-show_streams", "-of", "json", mediaServer.PreviewRTSPURL(),
+			)
+			previewMetadata, err = previewProbe.Output()
+			if err == nil {
+				break
+			}
+			select {
+			case <-previewContext.Done():
+				t.Fatalf("preview RTSP did not become ready: %v; service log: %s", err, serviceLog.String())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		var previewStreams struct {
+			Streams []struct {
+				CodecType string `json:"codec_type"`
+				CodecName string `json:"codec_name"`
+			} `json:"streams"`
+		}
+		if err := json.Unmarshal(previewMetadata, &previewStreams); err != nil {
+			t.Fatalf("decode preview RTSP metadata: %v", err)
+		}
+		previewCodecs := make(map[string]string)
+		for _, stream := range previewStreams.Streams {
+			previewCodecs[stream.CodecType] = stream.CodecName
+		}
+		if previewCodecs["video"] != "h264" || previewCodecs["audio"] != "opus" {
+			t.Fatalf("preview RTSP codecs = %v, want H.264 video and Opus audio: %s", previewCodecs, previewMetadata)
+		}
 	}
 
 	statisticsContext, statisticsCancel := context.WithTimeout(ctx, 10*time.Second)
@@ -355,6 +408,18 @@ func requireBinary(t *testing.T, name string) string {
 		t.Fatalf("%s is required for integration tests: %v", name, err)
 	}
 	return path
+}
+
+func mediaMTXSupportsPreviewTranscoding(binary string) bool {
+	output, err := exec.Command(binary, "--version").Output()
+	if err != nil {
+		return false
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(output)), "v%d.%d", &major, &minor); err != nil {
+		return false
+	}
+	return major > 1 || (major == 1 && minor >= 20)
 }
 
 func freeUDPPorts(t *testing.T, count int) []int {

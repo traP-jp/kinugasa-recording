@@ -15,6 +15,7 @@ type Config struct {
 	SharedVolume       string
 	ConsoleAddress     string
 	MediaMTXBinary     string
+	FFmpegBinary       string
 	FFprobeBinary      string
 	RTPAddress         string
 	MPEGTSAddress      string
@@ -36,6 +37,7 @@ func FromEnvironment() (Config, error) {
 		SharedVolume:      valueOrDefault(os.Getenv("KINUGASA_SHARED_VOLUME"), "/recordings"),
 		ConsoleAddress:    os.Getenv("KINUGASA_CONSOLE_GRPC_ADDRESS"),
 		MediaMTXBinary:    valueOrDefault(os.Getenv("KINUGASA_MEDIAMTX_BINARY"), "mediamtx"),
+		FFmpegBinary:      valueOrDefault(os.Getenv("KINUGASA_FFMPEG_BINARY"), "ffmpeg"),
 		FFprobeBinary:     valueOrDefault(os.Getenv("KINUGASA_FFPROBE_BINARY"), "ffprobe"),
 		RTPAddress:        valueOrDefault(os.Getenv("KINUGASA_RTP_ADDRESS"), "0.0.0.0:8000"),
 		MPEGTSAddress:     valueOrDefault(os.Getenv("KINUGASA_MPEGTS_ADDRESS"), "127.0.0.1:10000"),

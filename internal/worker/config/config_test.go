@@ -19,7 +19,8 @@ func TestFromEnvironment(t *testing.T) {
 		t.Fatalf("FromEnvironment() error = %v", err)
 	}
 	if config.SharedVolume != "/recordings" || config.RTPAddress != "0.0.0.0:8000" ||
-		config.MPEGTSAddress != "127.0.0.1:10000" || config.FFprobeBinary != "ffprobe" ||
+		config.MPEGTSAddress != "127.0.0.1:10000" || config.FFmpegBinary != "ffmpeg" ||
+		config.FFprobeBinary != "ffprobe" ||
 		config.ConsoleAddress != "console:9090" || config.InputPollInterval != 100*time.Millisecond ||
 		config.S3.Bucket != "recordings" || config.UploadPollInterval != time.Second || config.UploadMaxAttempts != 5 {
 		t.Fatalf("FromEnvironment() = %+v", config)

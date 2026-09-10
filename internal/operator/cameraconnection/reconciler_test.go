@@ -117,6 +117,9 @@ func TestReconcileCreatesWorkerResources(t *testing.T) {
 	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_MPEGTS_ADDRESS"); got != "127.0.0.1:10000" {
 		t.Fatalf("worker MPEG-TS address = %q", got)
 	}
+	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_FFMPEG_BINARY"); got != "/usr/bin/ffmpeg" {
+		t.Fatalf("worker ffmpeg binary = %q", got)
+	}
 	if got := environmentValue(pod.Spec.Containers[1].Env, "KINUGASA_FFPROBE_BINARY"); got != "/usr/bin/ffprobe" {
 		t.Fatalf("worker ffprobe binary = %q", got)
 	}

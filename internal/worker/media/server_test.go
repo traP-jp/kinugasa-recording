@@ -21,6 +21,7 @@ func TestRenderConfigDefinesMPEGTSSourceAndLoopbackServers(t *testing.T) {
 		RTSPAddress:                "127.0.0.1:8554",
 		APIAddress:                 "127.0.0.1:9997",
 		PathName:                   "camera",
+		FFmpegBinary:               "/usr/bin/ffmpeg",
 		WHIPURL:                    "whip://livekit-ingress.example.com/w",
 		WHIPToken:                  "stream-key",
 		RecordPath:                 "/recordings/incomplete/recording-%s-%f",
@@ -34,6 +35,9 @@ func TestRenderConfigDefinesMPEGTSSourceAndLoopbackServers(t *testing.T) {
 		"rtspTransports: [tcp]",
 		"source: udp+mpegts://127.0.0.1:10000",
 		"apiAddress: 127.0.0.1:9997",
+		`runOnAvailable: "'/usr/bin/ffmpeg' '-nostdin' '-hide_banner' '-loglevel' 'warning' '-rtsp_transport' 'tcp' '-i' 'rtsp://127.0.0.1:8554/camera' '-map' '0:v:0' '-map' '0:a:0?' '-c:v' 'copy' '-c:a' 'libopus' '-ar' '48000' '-ac' '1' '-b:a' '64k' '-f' 'rtsp' '-rtsp_transport' 'tcp' 'rtsp://127.0.0.1:8554/camera_preview'"`,
+		"runOnAvailableRestart: true",
+		"camera_preview:",
 		`dest: "whip://livekit-ingress.example.com/w"`,
 		`whipBearerToken: "stream-key"`,
 		`recordFormat: fmp4`,
@@ -44,6 +48,12 @@ func TestRenderConfigDefinesMPEGTSSourceAndLoopbackServers(t *testing.T) {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered config does not contain %q:\n%s", expected, rendered)
 		}
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	if actual, expected := shellQuote("it's ffmpeg"), `'it'"'"'s ffmpeg'`; actual != expected {
+		t.Fatalf("shellQuote() = %q, want %q", actual, expected)
 	}
 }
 

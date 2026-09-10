@@ -20,6 +20,7 @@ import (
 
 type Config struct {
 	BinaryPath                 string
+	FFmpegBinary               string
 	MPEGTSAddress              string
 	RTSPAddress                string
 	APIAddress                 string
@@ -46,6 +47,9 @@ type Server struct {
 func Start(ctx context.Context, config Config, logger *slog.Logger) (*Server, error) {
 	if config.BinaryPath == "" {
 		config.BinaryPath = "mediamtx"
+	}
+	if config.FFmpegBinary == "" {
+		config.FFmpegBinary = "ffmpeg"
 	}
 	if config.MPEGTSAddress == "" || config.RTSPAddress == "" || config.APIAddress == "" {
 		return nil, fmt.Errorf("MediaMTX MPEG-TS, RTSP, and API addresses must be set")
@@ -185,6 +189,10 @@ func (s *Server) RTSPURL() string {
 	return "rtsp://" + s.config.RTSPAddress + "/" + s.config.PathName
 }
 
+func (s *Server) PreviewRTSPURL() string {
+	return "rtsp://" + s.config.RTSPAddress + "/" + previewPathName(s.config.PathName)
+}
+
 // SetRecording toggles MediaMTX's native fMP4 recorder for the configured path.
 func (s *Server) SetRecording(ctx context.Context, enabled bool) error {
 	if s.config.RecordPath == "" {
@@ -231,9 +239,8 @@ func renderConfig(config Config) []byte {
 	fmt.Fprintf(&output, "rtmp: false\nhls: false\nwebrtc: false\nsrt: false\nplayback: false\n")
 	fmt.Fprintf(&output, "paths:\n  %s:\n    source: udp+mpegts://%s\n", config.PathName, config.MPEGTSAddress)
 	if config.WHIPURL != "" {
-		fmt.Fprintf(&output, "    forward:\n")
-		fmt.Fprintf(&output, "      - dest: %s\n", strconv.Quote(config.WHIPURL))
-		fmt.Fprintf(&output, "        whipBearerToken: %s\n", strconv.Quote(config.WHIPToken))
+		fmt.Fprintf(&output, "    runOnAvailable: %s\n", strconv.Quote(ffmpegPreviewCommand(config)))
+		fmt.Fprintf(&output, "    runOnAvailableRestart: true\n")
 	}
 	if config.RecordPath != "" {
 		fmt.Fprintf(&output, "    record: false\n")
@@ -246,7 +253,40 @@ func renderConfig(config Config) []byte {
 		fmt.Fprintf(&output, "    runOnRecordSegmentCreate: %s\n", strconv.Quote(config.RunOnRecordSegmentCreate))
 		fmt.Fprintf(&output, "    runOnRecordSegmentComplete: %s\n", strconv.Quote(config.RunOnRecordSegmentComplete))
 	}
+	if config.WHIPURL != "" {
+		fmt.Fprintf(&output, "  %s:\n", previewPathName(config.PathName))
+		fmt.Fprintf(&output, "    source: publisher\n")
+		fmt.Fprintf(&output, "    forward:\n")
+		fmt.Fprintf(&output, "      - dest: %s\n", strconv.Quote(config.WHIPURL))
+		fmt.Fprintf(&output, "        whipBearerToken: %s\n", strconv.Quote(config.WHIPToken))
+	}
 	return output.Bytes()
+}
+
+func previewPathName(pathName string) string {
+	return pathName + "_preview"
+}
+
+func ffmpegPreviewCommand(config Config) string {
+	inputURL := "rtsp://" + config.RTSPAddress + "/" + config.PathName
+	outputURL := "rtsp://" + config.RTSPAddress + "/" + previewPathName(config.PathName)
+	arguments := []string{
+		config.FFmpegBinary,
+		"-nostdin", "-hide_banner", "-loglevel", "warning",
+		"-rtsp_transport", "tcp", "-i", inputURL,
+		"-map", "0:v:0", "-map", "0:a:0?",
+		"-c:v", "copy",
+		"-c:a", "libopus", "-ar", "48000", "-ac", "1", "-b:a", "64k",
+		"-f", "rtsp", "-rtsp_transport", "tcp", outputURL,
+	}
+	for index, argument := range arguments {
+		arguments[index] = shellQuote(argument)
+	}
+	return strings.Join(arguments, " ")
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func mediaMTXWHIPURL(value string) (string, error) {

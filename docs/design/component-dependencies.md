@@ -29,13 +29,13 @@ flowchart LR
 
     operator -->|"ブラウザ操作"| web
     web -->|"REST API<br/>操作・状態・preview access"| console
-    livekit -->|"リアルタイムpreview"| web
+    livekit -->|"リアルタイムpreview<br/>映像・音声"| web
     pipeline -->|"REST API<br/>lock file取得"| console
 
     camera -->|"RIST Main Profile<br/>H.264 + optional audio"| gateway
     gateway -->|"RTP / MP2T<br/>payload type 33"| worker
     gateway -->|"OTLP/gRPC<br/>5秒RIST統計"| console
-    worker -->|"WHIP<br/>preview映像"| livekit
+    worker -->|"WHIP<br/>preview映像・Opus音声"| livekit
     console -->|"Ingress API<br/>camera ingress作成・削除"| livekit
     console <-->|"gRPC双方向stream<br/>command・event・状態同期"| worker
     worker -->|"hash計算・upload"| objectStorage

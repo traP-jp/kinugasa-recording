@@ -1,33 +1,29 @@
-import { useTrackVolume, type TrackReference } from "@livekit/components-react";
+import type { TrackReference } from "@livekit/components-react";
+import { audioLevelToPercentage } from "../../lib/audioLevel";
+import { useReceivedAudioLevel } from "./useReceivedAudioLevel";
 
 interface AudioLevelMeterProps {
   cameraName: string;
   track?: TrackReference;
 }
 
-const analyserOptions = {
-  fftSize: 64,
-  smoothingTimeConstant: 0.7,
-  minDecibels: -60,
-  maxDecibels: -10,
-};
-
 export function AudioLevelMeter({ cameraName, track }: AudioLevelMeterProps) {
-  const volume = useTrackVolume(track, analyserOptions);
-  const available = track?.publication.track !== undefined;
-  const percentage = available ? Math.round(Math.min(1, Math.max(0, volume)) * 100) : 0;
+  const { hasTrack, receiving, level } = useReceivedAudioLevel(track);
+  const percentage = receiving ? audioLevelToPercentage(level) : 0;
+  const label = receiving ? "AUDIO" : hasTrack ? "WAITING" : "NO AUDIO";
+  const levelText = receiving ? `${percentage}%` : hasTrack ? "音声データ待機中" : "音声トラックなし";
 
   return (
     <div
-      className={`audio-level-meter${available ? "" : " audio-level-meter-unavailable"}`}
+      className={`audio-level-meter${receiving ? "" : " audio-level-meter-unavailable"}`}
       role="meter"
       aria-label={`${cameraName}の音量`}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percentage}
-      aria-valuetext={available ? `${percentage}%` : "音声トラックなし"}
+      aria-valuetext={levelText}
     >
-      <span className="audio-level-label">{available ? "AUDIO" : "NO AUDIO"}</span>
+      <span className="audio-level-label">{label}</span>
       <span className="audio-level-track">
         <span className="audio-level-fill" style={{ transform: `scaleX(${percentage / 100})` }} />
       </span>

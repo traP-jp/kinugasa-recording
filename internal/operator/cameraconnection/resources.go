@@ -92,6 +92,7 @@ func desiredPod(connection *recordingv1alpha1.CameraConnection, config Config) *
 	workerEnvironment = append(workerEnvironment,
 		corev1.EnvVar{Name: "KINUGASA_CONSOLE_GRPC_ADDRESS", Value: config.ConsoleGRPCAddress},
 		corev1.EnvVar{Name: "KINUGASA_MEDIAMTX_BINARY", Value: "/mediamtx"},
+		corev1.EnvVar{Name: "KINUGASA_FFMPEG_BINARY", Value: "/usr/bin/ffmpeg"},
 		corev1.EnvVar{Name: "KINUGASA_FFPROBE_BINARY", Value: "/usr/bin/ffprobe"},
 		corev1.EnvVar{Name: "KINUGASA_RTP_ADDRESS", Value: fmt.Sprintf("0.0.0.0:%d", config.RTPPort)},
 		corev1.EnvVar{Name: "KINUGASA_MPEGTS_ADDRESS", Value: fmt.Sprintf("127.0.0.1:%d", config.MPEGTSPort)},
