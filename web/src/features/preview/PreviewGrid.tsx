@@ -5,6 +5,7 @@ import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { CameraConnection, PreviewAccess } from "../../api/types";
 import { previewGridColumnCount } from "../../lib/previewGrid";
 import type { CameraDisplayState } from "../cameras/cameraDisplayState";
+import { AudioLevelMeter } from "./AudioLevelMeter";
 import { VideoPreviewModal } from "./VideoPreviewModal";
 
 interface PreviewGridProps {
@@ -32,8 +33,11 @@ export function PreviewGrid({ cameras, access }: PreviewGridProps) {
 
 function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
   const [expandedCameraName, setExpandedCameraName] = useState<string | null>(null);
-  const tracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
-  const tracksByIdentity = new Map(tracks.map((track) => [track.participant.identity, track]));
+  const videoTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
+  const audioTracks = useTracks([Track.Source.Microphone, Track.Source.Unknown], { onlySubscribed: false })
+    .filter((track) => track.publication.kind === Track.Kind.Audio);
+  const videoTracksByIdentity = new Map(videoTracks.map((track) => [track.participant.identity, track]));
+  const audioTracksByIdentity = new Map(audioTracks.map((track) => [track.participant.identity, track]));
   if (cameras.length === 0) return <PreviewPlaceholders cameras={[]} message="Cameraを追加すると映像が表示されます" />;
   const expandedCamera = cameras.find((camera) => camera.camera.name === expandedCameraName);
   return (
@@ -41,11 +45,13 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
       <PreviewTileGrid itemCount={cameras.length}>
         {cameras.map((cameraDisplay) => {
           const camera = cameraDisplay.camera;
-          const track = tracksByIdentity.get(camera.name);
+          const videoTrack = videoTracksByIdentity.get(camera.name);
+          const audioTrack = audioTracksByIdentity.get(camera.name);
           return (
             <PreviewTile key={camera.name} cameraName={camera.name} onOpen={() => setExpandedCameraName(camera.name)}>
-              <CameraPreviewContent camera={camera} track={track} />
+              <CameraPreviewContent camera={camera} track={videoTrack} />
               <PreviewLabel cameraDisplay={cameraDisplay} />
+              <AudioLevelMeter cameraName={camera.name} track={audioTrack} />
             </PreviewTile>
           );
         })}
@@ -53,7 +59,8 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
       {expandedCamera && (
         <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
           <div className="video-preview-expanded">
-            <CameraPreviewContent camera={expandedCamera.camera} track={tracksByIdentity.get(expandedCamera.camera.name)} />
+            <CameraPreviewContent camera={expandedCamera.camera} track={videoTracksByIdentity.get(expandedCamera.camera.name)} />
+            <AudioLevelMeter cameraName={expandedCamera.camera.name} track={audioTracksByIdentity.get(expandedCamera.camera.name)} />
           </div>
         </VideoPreviewModal>
       )}
@@ -71,6 +78,7 @@ function PreviewPlaceholders({ cameras, message }: { cameras: CameraDisplayState
           <PreviewTile key={cameraDisplay.camera.name} cameraName={cameraDisplay.camera.name} onOpen={() => setExpandedCameraName(cameraDisplay.camera.name)}>
             <PreviewWaiting message={message} />
             <PreviewLabel cameraDisplay={cameraDisplay} />
+            <AudioLevelMeter cameraName={cameraDisplay.camera.name} />
           </PreviewTile>
         )) : (
           <article className="preview-tile"><PreviewWaiting message={message} /></article>
@@ -78,7 +86,10 @@ function PreviewPlaceholders({ cameras, message }: { cameras: CameraDisplayState
       </PreviewTileGrid>
       {expandedCamera && (
         <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
-          <div className="video-preview-expanded"><PreviewWaiting message={message} /></div>
+          <div className="video-preview-expanded">
+            <PreviewWaiting message={message} />
+            <AudioLevelMeter cameraName={expandedCamera.camera.name} />
+          </div>
         </VideoPreviewModal>
       )}
     </>

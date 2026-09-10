@@ -114,6 +114,12 @@ input::placeholder { color: #586365; }
 .preview-tile video { width: 100%; height: 100%; object-fit: contain; background: black; }
 .preview-waiting { width: 100%; height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; color: #4e5a5c; font: 10px var(--mono); text-transform: uppercase; background-image: linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px); background-size: 18px 18px; }
 .preview-label { position: absolute; left: 9px; bottom: 8px; display: flex; align-items: center; gap: 6px; padding: 4px 7px; border-radius: 5px; background: rgba(3, 5, 6, .75); backdrop-filter: blur(8px); font: 10px var(--mono); }
+.audio-level-meter { position: absolute; right: 9px; bottom: 8px; width: min(38%, 150px); display: grid; grid-template-columns: auto minmax(38px, 1fr); align-items: center; gap: 6px; padding: 5px 7px; border-radius: 5px; color: #dfe8e4; background: rgba(3, 5, 6, .78); backdrop-filter: blur(8px); font: 8px var(--mono); pointer-events: none; }
+.audio-level-label { white-space: nowrap; }
+.audio-level-track { height: 5px; overflow: hidden; border-radius: 99px; background: #30393a; }
+.audio-level-fill { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--lime) 0 68%, var(--amber) 82%, var(--red) 100%); transform-origin: left; transition: transform 80ms linear; }
+.audio-level-meter-unavailable { color: #727e80; }
+.audio-level-meter-unavailable .audio-level-track { background: #242a2b; }
 .signal-dot { width: 7px; height: 7px; border-radius: 50%; background: #657073; display: inline-block; }
 .signal-connected { background: var(--lime); box-shadow: 0 0 8px rgba(199, 240, 74, .5); }
 .signal-waiting, .signal-activating { background: var(--amber); }
@@ -204,7 +210,7 @@ input::placeholder { color: #586365; }
 .modal-card > header button { color: var(--muted); }
 .video-preview-modal { width: min(calc(50% + 550px), 100%); }
 .video-preview-modal-body { padding: 18px; }
-.video-preview-expanded { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: #050708; border: 1px solid #273032; border-radius: 10px; }
+.video-preview-expanded { width: 100%; aspect-ratio: 16 / 9; overflow: hidden; position: relative; background: #050708; border: 1px solid #273032; border-radius: 10px; }
 .video-preview-expanded video { width: 100%; height: 100%; object-fit: contain; background: black; }
 .connection-modal-body { padding: 22px; display: grid; justify-items: center; gap: 14px; }
 .connection-modal-status { justify-self: start; }
