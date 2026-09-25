@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use crate::domain::{
-    Camera, CameraConnectionState, CameraIdentityId, CameraName, ErrorReason, FinalizedRecording,
-    FinishedTake, FinishedTakeDetail, OngoingTake, RecordingCamera, Session, SessionName, TakeName,
-    UploadResult, VideoFile, VideoFileState,
+    Camera, CameraConnectionState, CameraIdentityId, CameraInputState, CameraName, ErrorReason,
+    FinalizedRecording, FinishedTake, FinishedTakeDetail, OngoingTake, RecordingCamera, Session,
+    SessionName, TakeName, UploadResult, VideoFile, VideoFileState,
 };
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -280,6 +280,14 @@ pub trait CameraRepository<U: UnitOfWork>: Send + Sync {
         camera_id: CameraIdentityId,
         state: &CameraConnectionState,
     ) -> Result<(), RepositoryError>;
+
+    /// Applies a media observation while preserving the provisioned endpoint.
+    async fn set_camera_input_state(
+        &self,
+        unit_of_work: &mut U,
+        camera_id: CameraIdentityId,
+        state: &CameraInputState,
+    ) -> Result<(), RepositoryError>;
 }
 
 /// Take-level methods are intentionally coarse grained so aggregate invariants
@@ -330,6 +338,12 @@ pub trait RecordingRepository<U: UnitOfWork>: Send + Sync {
         unit_of_work: &mut U,
     ) -> Result<Vec<RecordingCamera>, RepositoryError>;
 
+    async fn get_active_recording_for_camera(
+        &self,
+        unit_of_work: &mut U,
+        camera_id: CameraIdentityId,
+    ) -> Result<Option<RecordingCamera>, RepositoryError>;
+
     async fn mark_recording_started(
         &self,
         unit_of_work: &mut U,
@@ -338,6 +352,9 @@ pub trait RecordingRepository<U: UnitOfWork>: Send + Sync {
         started_at: DateTime<Utc>,
     ) -> Result<(), RepositoryError>;
 
+    /// Fails the recording camera. If its take has already been finished, the
+    /// implementation also fails the corresponding uploading VideoFile and
+    /// converges the FinishedTake state in the same unit of work.
     async fn mark_recording_errored(
         &self,
         unit_of_work: &mut U,

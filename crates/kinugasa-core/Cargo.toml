@@ -10,5 +10,6 @@ async-trait.workspace = true
 chrono.workspace = true
 regex.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 url.workspace = true
 uuid = { workspace = true, features = ["v4", "v7"] }

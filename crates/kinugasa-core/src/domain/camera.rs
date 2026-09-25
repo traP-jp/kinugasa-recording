@@ -98,6 +98,15 @@ pub enum CameraConnectionStatus {
     Errored,
 }
 
+/// Runtime input observation applied without replacing the provisioned
+/// publishing endpoint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CameraInputState {
+    Waiting,
+    Connected,
+    Errored(ErrorReason),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CameraConnection {
     camera_identity_id: CameraIdentityId,
@@ -139,6 +148,23 @@ impl CameraConnection {
 
     pub fn set_state(&mut self, state: CameraConnectionState) {
         self.state = state;
+    }
+
+    pub fn apply_input_state(&mut self, state: CameraInputState) -> Result<(), ValidationError> {
+        let endpoint = self.state.endpoint().cloned().ok_or_else(|| {
+            ValidationError::new(
+                "camera_connection.state",
+                "must be provisioned before applying input state",
+            )
+        })?;
+        self.state = match state {
+            CameraInputState::Waiting => CameraConnectionState::Waiting { endpoint },
+            CameraInputState::Connected => CameraConnectionState::Connected { endpoint },
+            CameraInputState::Errored(reason) => {
+                CameraConnectionState::Errored { endpoint, reason }
+            }
+        };
+        Ok(())
     }
 
     pub fn set_media_process_id(&mut self, id: Option<MediaProcessId>) {
@@ -186,5 +212,50 @@ impl Camera {
     #[must_use]
     pub fn into_parts(self) -> (CameraIdentity, CameraConnection) {
         (self.identity, self.connection)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_observation_preserves_provisioned_endpoint() {
+        let endpoint = Url::parse("rist://camera.example.test:9000").unwrap();
+        let mut connection = CameraConnection::new(
+            CameraIdentityId::new_v7(),
+            CameraConnectionState::Waiting {
+                endpoint: endpoint.clone(),
+            },
+        );
+
+        connection
+            .apply_input_state(CameraInputState::Connected)
+            .unwrap();
+        assert_eq!(connection.state().endpoint(), Some(&endpoint));
+
+        connection
+            .apply_input_state(CameraInputState::Errored(
+                ErrorReason::new("input failed").unwrap(),
+            ))
+            .unwrap();
+        assert_eq!(connection.state().endpoint(), Some(&endpoint));
+        assert_eq!(
+            connection.state().error_reason().map(ErrorReason::as_str),
+            Some("input failed")
+        );
+    }
+
+    #[test]
+    fn activating_connection_rejects_input_observation() {
+        let mut connection = CameraConnection::new(
+            CameraIdentityId::new_v7(),
+            CameraConnectionState::Activating,
+        );
+        assert!(
+            connection
+                .apply_input_state(CameraInputState::Waiting)
+                .is_err()
+        );
     }
 }

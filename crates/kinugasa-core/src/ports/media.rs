@@ -6,8 +6,8 @@ use thiserror::Error;
 use url::Url;
 
 use crate::domain::{
-    AccessToken, CameraIdentityId, CameraName, ErrorReason, FinalizedRecording, GatewayInstance,
-    RelativePath, SessionId, SessionName, TakeId,
+    AccessToken, CameraIdentityId, CameraInputState, CameraName, FinalizedRecording,
+    GatewayInstance, RelativePath, SessionId, SessionName, TakeId,
 };
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -74,21 +74,11 @@ pub struct RecordingStarted {
     pub started_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CameraInputState {
-    Waiting,
-    Connected,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaEventKind {
     CameraInputChanged {
         camera_identity_id: CameraIdentityId,
         state: CameraInputState,
-    },
-    CameraInputErrored {
-        camera_identity_id: CameraIdentityId,
-        reason: ErrorReason,
     },
 }
 
@@ -121,6 +111,8 @@ pub struct RistStatisticsSnapshot {
 
 /// Provisions camera publishers. Implementations may use MoQ directly or hide
 /// a different camera-side ingest protocol behind the returned endpoint.
+/// Provision and revoke operations must be idempotent because database-driven
+/// camera reconciliation may repeat them after an interrupted attempt.
 #[async_trait]
 pub trait CameraIngress: Send + Sync {
     async fn provision_camera(
