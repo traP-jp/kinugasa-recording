@@ -4,6 +4,7 @@
 /web/dist/
 /web/node_modules/
 /video-gateway/target/
+/target/
 
 *.tsbuildinfo
 *.local

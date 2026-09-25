@@ -1,0 +1,14 @@
+[package]
+name = "kinugasa-core"
+description = "Domain model and ports for kinugasa recording v3"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+url.workspace = true
+uuid = { workspace = true, features = ["v4", "v7"] }
