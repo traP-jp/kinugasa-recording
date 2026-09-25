@@ -4,6 +4,7 @@ mod error;
 mod lockfile;
 mod media_coordinator;
 mod preview;
+mod recording_state;
 mod session;
 mod statistics;
 mod take;

@@ -3,10 +3,10 @@ use std::{num::NonZeroU32, sync::Arc};
 use tokio::task::JoinSet;
 
 use crate::{
-    application::{UseCaseError, task::collect_tasks},
+    application::{UseCaseError, recording_state::persist_upload_result, task::collect_tasks},
     domain::{ErrorReason, UploadOutcome, UploadResult},
     ports::{
-        Clock, ObjectStorage, ObjectStorageError, RecordingRepository, UnitOfWork,
+        Clock, ObjectStorage, ObjectStorageError, RecordingRepository, TakeRepository, UnitOfWork,
         UnitOfWorkFactory,
     },
 };
@@ -53,7 +53,7 @@ impl<F, R, S, C> UploadCoordinator<F, R, S, C>
 where
     F: UnitOfWorkFactory + 'static,
     F::UnitOfWork: 'static,
-    R: RecordingRepository<F::UnitOfWork> + 'static,
+    R: TakeRepository<F::UnitOfWork> + RecordingRepository<F::UnitOfWork> + 'static,
     S: ObjectStorage + 'static,
     C: Clock + 'static,
 {
@@ -99,9 +99,7 @@ where
                     clock.now(),
                 );
                 let mut unit_of_work = unit_of_work_factory.begin().await?;
-                repository
-                    .apply_upload_result(&mut unit_of_work, &result)
-                    .await?;
+                persist_upload_result(&mut unit_of_work, repository.as_ref(), &result).await?;
                 unit_of_work.commit().await?;
                 Ok(task_outcome)
             });

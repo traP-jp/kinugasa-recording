@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use crate::{
-    application::UseCaseError,
+    application::{UseCaseError, recording_state::fail_upload},
     domain::{
-        Camera, CameraConnection, CameraConnectionState, CameraIdentity, CameraName, SessionName,
-        SessionState,
+        Camera, CameraConnection, CameraConnectionState, CameraIdentity, CameraName, ErrorReason,
+        SessionName, SessionState,
     },
     ports::{
-        CameraDeletionRequest, CameraRepository, Clock, IdGenerator, SessionRepository, UnitOfWork,
-        UnitOfWorkFactory,
+        CameraRepository, Clock, IdGenerator, RecordingRepository, SessionRepository,
+        TakeRepository, UnitOfWork, UnitOfWorkFactory,
     },
 };
 
@@ -39,7 +39,10 @@ impl<F, R, C, I> CameraUseCases<F, R, C, I> {
 impl<F, R, C, I> CameraUseCases<F, R, C, I>
 where
     F: UnitOfWorkFactory,
-    R: CameraRepository<F::UnitOfWork> + SessionRepository<F::UnitOfWork>,
+    R: CameraRepository<F::UnitOfWork>
+        + SessionRepository<F::UnitOfWork>
+        + TakeRepository<F::UnitOfWork>
+        + RecordingRepository<F::UnitOfWork>,
     C: Clock,
     I: IdGenerator,
 {
@@ -53,7 +56,7 @@ where
         let mut unit_of_work = self.unit_of_work_factory.begin().await?;
         let session = self
             .repository
-            .get_session(&mut unit_of_work, &session_name)
+            .get_session_for_update(&mut unit_of_work, &session_name)
             .await?
             .session;
         if session.state() != SessionState::Active {
@@ -107,16 +110,46 @@ where
         camera_name: String,
         force: bool,
     ) -> Result<(), UseCaseError> {
-        let request = CameraDeletionRequest {
-            session_name: SessionName::new(session_name)?,
-            camera_name: CameraName::new(camera_name)?,
-            requested_at: self.clock.now(),
-            force,
-        };
+        let session_name = SessionName::new(session_name)?;
+        let camera_name = CameraName::new(camera_name)?;
         let mut unit_of_work = self.unit_of_work_factory.begin().await?;
-        let _camera_id = self
+        let camera = self
             .repository
-            .request_camera_deletion(&mut unit_of_work, &request)
+            .get_camera_for_update(&mut unit_of_work, &session_name, &camera_name)
+            .await?;
+        let camera_id = camera.identity().id();
+        if self
+            .repository
+            .get_ongoing_recording_for_camera(&mut unit_of_work, camera_id)
+            .await?
+            .is_some()
+        {
+            return Err(UseCaseError::conflict());
+        }
+        let uploading = self
+            .repository
+            .list_uploading_video_files_for_camera(&mut unit_of_work, camera_id)
+            .await?;
+        if !uploading.is_empty() && !force {
+            return Err(UseCaseError::conflict());
+        }
+        if force {
+            let reason = ErrorReason::new("upload aborted by forced camera deletion")?;
+            for video in uploading {
+                fail_upload(
+                    &mut unit_of_work,
+                    self.repository.as_ref(),
+                    video.finished_take_id(),
+                    camera_id,
+                    &reason,
+                )
+                .await?;
+            }
+        }
+        let (_, mut connection) = camera.into_parts();
+        connection.request_deletion(self.clock.now());
+        self.repository
+            .save_camera_connection(&mut unit_of_work, &connection)
             .await?;
         unit_of_work.commit().await?;
         Ok(())

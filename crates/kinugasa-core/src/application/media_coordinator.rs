@@ -3,11 +3,11 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 
 use crate::{
-    application::{UseCaseError, task::collect_tasks},
+    application::{UseCaseError, recording_state::persist_recording_failure, task::collect_tasks},
     domain::{CameraConnectionState, CameraInputState, ErrorReason, RecordingCameraState},
     ports::{
         CameraIngress, CameraRepository, MediaError, MediaEvent, MediaEventKind, MediaEventSource,
-        ProvisionCameraRequest, RecordingRepository, UnitOfWork, UnitOfWorkFactory,
+        ProvisionCameraRequest, RecordingRepository, TakeRepository, UnitOfWork, UnitOfWorkFactory,
     },
 };
 
@@ -49,7 +49,10 @@ impl<F, R, M> MediaCoordinator<F, R, M>
 where
     F: UnitOfWorkFactory + 'static,
     F::UnitOfWork: 'static,
-    R: CameraRepository<F::UnitOfWork> + RecordingRepository<F::UnitOfWork> + 'static,
+    R: CameraRepository<F::UnitOfWork>
+        + TakeRepository<F::UnitOfWork>
+        + RecordingRepository<F::UnitOfWork>
+        + 'static,
     M: CameraIngress + MediaEventSource + 'static,
 {
     /// Performs one startup recovery pass. Recording is deliberately failed,
@@ -63,14 +66,14 @@ where
             .list_active_recordings(&mut unit_of_work)
             .await?;
         for recording in &active_recordings {
-            self.repository
-                .mark_recording_errored(
-                    &mut unit_of_work,
-                    recording.ongoing_take_id(),
-                    recording.camera_identity_id(),
-                    &interrupted_reason,
-                )
-                .await?;
+            persist_recording_failure(
+                &mut unit_of_work,
+                self.repository.as_ref(),
+                recording.ongoing_take_id(),
+                recording.camera_identity_id(),
+                &interrupted_reason,
+            )
+            .await?;
         }
         unit_of_work.commit().await?;
         let mut report = self.reconcile_camera_resources_inner(true).await?;
@@ -113,7 +116,7 @@ where
                         Ok(()) | Err(MediaError::NotFound) => {
                             let mut unit_of_work = unit_of_work_factory.begin().await?;
                             repository
-                                .complete_camera_deletion(&mut unit_of_work, camera_id)
+                                .delete_camera_connection(&mut unit_of_work, camera_id)
                                 .await?;
                             unit_of_work.commit().await?;
                             Ok(CameraResourceOutcome::Deleted)
@@ -147,8 +150,13 @@ where
                             endpoint: access.endpoint,
                         };
                         let mut unit_of_work = unit_of_work_factory.begin().await?;
+                        let camera = repository
+                            .get_camera_by_id_for_update(&mut unit_of_work, camera_id)
+                            .await?;
+                        let (_, mut connection) = camera.into_parts();
+                        connection.set_state(state);
                         repository
-                            .set_camera_connection_state(&mut unit_of_work, camera_id, &state)
+                            .save_camera_connection(&mut unit_of_work, &connection)
                             .await?;
                         unit_of_work.commit().await?;
                         Ok(CameraResourceOutcome::Provisioned)
@@ -178,8 +186,14 @@ where
         } = &event.kind;
 
         let mut unit_of_work = self.unit_of_work_factory.begin().await?;
+        let camera = self
+            .repository
+            .get_camera_by_id_for_update(&mut unit_of_work, *camera_identity_id)
+            .await?;
+        let (_, mut connection) = camera.into_parts();
+        connection.apply_input_state(state.clone())?;
         self.repository
-            .set_camera_input_state(&mut unit_of_work, *camera_identity_id, state)
+            .save_camera_connection(&mut unit_of_work, &connection)
             .await?;
         let recording_error = match state {
             CameraInputState::Waiting => Some(ErrorReason::new("camera input disconnected")?),
@@ -189,18 +203,18 @@ where
         if let Some(reason) = recording_error
             && let Some(recording) = self
                 .repository
-                .get_active_recording_for_camera(&mut unit_of_work, *camera_identity_id)
+                .get_ongoing_recording_for_camera(&mut unit_of_work, *camera_identity_id)
                 .await?
             && matches!(recording.state(), RecordingCameraState::Recording)
         {
-            self.repository
-                .mark_recording_errored(
-                    &mut unit_of_work,
-                    recording.ongoing_take_id(),
-                    recording.camera_identity_id(),
-                    &reason,
-                )
-                .await?;
+            persist_recording_failure(
+                &mut unit_of_work,
+                self.repository.as_ref(),
+                recording.ongoing_take_id(),
+                recording.camera_identity_id(),
+                &reason,
+            )
+            .await?;
         }
         unit_of_work.commit().await?;
         Ok(event)

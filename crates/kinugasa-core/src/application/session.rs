@@ -166,6 +166,14 @@ mod tests {
         ) -> Result<SessionDetail, RepositoryError> {
             Err(RepositoryError::NotFound)
         }
+
+        async fn get_session_for_update(
+            &self,
+            unit_of_work: &mut TestUnitOfWork,
+            name: &SessionName,
+        ) -> Result<SessionDetail, RepositoryError> {
+            self.get_session(unit_of_work, name).await
+        }
     }
 
     struct TestClock(DateTime<Utc>);

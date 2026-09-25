@@ -1,13 +1,12 @@
 use std::{collections::BTreeMap, error::Error, num::NonZeroU32};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 use crate::domain::{
-    Camera, CameraConnectionState, CameraIdentityId, CameraInputState, CameraName, ErrorReason,
-    FinalizedRecording, FinishedTake, FinishedTakeDetail, OngoingTake, RecordingCamera, Session,
-    SessionName, TakeName, UploadResult, VideoFile, VideoFileState,
+    Camera, CameraConnection, CameraIdentityId, CameraName, FinalizedRecording, FinishedTake,
+    FinishedTakeDetail, OngoingTake, RecordingCamera, Session, SessionName, TakeId, TakeName,
+    VideoFile, VideoFileState,
 };
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -127,20 +126,6 @@ pub struct CameraResource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CameraDeletionRequest {
-    pub session_name: SessionName,
-    pub camera_name: CameraName,
-    pub requested_at: DateTime<Utc>,
-    pub force: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FinishTakeRequest {
-    pub session_name: SessionName,
-    pub finished_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LockfileObject {
     pub logical_path: crate::domain::RelativePath,
     pub stored: crate::domain::StoredObject,
@@ -190,6 +175,13 @@ impl PendingUpload {
     }
 }
 
+/// The persisted phase of a take locked for an application-level transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TakeSnapshot {
+    Ongoing,
+    Finished(FinishedTake),
+}
+
 /// Transaction context carried by one application use case.
 ///
 /// Commit and rollback consume the value, preventing accidental use after the
@@ -231,6 +223,12 @@ pub trait SessionRepository<U: UnitOfWork>: Send + Sync {
         unit_of_work: &mut U,
         name: &SessionName,
     ) -> Result<SessionDetail, RepositoryError>;
+
+    async fn get_session_for_update(
+        &self,
+        unit_of_work: &mut U,
+        name: &SessionName,
+    ) -> Result<SessionDetail, RepositoryError>;
 }
 
 /// CameraIdentity and CameraConnection are persisted atomically by this port.
@@ -262,39 +260,35 @@ pub trait CameraRepository<U: UnitOfWork>: Send + Sync {
         camera_name: &CameraName,
     ) -> Result<Camera, RepositoryError>;
 
-    async fn request_camera_deletion(
+    async fn get_camera_for_update(
         &self,
         unit_of_work: &mut U,
-        request: &CameraDeletionRequest,
-    ) -> Result<CameraIdentityId, RepositoryError>;
+        session_name: &SessionName,
+        camera_name: &CameraName,
+    ) -> Result<Camera, RepositoryError>;
 
-    async fn complete_camera_deletion(
+    async fn get_camera_by_id_for_update(
         &self,
         unit_of_work: &mut U,
         camera_id: CameraIdentityId,
+    ) -> Result<Camera, RepositoryError>;
+
+    async fn save_camera_connection(
+        &self,
+        unit_of_work: &mut U,
+        connection: &CameraConnection,
     ) -> Result<(), RepositoryError>;
 
-    async fn set_camera_connection_state(
+    async fn delete_camera_connection(
         &self,
         unit_of_work: &mut U,
         camera_id: CameraIdentityId,
-        state: &CameraConnectionState,
-    ) -> Result<(), RepositoryError>;
-
-    /// Applies a media observation while preserving the provisioned endpoint.
-    async fn set_camera_input_state(
-        &self,
-        unit_of_work: &mut U,
-        camera_id: CameraIdentityId,
-        state: &CameraInputState,
     ) -> Result<(), RepositoryError>;
 }
 
-/// Take-level methods are intentionally coarse grained so aggregate invariants
-/// are enforced while participating in the caller's unit of work.
 #[async_trait]
 pub trait TakeRepository<U: UnitOfWork>: Send + Sync {
-    async fn create_ongoing_take(
+    async fn insert_ongoing_take(
         &self,
         unit_of_work: &mut U,
         take: &OngoingTake,
@@ -306,11 +300,37 @@ pub trait TakeRepository<U: UnitOfWork>: Send + Sync {
         session_name: &SessionName,
     ) -> Result<Option<OngoingTake>, RepositoryError>;
 
-    async fn finish_take(
+    async fn get_ongoing_take_for_update(
         &self,
         unit_of_work: &mut U,
-        request: &FinishTakeRequest,
-    ) -> Result<FinishedTake, RepositoryError>;
+        session_name: &SessionName,
+    ) -> Result<Option<OngoingTake>, RepositoryError>;
+
+    async fn get_take_for_update(
+        &self,
+        unit_of_work: &mut U,
+        take_id: TakeId,
+    ) -> Result<TakeSnapshot, RepositoryError>;
+
+    /// Persists an application-decided ongoing-to-finished transition.
+    async fn replace_ongoing_with_finished(
+        &self,
+        unit_of_work: &mut U,
+        take: &FinishedTake,
+        video_files: &[VideoFile],
+    ) -> Result<(), RepositoryError>;
+
+    async fn save_finished_take(
+        &self,
+        unit_of_work: &mut U,
+        take: &FinishedTake,
+    ) -> Result<(), RepositoryError>;
+
+    async fn delete_recording_cameras(
+        &self,
+        unit_of_work: &mut U,
+        take_id: TakeId,
+    ) -> Result<(), RepositoryError>;
 
     async fn list_finished_takes(
         &self,
@@ -327,7 +347,6 @@ pub trait TakeRepository<U: UnitOfWork>: Send + Sync {
     ) -> Result<NamedFinishedTakeDetail, RepositoryError>;
 }
 
-/// Applies media/recording outcomes idempotently and converges take state.
 #[async_trait]
 pub trait RecordingRepository<U: UnitOfWork>: Send + Sync {
     /// Lists recordings left active by the current database state. The startup
@@ -338,41 +357,61 @@ pub trait RecordingRepository<U: UnitOfWork>: Send + Sync {
         unit_of_work: &mut U,
     ) -> Result<Vec<RecordingCamera>, RepositoryError>;
 
-    async fn get_active_recording_for_camera(
+    async fn get_ongoing_recording_for_camera(
         &self,
         unit_of_work: &mut U,
         camera_id: CameraIdentityId,
     ) -> Result<Option<RecordingCamera>, RepositoryError>;
 
-    async fn mark_recording_started(
+    async fn get_recording_camera_for_update(
         &self,
         unit_of_work: &mut U,
-        take_id: crate::domain::TakeId,
+        take_id: TakeId,
         camera_id: CameraIdentityId,
-        started_at: DateTime<Utc>,
-    ) -> Result<(), RepositoryError>;
+    ) -> Result<Option<RecordingCamera>, RepositoryError>;
 
-    /// Fails the recording camera. If its take has already been finished, the
-    /// implementation also fails the corresponding uploading VideoFile and
-    /// converges the FinishedTake state in the same unit of work.
-    async fn mark_recording_errored(
+    async fn save_recording_camera(
         &self,
         unit_of_work: &mut U,
-        take_id: crate::domain::TakeId,
-        camera_id: CameraIdentityId,
-        reason: &ErrorReason,
+        recording: &RecordingCamera,
     ) -> Result<(), RepositoryError>;
 
-    async fn stage_finalized_recording(
+    async fn get_video_file_for_update(
+        &self,
+        unit_of_work: &mut U,
+        take_id: TakeId,
+        camera_id: CameraIdentityId,
+    ) -> Result<Option<VideoFile>, RepositoryError>;
+
+    async fn list_video_files_for_take_for_update(
+        &self,
+        unit_of_work: &mut U,
+        take_id: TakeId,
+    ) -> Result<Vec<VideoFile>, RepositoryError>;
+
+    async fn list_uploading_video_files_for_camera(
+        &self,
+        unit_of_work: &mut U,
+        camera_id: CameraIdentityId,
+    ) -> Result<Vec<VideoFile>, RepositoryError>;
+
+    async fn save_video_file(
+        &self,
+        unit_of_work: &mut U,
+        video_file: &VideoFile,
+    ) -> Result<(), RepositoryError>;
+
+    async fn get_finalized_recording_for_update(
+        &self,
+        unit_of_work: &mut U,
+        take_id: TakeId,
+        camera_id: CameraIdentityId,
+    ) -> Result<Option<FinalizedRecording>, RepositoryError>;
+
+    async fn insert_finalized_recording(
         &self,
         unit_of_work: &mut U,
         recording: &FinalizedRecording,
-    ) -> Result<(), RepositoryError>;
-
-    async fn apply_upload_result(
-        &self,
-        unit_of_work: &mut U,
-        result: &UploadResult,
     ) -> Result<(), RepositoryError>;
 
     /// Lists finalized files whose durable desired state is still Uploading.

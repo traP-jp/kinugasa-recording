@@ -3,15 +3,22 @@ use std::{collections::BTreeMap, sync::Arc};
 use tokio::task::JoinSet;
 
 use crate::{
-    application::{RecordingLayout, UseCaseError, task::collect_tasks},
+    application::{
+        RecordingLayout, UseCaseError,
+        recording_state::{
+            finish_ongoing_take, persist_recording_failure, persist_recording_started,
+            stage_finalized_recording,
+        },
+        task::collect_tasks,
+    },
     domain::{
         CameraConnectionState, CameraIdentityId, CameraName, ErrorReason, FinishedTake,
         OngoingTake, RecordingCamera, RecordingCameraState, SessionName, SessionState, TakeName,
     },
     ports::{
-        CameraRepository, Clock, FinishTakeRequest, IdGenerator, MediaError, Page, PageRequest,
-        RecordingRepository, RecordingService, SessionRepository, StartRecordingRequest,
-        TakeRepository, UnitOfWork, UnitOfWorkFactory,
+        CameraRepository, Clock, IdGenerator, MediaError, Page, PageRequest, RecordingRepository,
+        RecordingService, SessionRepository, StartRecordingRequest, TakeRepository, UnitOfWork,
+        UnitOfWorkFactory,
     },
 };
 
@@ -97,7 +104,7 @@ where
         let mut unit_of_work = self.unit_of_work_factory.begin().await?;
         let session = self
             .repository
-            .get_session(&mut unit_of_work, &session_name)
+            .get_session_for_update(&mut unit_of_work, &session_name)
             .await?
             .session;
         if session.state() != SessionState::Active {
@@ -109,7 +116,7 @@ where
         for camera_name in &camera_names {
             let camera = self
                 .repository
-                .get_camera(&mut unit_of_work, &session_name, camera_name)
+                .get_camera_for_update(&mut unit_of_work, &session_name, camera_name)
                 .await?;
             if !matches!(
                 camera.connection().state(),
@@ -133,7 +140,7 @@ where
             cameras,
         )?;
         self.repository
-            .create_ongoing_take(&mut unit_of_work, &take)
+            .insert_ongoing_take(&mut unit_of_work, &take)
             .await?;
         unit_of_work.commit().await?;
 
@@ -158,14 +165,14 @@ where
                 match media.start_recording(&request).await {
                     Ok(started) => {
                         let mut unit_of_work = unit_of_work_factory.begin().await?;
-                        repository
-                            .mark_recording_started(
-                                &mut unit_of_work,
-                                take_id,
-                                camera_id,
-                                started.started_at,
-                            )
-                            .await?;
+                        persist_recording_started(
+                            &mut unit_of_work,
+                            repository.as_ref(),
+                            take_id,
+                            camera_id,
+                            started.started_at,
+                        )
+                        .await?;
                         unit_of_work.commit().await?;
                     }
                     Err(error) => {
@@ -228,19 +235,16 @@ where
         let mut unit_of_work = self.unit_of_work_factory.begin().await?;
         let ongoing = self
             .repository
-            .get_ongoing_take(&mut unit_of_work, &session_name)
+            .get_ongoing_take_for_update(&mut unit_of_work, &session_name)
             .await?
             .ok_or_else(UseCaseError::conflict)?;
-        let finished = self
-            .repository
-            .finish_take(
-                &mut unit_of_work,
-                &FinishTakeRequest {
-                    session_name: session_name.clone(),
-                    finished_at: self.clock.now(),
-                },
-            )
-            .await?;
+        let finished = finish_ongoing_take(
+            &mut unit_of_work,
+            self.repository.as_ref(),
+            &ongoing,
+            self.clock.now(),
+        )
+        .await?;
         unit_of_work.commit().await?;
 
         let mut tasks = JoinSet::new();
@@ -257,9 +261,12 @@ where
                 match media.finish_recording(take_id, camera_id).await {
                     Ok(recording) => {
                         let mut unit_of_work = unit_of_work_factory.begin().await?;
-                        repository
-                            .stage_finalized_recording(&mut unit_of_work, &recording)
-                            .await?;
+                        stage_finalized_recording(
+                            &mut unit_of_work,
+                            repository.as_ref(),
+                            &recording,
+                        )
+                        .await?;
                         unit_of_work.commit().await?;
                     }
                     Err(error) => {
@@ -330,13 +337,11 @@ async fn record_recording_failure<F, R>(
 ) -> Result<(), UseCaseError>
 where
     F: UnitOfWorkFactory,
-    R: RecordingRepository<F::UnitOfWork>,
+    R: TakeRepository<F::UnitOfWork> + RecordingRepository<F::UnitOfWork>,
 {
     let reason = ErrorReason::new(error.to_string())?;
     let mut unit_of_work = unit_of_work_factory.begin().await?;
-    repository
-        .mark_recording_errored(&mut unit_of_work, take_id, camera_id, &reason)
-        .await?;
+    persist_recording_failure(&mut unit_of_work, repository, take_id, camera_id, &reason).await?;
     unit_of_work.commit().await?;
     Ok(())
 }
