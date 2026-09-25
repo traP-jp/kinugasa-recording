@@ -1,5 +1,9 @@
 [workspace]
-members = ["crates/kinugasa-core", "crates/kinugasa-s3"]
+members = [
+    "crates/kinugasa-core",
+    "crates/kinugasa-mysql",
+    "crates/kinugasa-s3",
+]
 exclude = ["video-gateway"]
 resolver = "3"
 
@@ -16,6 +20,7 @@ base64 = "0.22.1"
 chrono = "0.4.42"
 regex = "1.11.2"
 sha2 = "0.10.9"
+sqlx = { version = "0.8.6", default-features = false }
 thiserror = "2.0.16"
 tokio = "1.47.1"
 url = "2.5.7"
