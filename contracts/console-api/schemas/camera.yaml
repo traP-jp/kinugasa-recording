@@ -1,0 +1,56 @@
+CameraConnection:
+  type: object
+  required:
+    - name
+    - url
+    - status
+    - error
+  properties:
+    name:
+      $ref: ./common.yaml#/ResourceName
+    url:
+      description: activating中はnullの場合があり、それ以外ではcameraクライアントの接続先URL。
+      type: [string, "null"]
+      format: uri
+    status:
+      type: string
+      enum: [activating, waiting, connected, error]
+    error:
+      description: statusがerrorの場合は接続を拒否した事由、それ以外はnull。
+      oneOf:
+        - $ref: ./common.yaml#/ErrorReason
+        - type: "null"
+  additionalProperties: false
+  allOf:
+    - if:
+        properties:
+          status:
+            const: error
+        required: [status]
+      then:
+        properties:
+          error:
+            $ref: ./common.yaml#/ErrorReason
+      else:
+        properties:
+          error:
+            type: "null"
+    - if:
+        properties:
+          status:
+            const: activating
+        required: [status]
+      else:
+        properties:
+          url:
+            type: string
+            format: uri
+
+CreateCameraRequest:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      $ref: ./common.yaml#/ResourceName
+  additionalProperties: false

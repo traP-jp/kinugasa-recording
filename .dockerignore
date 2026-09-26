@@ -1,8 +1,10 @@
 .git
-.agents
-.codex
-bin
-node_modules
+.direnv
 result
-web/dist
+result-*
+output/
+target/
 web/node_modules
+web/dist
+web/coverage
+**/*.local

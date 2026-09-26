@@ -1,0 +1,25 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: getSessionLockfile
+  tags: [Pipeline]
+  summary: Sessionに属するアップロード済み録画ファイルのlock fileを取得する
+  responses:
+    '200':
+      description: serializationした後段パイプライン入力lock file
+      content:
+        'text/plain; charset=utf-8':
+          schema:
+            type: string
+            contentMediaType: application/json
+            contentSchema:
+              $ref: ../../lockfile/lockfile.schema.json
+    '404':
+      description: Sessionが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/error.yaml#/Error
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

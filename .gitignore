@@ -1,8 +1,8 @@
-/bin/
 /node_modules/
 /web/coverage/
 /web/dist/
 /web/node_modules/
+/target/
 
 *.tsbuildinfo
 *.local
@@ -11,3 +11,4 @@
 result
 result-*
 output/
+artifacts/

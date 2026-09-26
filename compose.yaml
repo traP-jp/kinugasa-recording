@@ -1,0 +1,95 @@
+name: kinugasa-recording
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: kinugasa
+      MYSQL_USER: kinugasa
+      MYSQL_PASSWORD: ${KINUGASA_MYSQL_PASSWORD:-kinugasa}
+      MYSQL_ROOT_PASSWORD: ${KINUGASA_MYSQL_ROOT_PASSWORD:-kinugasa-root}
+    ports:
+      - "${KINUGASA_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47
+    environment:
+      AWS_ACCESS_KEY_ID: ${KINUGASA_S3_ACCESS_KEY:-kinugasa}
+      AWS_SECRET_ACCESS_KEY: ${KINUGASA_S3_SECRET_KEY:-kinugasa-secret}
+      S3_BUCKET: ${KINUGASA_S3_BUCKET:-recordings}
+    ports:
+      - "${KINUGASA_S3_PORT:-8333}:8333"
+    volumes:
+      - object-data:/data
+    healthcheck:
+      test: [CMD, curl, --fail, -I, http://localhost:9333/cluster/healthz]
+      interval: 3s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+
+  console-server:
+    build:
+      context: .
+      dockerfile: deploy/images/kinugasa.Dockerfile
+    environment:
+      DATABASE_URL: mysql://kinugasa:${KINUGASA_MYSQL_PASSWORD:-kinugasa}@mysql:3306/kinugasa
+      LISTEN_ADDRESS: 0.0.0.0:8080
+      KINUGASA_DB_MIGRATE: "true"
+      KINUGASA_RECORDING_ROOT: /recordings
+      KINUGASA_GATEWAY_INSTANCE: compose
+      KINUGASA_RIST_LISTEN_ADDRESS: 0.0.0.0
+      KINUGASA_RIST_PUBLIC_ENDPOINT: rist://${KINUGASA_PUBLIC_HOST:-localhost}
+      KINUGASA_RIST_PORTS: 9200-9299
+      KINUGASA_RIST_ENCRYPTION_PEPPER: ${KINUGASA_RIST_ENCRYPTION_PEPPER:-kinugasa-compose-rist-pepper-change-me}
+      KINUGASA_PREVIEW_ENDPOINT: https://${KINUGASA_PUBLIC_HOST:-localhost}:${KINUGASA_MOQ_PORT:-4443}/moq
+      KINUGASA_MOQ_LISTEN_ADDRESS: 0.0.0.0:4443
+      KINUGASA_MOQ_SELF_SIGNED_HOSTNAMES: ${KINUGASA_MOQ_SELF_SIGNED_HOSTNAMES:-localhost}
+      KINUGASA_S3_BUCKET: ${KINUGASA_S3_BUCKET:-recordings}
+      KINUGASA_S3_REGION: ${KINUGASA_S3_REGION:-us-east-1}
+      KINUGASA_S3_ENDPOINT: http://seaweedfs:8333
+      KINUGASA_S3_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${KINUGASA_S3_ACCESS_KEY:-kinugasa}
+      AWS_SECRET_ACCESS_KEY: ${KINUGASA_S3_SECRET_KEY:-kinugasa-secret}
+      AWS_EC2_METADATA_DISABLED: "true"
+      RUST_LOG: ${RUST_LOG:-kinugasa=info}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    ports:
+      - "${KINUGASA_API_PORT:-8081}:8080/tcp"
+      - "${KINUGASA_MOQ_PORT:-4443}:4443/udp"
+      - "9200-9299:9200-9299/udp"
+    volumes:
+      - recordings:/recordings
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/images/web.Dockerfile
+    depends_on:
+      - console-server
+    ports:
+      - "${KINUGASA_WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  object-data:
+  recordings:

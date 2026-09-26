@@ -1,0 +1,20 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: listRISTStatistics
+  tags: [Cameras]
+  summary: Sessionに属するcameraごとの直近のRIST統計を取得する
+  responses:
+    '200':
+      description: cameraおよびRIST flowごとの直近の5秒区間の統計
+      content:
+        application/json:
+          schema:
+            type: array
+            items:
+              $ref: ../schemas/rist-statistics.yaml#/RISTStatistics
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

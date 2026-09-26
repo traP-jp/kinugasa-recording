@@ -1,0 +1,66 @@
+Session:
+  type: object
+  required:
+    - id
+    - name
+    - state
+    - createdAt
+  properties:
+    id:
+      $ref: ./common.yaml#/Uuid
+    name:
+      $ref: ./common.yaml#/ResourceName
+    state:
+      type: string
+      enum: [active, inactive]
+    createdAt:
+      $ref: ./common.yaml#/Timestamp
+  additionalProperties: false
+
+SessionPage:
+  type: object
+  required:
+    - items
+    - pagination
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/Session'
+    pagination:
+      $ref: ./common.yaml#/Pagination
+  additionalProperties: false
+
+SessionDetail:
+  type: object
+  required:
+    - id
+    - name
+    - state
+    - ongoingTakeName
+    - createdAt
+  properties:
+    id:
+      $ref: ./common.yaml#/Uuid
+    name:
+      $ref: ./common.yaml#/ResourceName
+    state:
+      type: string
+      enum: [active, inactive]
+    ongoingTakeName:
+      description: 進行中の録画がない場合はnull。
+      oneOf:
+        - $ref: ./common.yaml#/ResourceName
+        - type: "null"
+    createdAt:
+      $ref: ./common.yaml#/Timestamp
+  additionalProperties: false
+
+CreateSessionRequest:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      $ref: ./common.yaml#/ResourceName
+  additionalProperties: false

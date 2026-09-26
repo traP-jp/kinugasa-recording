@@ -1,0 +1,18 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: getSession
+  tags: [Sessions]
+  summary: Sessionの詳細を取得する
+  responses:
+    '200':
+      description: Sessionの詳細
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/session.yaml#/SessionDetail
+    '404':
+      $ref: ../openapi.yaml#/components/responses/NotFound
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

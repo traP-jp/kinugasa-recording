@@ -1,0 +1,23 @@
+PreviewAccess:
+  type: object
+  required:
+    - url
+    - accessToken
+    - expiresAt
+  properties:
+    url:
+      type: string
+      format: uri
+      pattern: '^https://'
+      description: |
+        対象sessionを購読するMedia over QUICのWebTransport endpoint。
+        browserはaccessTokenを`jwt` query parameterとして付与して接続する。
+    accessToken:
+      type: string
+      minLength: 1
+      description: |
+        Media over QUIC endpointへ接続するための短期opaque token。
+        JWTとして解釈せず、値を変更せずに`jwt` query parameterへ設定する。
+    expiresAt:
+      $ref: ./common.yaml#/Timestamp
+  additionalProperties: false

@@ -1,0 +1,48 @@
+RISTStatistics:
+  type: object
+  required:
+    - cameraName
+    - gatewayInstance
+    - flowId
+    - intervalStart
+    - intervalEnd
+    - outputPackets
+    - lostPackets
+    - recoveredPackets
+    - discontinuities
+    - stale
+  properties:
+    cameraName:
+      $ref: ./common.yaml#/ResourceName
+    gatewayInstance:
+      type: string
+      minLength: 1
+    flowId:
+      type: integer
+      minimum: 0
+      maximum: 4294967295
+    intervalStart:
+      type: string
+      format: date-time
+    intervalEnd:
+      type: string
+      format: date-time
+    outputPackets:
+      type: integer
+      format: int64
+      minimum: 0
+    lostPackets:
+      type: integer
+      format: int64
+      minimum: 0
+    recoveredPackets:
+      type: integer
+      format: int64
+      minimum: 0
+    discontinuities:
+      type: integer
+      format: int64
+      minimum: 0
+    stale:
+      type: boolean
+  additionalProperties: false

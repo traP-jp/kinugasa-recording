@@ -1,0 +1,22 @@
+parameters:
+  - $ref: ../openapi.yaml#/components/parameters/SessionName
+
+get:
+  operationId: getOngoingTake
+  tags: [Takes]
+  summary: OngoingTakeの有無と、存在する場合はその内容を取得する
+  responses:
+    '200':
+      description: OngoingTakeの取得結果。OngoingTakeの不存在も正常な結果として返す。
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/take.yaml#/OngoingTakeResult
+    '404':
+      description: Sessionが存在しない
+      content:
+        application/json:
+          schema:
+            $ref: ../schemas/error.yaml#/Error
+    '500':
+      $ref: ../openapi.yaml#/components/responses/InternalServerError

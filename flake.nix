@@ -1,54 +1,40 @@
 {
-  description = "Development environment for kinugasa-recording";
+  description = "kinugasa-recording";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
-  outputs =
-    { nixpkgs, ... }:
-    let
-      supportedSystems = [ "x86_64-linux" ];
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-    in
-    {
-      packages = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        {
-          ffmpeg = pkgs.ffmpeg-headless.bin;
-        }
-      );
+  outputs = inputs@{flake-parts, ...}:
+    flake-parts.lib.mkFlake {inherit inputs;} {
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "x86_64-linux"
+      ];
 
-      devShells = forAllSystems (
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        {
-          default = pkgs.mkShell {
-            packages = with pkgs; [
-              awscli2
-              ffmpeg-full
-              go_1_26
-              gnumake
-              golangci-lint
-              iproute2
-              jq
-              k3d
-              kubernetes-code-generator
-              kubernetes-controller-tools
-              kubectl
-              kustomize
-              nodejs_24
-              pnpm
-            ];
-          };
-        }
-      );
-
-      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      perSystem = {pkgs, ...}: {
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            ffmpeg
+            librist
+            nodejs
+            pnpm
+            rustc
+            cargo
+            rustfmt
+            clippy
+            clang
+            libclang.lib
+            meson
+            ninja
+          ];
+          shellHook = ''
+            export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
+          '';
+        };
+      };
     };
 }
