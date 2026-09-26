@@ -3,6 +3,7 @@
 result
 result-*
 output/
+target/
 web/node_modules
 web/dist
 web/coverage
