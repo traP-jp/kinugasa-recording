@@ -10,13 +10,17 @@ async-trait.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 kinugasa-core = { path = "../kinugasa-core" }
+moq-mux.workspace = true
+moq-net.workspace = true
+moq-tokio.workspace = true
 rist-rs = { git = "https://github.com/comavius/rist-rs.git", rev = "28b670e428438e96c88d5a91cf5d18623452c875" }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tracing.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
+mpeg2ts = "0.6.1"
 tempfile = "3.23.0"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

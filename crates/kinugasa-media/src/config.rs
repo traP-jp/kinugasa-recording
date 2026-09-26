@@ -23,9 +23,9 @@ impl MediaConfig {
                 "recording_root must not be empty".into(),
             ));
         }
-        if !matches!(self.preview_endpoint.scheme(), "https" | "http") {
+        if self.preview_endpoint.scheme() != "https" {
             return Err(MediaBuildError::InvalidConfiguration(
-                "preview_endpoint must use https:// or http://".into(),
+                "preview_endpoint must use https:// for WebTransport".into(),
             ));
         }
         if self.preview_endpoint.host_str().is_none() {

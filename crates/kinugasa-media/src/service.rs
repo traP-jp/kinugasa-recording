@@ -1,11 +1,10 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use kinugasa_core::{
     domain::{AccessToken, CameraIdentityId, FinalizedRecording, SessionId, SessionName, TakeId},
     ports::{
@@ -17,11 +16,11 @@ use kinugasa_core::{
 };
 use tokio::sync::{broadcast, mpsc};
 use url::Url;
-use uuid::Uuid;
 
 use crate::{
-    IngressError, MediaBuildError, MediaConfig,
+    IngressError, MediaBuildError, MediaConfig, MediaShutdownError, MoqConfig, MoqError,
     camera::{CameraHandle, CameraMetadata},
+    moq::{MoqServer, PreviewAuthorizer, PreviewTransport},
     rist::{RistConfig, RistServer, SessionTransport},
 };
 
@@ -75,6 +74,10 @@ pub struct PreviewSubscription {
 }
 
 impl PreviewSubscription {
+    pub(crate) fn new(receiver: broadcast::Receiver<PreviewPacket>) -> Self {
+        Self { receiver }
+    }
+
     pub async fn recv(&mut self) -> Result<PreviewPacket, PreviewReceiveError> {
         self.receiver.recv().await.map_err(|error| match error {
             broadcast::error::RecvError::Closed => PreviewReceiveError::Closed,
@@ -87,6 +90,7 @@ pub struct MediaService {
     inner: Arc<Inner>,
     events: tokio::sync::Mutex<mpsc::UnboundedReceiver<MediaEvent>>,
     rist: Box<dyn SessionTransport>,
+    moq: Box<dyn PreviewTransport>,
 }
 
 #[derive(Clone)]
@@ -97,7 +101,7 @@ pub struct MediaIngress {
 struct Inner {
     config: MediaConfig,
     cameras: RwLock<CameraRegistry>,
-    preview_grants: Mutex<HashMap<String, PreviewGrant>>,
+    preview_authorizer: PreviewAuthorizer,
     event_sender: mpsc::UnboundedSender<MediaEvent>,
 }
 
@@ -114,17 +118,19 @@ struct SessionRoutes {
     next_virtual_port: u16,
 }
 
-struct PreviewGrant {
-    session_id: SessionId,
-    expires_at: DateTime<Utc>,
-}
-
 impl MediaService {
     pub async fn new(
         config: MediaConfig,
         rist_config: RistConfig,
+        moq_config: MoqConfig,
     ) -> Result<Self, MediaBuildError> {
         let (inner, events) = Self::prepare(config).await?;
+        let moq = MoqServer::start(
+            moq_config,
+            &inner.config.preview_endpoint,
+            inner.preview_authorizer.clone(),
+        )
+        .await?;
         let rist = RistServer::start(
             rist_config,
             MediaIngress {
@@ -135,6 +141,7 @@ impl MediaService {
             inner,
             events: tokio::sync::Mutex::new(events),
             rist: Box::new(rist),
+            moq: Box::new(moq),
         })
     }
 
@@ -153,7 +160,7 @@ impl MediaService {
             Arc::new(Inner {
                 config,
                 cameras: RwLock::new(CameraRegistry::default()),
-                preview_grants: Mutex::new(HashMap::new()),
+                preview_authorizer: PreviewAuthorizer::new(),
                 event_sender,
             }),
             events,
@@ -172,28 +179,24 @@ impl MediaService {
         access_token: &AccessToken,
         camera_id: CameraIdentityId,
     ) -> Result<PreviewSubscription, MediaError> {
-        let now = Utc::now();
-        let grants = self
-            .inner
-            .preview_grants
-            .lock()
-            .unwrap_or_else(|value| value.into_inner());
-        let grant = grants
-            .get(access_token.expose_secret())
-            .filter(|grant| grant.expires_at > now)
-            .ok_or(MediaError::NotFound)?;
         let camera = self.inner.camera(camera_id)?;
-        if camera.metadata.session_id != grant.session_id {
-            return Err(MediaError::NotFound);
-        }
-        Ok(PreviewSubscription {
-            receiver: camera.subscribe(),
-        })
+        self.inner
+            .preview_authorizer
+            .authorize(camera.metadata.session_id, access_token.expose_secret())
+            .ok_or(MediaError::NotFound)?;
+        Ok(PreviewSubscription::new(camera.subscribe()))
     }
 
-    /// Stops every per-session receiver and joins the shared librist driver.
-    pub fn shutdown(self) -> Result<(), crate::RistError> {
-        self.rist.shutdown()
+    /// Stops the RIST and WebTransport listeners and drains their tasks.
+    pub async fn shutdown(self) -> Result<(), MediaShutdownError> {
+        let rist = self.rist.shutdown();
+        let moq = self.moq.shutdown().await;
+        match (rist, moq) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(rist), Ok(())) => Err(MediaShutdownError::Rist(rist)),
+            (Ok(()), Err(moq)) => Err(MediaShutdownError::Moq(moq)),
+            (Err(rist), Err(moq)) => Err(MediaShutdownError::Both { rist, moq }),
+        }
     }
 }
 
@@ -344,6 +347,14 @@ impl CameraIngress for MediaService {
             {
                 return Err(MediaError::Conflict);
             }
+            self.moq
+                .provision_camera(
+                    request.session_id,
+                    request.camera_identity_id,
+                    &request.camera_name,
+                    PreviewSubscription::new(camera.subscribe()),
+                )
+                .map_err(media_moq_error)?;
             let session = cameras
                 .sessions
                 .get(&request.session_id)
@@ -360,6 +371,7 @@ impl CameraIngress for MediaService {
         {
             return Err(MediaError::Conflict);
         }
+        let mut new_session = false;
         if let std::collections::hash_map::Entry::Vacant(entry) =
             cameras.sessions.entry(request.session_id)
         {
@@ -373,6 +385,7 @@ impl CameraIngress for MediaService {
                 by_virtual_port: HashMap::new(),
                 next_virtual_port: FIRST_VIRTUAL_PORT,
             });
+            new_session = true;
         }
         let session = cameras
             .sessions
@@ -397,6 +410,24 @@ impl CameraIngress for MediaService {
             self.inner.config.recording_start_timeout,
             self.inner.event_sender.clone(),
         ));
+        if let Err(error) = self.moq.provision_camera(
+            request.session_id,
+            request.camera_identity_id,
+            &request.camera_name,
+            PreviewSubscription::new(handle.subscribe()),
+        ) {
+            if new_session {
+                cameras.sessions.remove(&request.session_id);
+                if let Err(revoke_error) = self.rist.revoke_session(request.session_id) {
+                    tracing::warn!(
+                        %revoke_error,
+                        session_id = %request.session_id,
+                        "failed to roll back RIST session after MoQ publication failure"
+                    );
+                }
+            }
+            return Err(media_moq_error(error));
+        }
         session
             .by_virtual_port
             .insert(virtual_port, request.camera_identity_id);
@@ -419,6 +450,7 @@ impl CameraIngress for MediaService {
             let Some(camera) = cameras.by_id.remove(&camera_id) else {
                 return Ok(());
             };
+            self.moq.revoke_camera(camera_id);
             let session_id = camera.metadata.session_id;
             let session = cameras
                 .sessions
@@ -449,34 +481,24 @@ impl PreviewService for MediaService {
         &self,
         request: &PreviewAccessRequest,
     ) -> Result<PreviewAccess, MediaError> {
-        let lifetime = chrono::Duration::from_std(request.valid_for)
-            .map_err(|error| MediaError::Unexpected(Box::new(error)))?;
-        let expires_at = Utc::now().checked_add_signed(lifetime).ok_or_else(|| {
-            MediaError::Unexpected(Box::new(std::io::Error::other(
-                "preview token expiry overflow",
-            )))
-        })?;
-        let secret = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-        let token = AccessToken::new(secret.clone())
-            .map_err(|error| MediaError::Unexpected(Box::new(error)))?;
-        let mut grants = self
+        self.moq.provision_session(request.session_id);
+        let (token, expires_at) = self
             .inner
-            .preview_grants
-            .lock()
-            .unwrap_or_else(|value| value.into_inner());
-        grants.retain(|_, grant| grant.expires_at > Utc::now());
-        grants.insert(
-            secret,
-            PreviewGrant {
-                session_id: request.session_id,
-                expires_at,
-            },
-        );
+            .preview_authorizer
+            .issue(request.session_id, request.valid_for)
+            .map_err(media_moq_error)?;
         Ok(PreviewAccess {
             endpoint: preview_endpoint(&self.inner.config.preview_endpoint, request.session_id),
             access_token: token,
             expires_at,
         })
+    }
+}
+
+fn media_moq_error(error: MoqError) -> MediaError {
+    match error {
+        MoqError::Conflict => MediaError::Conflict,
+        error => MediaError::Unavailable(Box::new(error)),
     }
 }
 
@@ -586,7 +608,7 @@ fn preview_endpoint(base: &Url, session_id: SessionId) -> Url {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, time::Duration};
+    use std::{collections::BTreeSet, sync::Mutex, time::Duration};
 
     use kinugasa_core::{
         domain::{CameraName, ErrorReason, GatewayInstance, RelativePath, SessionName},
@@ -603,6 +625,8 @@ mod tests {
         available_ports: BTreeSet<u16>,
         sessions: HashMap<SessionId, (u16, Url)>,
     }
+
+    struct TestPreviewTransport;
 
     impl TestTransport {
         fn new() -> Self {
@@ -653,6 +677,27 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl PreviewTransport for TestPreviewTransport {
+        fn provision_session(&self, _session_id: SessionId) {}
+
+        fn provision_camera(
+            &self,
+            _session_id: SessionId,
+            _camera_id: CameraIdentityId,
+            _camera_name: &CameraName,
+            _subscription: PreviewSubscription,
+        ) -> Result<(), MoqError> {
+            Ok(())
+        }
+
+        fn revoke_camera(&self, _camera_id: CameraIdentityId) {}
+
+        async fn shutdown(self: Box<Self>) -> Result<(), MoqError> {
+            Ok(())
+        }
+    }
+
     fn config(root: &std::path::Path) -> MediaConfig {
         MediaConfig {
             recording_root: root.to_owned(),
@@ -671,6 +716,7 @@ mod tests {
             inner,
             events: tokio::sync::Mutex::new(events),
             rist: Box::new(TestTransport::new()),
+            moq: Box::new(TestPreviewTransport),
         }
     }
 
@@ -807,6 +853,12 @@ mod tests {
                 reorder_buffer: Duration::from_millis(200),
                 statistics_interval: Duration::from_secs(5),
             },
+            MoqConfig {
+                listen_address: "127.0.0.1:0".parse().unwrap(),
+                tls: crate::MoqTlsIdentity::SelfSigned {
+                    hostnames: vec!["localhost".into()],
+                },
+            },
         )
         .await
         .unwrap();
@@ -829,7 +881,7 @@ mod tests {
             service.provision_camera(&second).await,
             Err(MediaError::Unavailable(_))
         ));
-        service.shutdown().unwrap();
+        service.shutdown().await.unwrap();
     }
 
     #[tokio::test]

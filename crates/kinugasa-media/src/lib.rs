@@ -8,13 +8,15 @@
 mod camera;
 mod config;
 mod error;
+mod moq;
 mod recording;
 mod rist;
 mod service;
 mod transport_stream;
 
 pub use config::MediaConfig;
-pub use error::{IngressError, MediaBuildError};
+pub use error::{IngressError, MediaBuildError, MediaShutdownError};
+pub use moq::{MoqConfig, MoqError, MoqTlsIdentity};
 pub use rist::{RistConfig, RistError, RistServer};
 pub use service::{
     IngressPacket, MediaIngress, MediaService, PreviewPacket, PreviewReceiveError,
