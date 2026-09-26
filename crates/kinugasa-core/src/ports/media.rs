@@ -198,8 +198,8 @@ pub trait CameraIngress: Send + Sync {
     async fn revoke_camera(&self, camera_id: CameraIdentityId) -> Result<(), MediaError>;
 }
 
-/// Issues access to the integrated SFU. It does not expose rooms, tracks, or
-/// vendor-specific LiveKit concepts to the application layer.
+/// Issues access to the integrated SFU without exposing transport-specific
+/// routing concepts to the application layer.
 #[async_trait]
 pub trait PreviewService: Send + Sync {
     async fn issue_preview_access(

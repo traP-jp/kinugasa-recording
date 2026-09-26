@@ -6,7 +6,6 @@ members = [
     "crates/kinugasa-mysql",
     "crates/kinugasa-s3",
 ]
-exclude = ["video-gateway"]
 resolver = "3"
 
 [workspace.package]

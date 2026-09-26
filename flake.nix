@@ -18,20 +18,10 @@
       perSystem = {pkgs, ...}: {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            buf
             ffmpeg
-            go
-            golangci-lint
-            gopls
-            kubectl
             librist
-            mediamtx
             nodejs
             pnpm
-            postgresql
-            protobuf
-            protoc-gen-go
-            protoc-gen-go-grpc
             rustc
             cargo
             rustfmt
