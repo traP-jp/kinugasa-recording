@@ -48,6 +48,7 @@ pub struct RuntimeConfig {
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    pub http_listen_address: SocketAddr,
     pub database: DatabaseConfig,
     pub storage: S3Config,
     pub media: MediaConfig,
@@ -175,6 +176,11 @@ impl AppConfig {
         .map_err(|error| ConfigError::invalid("KINUGASA_LOCKFILE_SCHEMA_VERSION", error))?;
 
         Ok(Self {
+            http_listen_address: parse_or(
+                &mut get,
+                "LISTEN_ADDRESS",
+                "0.0.0.0:8080".parse::<SocketAddr>().unwrap(),
+            )?,
             database: DatabaseConfig {
                 url: database_url,
                 max_connections,

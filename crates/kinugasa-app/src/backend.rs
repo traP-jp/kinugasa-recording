@@ -20,6 +20,7 @@ type UploadReconciler =
     UploadCoordinator<MySqlRepository, MySqlRepository, S3ObjectStorage, SystemClock>;
 
 pub struct Backend {
+    http_listen_address: std::net::SocketAddr,
     services: Services,
     repository: Arc<MySqlRepository>,
     object_storage: Arc<S3ObjectStorage>,
@@ -124,6 +125,7 @@ impl Backend {
         ));
 
         Ok(Self {
+            http_listen_address: config.http_listen_address,
             services,
             repository,
             object_storage,
@@ -148,6 +150,22 @@ impl Backend {
         self,
         shutdown: impl Future<Output = ()> + Send,
     ) -> Result<(), AppError> {
+        let listener = match tokio::net::TcpListener::bind(self.http_listen_address).await {
+            Ok(listener) => listener,
+            Err(source) => {
+                let error = AppError::HttpBind {
+                    address: self.http_listen_address,
+                    source,
+                };
+                if let Err(shutdown_error) = self.shutdown().await {
+                    error!(%shutdown_error, "backend cleanup after HTTP bind failure failed");
+                }
+                return Err(error);
+            }
+        };
+        let http_address = listener
+            .local_addr()
+            .expect("a bound TCP listener has a local address");
         let report = match self.media_reconciler.recover_after_restart().await {
             Ok(report) => report,
             Err(error) => {
@@ -165,9 +183,15 @@ impl Backend {
             deferred_cameras = report.deferred_cameras,
             "startup recovery completed"
         );
+        info!(address = %http_address, "console HTTP API listening");
 
         let (stop_sender, stop_receiver) = watch::channel(false);
         let mut tasks = JoinSet::new();
+        tasks.spawn(crate::api::serve(
+            listener,
+            self.services.clone(),
+            stop_receiver.clone(),
+        ));
         tasks.spawn(run_media_events(
             Arc::clone(&self.media_reconciler),
             stop_receiver.clone(),
@@ -209,6 +233,7 @@ impl Backend {
 
     async fn shutdown(self) -> Result<(), AppError> {
         let Backend {
+            http_listen_address: _,
             services,
             repository,
             object_storage,

@@ -27,6 +27,14 @@ pub enum AppError {
     DatabaseMigration(#[source] sqlx::migrate::MigrateError),
     #[error("failed to start the media server: {0}")]
     MediaBuild(#[source] kinugasa_media::MediaBuildError),
+    #[error("failed to listen for HTTP on {address}: {source}")]
+    HttpBind {
+        address: std::net::SocketAddr,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("HTTP server failed: {0}")]
+    HttpServe(#[source] std::io::Error),
     #[error("startup recovery failed: {0}")]
     StartupRecovery(#[source] kinugasa_core::application::UseCaseError),
     #[error("media event processing failed: {0}")]
