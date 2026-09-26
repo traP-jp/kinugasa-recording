@@ -8,6 +8,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use kinugasa_core::domain::{AccessToken, CameraIdentityId, CameraName, SessionId};
+use kinugasa_core::ports::ServerCertificateHash;
 use moq_tokio::server::{Reject, Request};
 use thiserror::Error;
 use tokio::{
@@ -147,6 +148,8 @@ impl PreviewAuthorizer {
 
 #[async_trait]
 pub(crate) trait PreviewTransport: Send + Sync {
+    fn server_certificate_hashes(&self) -> Vec<ServerCertificateHash>;
+
     fn provision_session(&self, session_id: SessionId);
 
     fn provision_camera(
@@ -164,6 +167,7 @@ pub(crate) trait PreviewTransport: Send + Sync {
 
 pub(crate) struct MoqServer {
     state: Arc<Mutex<MoqState>>,
+    server_certificate_hashes: Vec<ServerCertificateHash>,
     shutdown: Option<oneshot::Sender<()>>,
     listener_task: Option<JoinHandle<Result<(), MoqError>>>,
     #[cfg(test)]
@@ -201,6 +205,7 @@ impl MoqServer {
     ) -> Result<Self, MoqError> {
         config.validate()?;
         let endpoint_path = endpoint_prefix(public_endpoint)?;
+        let uses_self_signed_certificate = matches!(&config.tls, MoqTlsIdentity::SelfSigned { .. });
         let mut listen = moq_tokio::listen::Config::default();
         listen.bind = Some(moq_tokio::listen::Bind::Addr(config.listen_address));
         match config.tls {
@@ -215,7 +220,24 @@ impl MoqServer {
                 listen.tls.generate = hostnames;
             }
         }
-        let listener = listen.init(Default::default())?.listen().await?;
+        let server = listen.init(Default::default())?;
+        let server_certificate_hashes = if uses_self_signed_certificate {
+            server
+                .certificates()
+                .fingerprints()
+                .into_iter()
+                .map(|fingerprint| {
+                    ServerCertificateHash::from_hex(&fingerprint).map_err(|error| {
+                        MoqError::InvalidConfiguration(format!(
+                            "generated certificate fingerprint is invalid: {error}"
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        let listener = server.listen().await?;
         #[cfg(test)]
         let local_addr = listener.local_addr()?;
         let state = Arc::new(Mutex::new(MoqState {
@@ -231,6 +253,7 @@ impl MoqServer {
         ));
         Ok(Self {
             state,
+            server_certificate_hashes,
             shutdown: Some(shutdown),
             listener_task: Some(listener_task),
             #[cfg(test)]
@@ -273,6 +296,10 @@ impl MoqServer {
 
 #[async_trait]
 impl PreviewTransport for MoqServer {
+    fn server_certificate_hashes(&self) -> Vec<ServerCertificateHash> {
+        self.server_certificate_hashes.clone()
+    }
+
     fn provision_session(&self, session_id: SessionId) {
         let mut state = self.state.lock().unwrap_or_else(|value| value.into_inner());
         state
@@ -567,6 +594,9 @@ mod tests {
         )
         .await
         .unwrap();
+        let certificate_hashes = server.server_certificate_hashes();
+        assert_eq!(certificate_hashes.len(), 1);
+        assert_eq!(certificate_hashes[0].to_hex().len(), 64);
         let session_id = SessionId::new_v7();
         let camera_id = CameraIdentityId::new_v7();
         let camera_name = CameraName::new("front").unwrap();
@@ -586,7 +616,11 @@ mod tests {
         let denied_subscriber = moq_tokio::origin::spawn();
         let mut denied_config = moq_tokio::connect::Config::default();
         denied_config.bind = Some("127.0.0.1:0".parse().unwrap());
-        denied_config.tls.insecure = Some(true);
+        denied_config.tls.fingerprint = certificate_hashes
+            .iter()
+            .copied()
+            .map(|hash| hash.to_hex())
+            .collect();
         let denied_client = denied_config
             .init(Default::default())
             .unwrap()
@@ -618,7 +652,11 @@ mod tests {
         let mut announcements = consumer.announced();
         let mut client_config = moq_tokio::connect::Config::default();
         client_config.bind = Some("127.0.0.1:0".parse().unwrap());
-        client_config.tls.insecure = Some(true);
+        client_config.tls.fingerprint = certificate_hashes
+            .iter()
+            .copied()
+            .map(|hash| hash.to_hex())
+            .collect();
         let client = client_config
             .init(Default::default())
             .unwrap()

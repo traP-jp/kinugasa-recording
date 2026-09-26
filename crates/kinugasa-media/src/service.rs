@@ -491,6 +491,7 @@ impl PreviewService for MediaService {
             endpoint: preview_endpoint(&self.inner.config.preview_endpoint, request.session_id),
             access_token: token,
             expires_at,
+            server_certificate_hashes: self.moq.server_certificate_hashes(),
         })
     }
 }
@@ -679,6 +680,10 @@ mod tests {
 
     #[async_trait]
     impl PreviewTransport for TestPreviewTransport {
+        fn server_certificate_hashes(&self) -> Vec<kinugasa_core::ports::ServerCertificateHash> {
+            Vec::new()
+        }
+
         fn provision_session(&self, _session_id: SessionId) {}
 
         fn provision_camera(
@@ -907,6 +912,7 @@ mod tests {
         assert_eq!(access.endpoint.scheme(), "https");
         assert_eq!(access.endpoint.path(), format!("/moq/{session_id}"));
         assert!(access.endpoint.query().is_none());
+        assert!(access.server_certificate_hashes.is_empty());
         assert!(
             service
                 .subscribe_preview(&access.access_token, request.camera_identity_id)

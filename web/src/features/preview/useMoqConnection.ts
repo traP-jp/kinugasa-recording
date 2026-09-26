@@ -1,7 +1,10 @@
 import * as Watch from "@moq/watch";
 import { useEffect, useMemo, useState } from "react";
 import type { PreviewAccess } from "../../api/types";
-import { createMoqConnectionUrl } from "../../lib/moq";
+import {
+  createMoqConnectionUrl,
+  createMoqServerCertificateHashes,
+} from "../../lib/moq";
 
 type ConnectionStatus = Watch.Net.Connection.Status | "unsupported" | "invalid";
 
@@ -12,20 +15,23 @@ interface MoqConnectionState {
 }
 
 export function useMoqConnection(access: PreviewAccess): MoqConnectionState {
-  const connectionUrl = useMemo(() => {
+  const connectionOptions = useMemo(() => {
     try {
-      return createMoqConnectionUrl(access);
+      return {
+        url: createMoqConnectionUrl(access),
+        serverCertificateHashes: createMoqServerCertificateHashes(access),
+      };
     } catch {
       return undefined;
     }
-  }, [access.accessToken, access.url]);
+  }, [access.accessToken, access.serverCertificateHashes, access.url]);
   const [state, setState] = useState<MoqConnectionState>({
-    status: connectionUrl ? "connecting" : "invalid",
+    status: connectionOptions ? "connecting" : "invalid",
     failed: false,
   });
 
   useEffect(() => {
-    if (!connectionUrl) {
+    if (!connectionOptions) {
       setState({ status: "invalid", failed: true });
       return;
     }
@@ -35,8 +41,11 @@ export function useMoqConnection(access: PreviewAccess): MoqConnectionState {
     }
 
     const connection = new Watch.Net.Connection({
-      url: connectionUrl,
+      url: connectionOptions.url,
       discovery: true,
+      webtransport: {
+        serverCertificateHashes: connectionOptions.serverCertificateHashes,
+      },
       websocket: { enabled: false },
     });
     const update = () => {
@@ -55,7 +64,7 @@ export function useMoqConnection(access: PreviewAccess): MoqConnectionState {
       unsubscribeError();
       connection.close();
     };
-  }, [connectionUrl]);
+  }, [connectionOptions]);
 
   return state;
 }

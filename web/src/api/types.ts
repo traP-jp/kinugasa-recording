@@ -94,4 +94,5 @@ export interface PreviewAccess {
   url: string;
   accessToken: string;
   expiresAt: string;
+  serverCertificateHashes: string[];
 }

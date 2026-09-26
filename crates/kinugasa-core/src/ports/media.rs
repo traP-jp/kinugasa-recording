@@ -7,7 +7,7 @@ use url::Url;
 
 use crate::domain::{
     AccessToken, CameraIdentityId, CameraInputState, CameraName, FinalizedRecording,
-    GatewayInstance, RelativePath, SessionId, SessionName, TakeId,
+    GatewayInstance, RelativePath, SessionId, SessionName, TakeId, ValidationError,
 };
 
 type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -50,6 +50,66 @@ pub struct PreviewAccessRequest {
     pub valid_for: Duration,
 }
 
+/// SHA-256 fingerprint used by browser WebTransport clients to pin a
+/// self-signed server certificate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ServerCertificateHash([u8; Self::LENGTH]);
+
+impl ServerCertificateHash {
+    pub const LENGTH: usize = 32;
+
+    pub fn from_hex(value: &str) -> Result<Self, ValidationError> {
+        if value.len() != Self::LENGTH * 2 {
+            return Err(ValidationError::new(
+                "server_certificate_hash",
+                "must contain exactly 64 hexadecimal characters",
+            ));
+        }
+        let mut bytes = [0; Self::LENGTH];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let high = decode_hex_digit(pair[0]).ok_or_else(|| {
+                ValidationError::new(
+                    "server_certificate_hash",
+                    "must contain only hexadecimal characters",
+                )
+            })?;
+            let low = decode_hex_digit(pair[1]).ok_or_else(|| {
+                ValidationError::new(
+                    "server_certificate_hash",
+                    "must contain only hexadecimal characters",
+                )
+            })?;
+            bytes[index] = (high << 4) | low;
+        }
+        Ok(Self(bytes))
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; Self::LENGTH] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn to_hex(self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut output = String::with_capacity(Self::LENGTH * 2);
+        for byte in self.0 {
+            output.push(char::from(HEX[usize::from(byte >> 4)]));
+            output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        output
+    }
+}
+
+const fn decode_hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
 /// Short-lived subscriber credentials consumed by the web console.
 ///
 /// `endpoint` is the session-scoped HTTPS WebTransport endpoint. Browser
@@ -62,6 +122,9 @@ pub struct PreviewAccess {
     pub endpoint: Url,
     pub access_token: AccessToken,
     pub expires_at: DateTime<Utc>,
+    /// Empty for a certificate trusted through the browser's normal trust
+    /// store. Populated for an ephemeral self-signed development identity.
+    pub server_certificate_hashes: Vec<ServerCertificateHash>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,4 +261,30 @@ pub trait MediaServer:
 impl<T> MediaServer for T where
     T: CameraIngress + PreviewService + RecordingService + MediaEventSource + RistStatisticsSource
 {
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ServerCertificateHash;
+
+    #[test]
+    fn server_certificate_hash_round_trips_hex() {
+        let value = "0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789ABCDEF";
+        let hash = ServerCertificateHash::from_hex(value).unwrap();
+        assert_eq!(
+            hash.to_hex(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn server_certificate_hash_rejects_invalid_hex() {
+        assert!(ServerCertificateHash::from_hex("00").is_err());
+        assert!(
+            ServerCertificateHash::from_hex(
+                "gg23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            )
+            .is_err()
+        );
+    }
 }
