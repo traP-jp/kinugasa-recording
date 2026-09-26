@@ -4,10 +4,10 @@ parameters:
 post:
   operationId: createPreviewAccess
   tags: [Preview]
-  summary: LiveKitの接続情報を取得する
+  summary: Media over QUIC previewの接続情報を取得する
   responses:
     '200':
-      description: LiveKitの接続先と短期アクセストークン
+      description: session固有のWebTransport endpointと短期アクセストークン
       content:
         application/json:
           schema:
@@ -16,5 +16,7 @@ post:
       $ref: ../openapi.yaml#/components/responses/NotFound
     '409':
       $ref: ../openapi.yaml#/components/responses/Conflict
+    '503':
+      $ref: ../openapi.yaml#/components/responses/ServiceUnavailable
     '500':
       $ref: ../openapi.yaml#/components/responses/InternalServerError

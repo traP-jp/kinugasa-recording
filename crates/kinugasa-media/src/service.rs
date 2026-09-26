@@ -903,6 +903,9 @@ mod tests {
             })
             .await
             .unwrap();
+        assert_eq!(access.endpoint.scheme(), "https");
+        assert_eq!(access.endpoint.path(), format!("/moq/{session_id}"));
+        assert!(access.endpoint.query().is_none());
         assert!(
             service
                 .subscribe_preview(&access.access_token, request.camera_identity_id)

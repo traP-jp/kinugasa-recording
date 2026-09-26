@@ -23,7 +23,7 @@ tags:
   - name: Takes
     description: 録画の開始、停止および結果の参照。
   - name: Preview
-    description: リアルタイムプレビューへのアクセス。
+    description: Media over QUICによるリアルタイムプレビューへのアクセス。
   - name: Pipeline
     description: 後段パイプラインへ提供するデータの取得。
 
@@ -109,6 +109,12 @@ components:
             $ref: ./schemas/error.yaml#/Error
     Conflict:
       description: リソース名の重複または現在の状態との競合
+      content:
+        application/json:
+          schema:
+            $ref: ./schemas/error.yaml#/Error
+    ServiceUnavailable:
+      description: media serverが一時的に利用できない
       content:
         application/json:
           schema:

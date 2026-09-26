@@ -51,6 +51,12 @@ pub struct PreviewAccessRequest {
 }
 
 /// Short-lived subscriber credentials consumed by the web console.
+///
+/// `endpoint` is the session-scoped HTTPS WebTransport endpoint. Browser
+/// clients append `access_token` unchanged as the `jwt` query parameter when
+/// establishing the Media over QUIC connection. Keeping the secret separate
+/// preserves redaction in logs and keeps it out of otherwise routinely logged
+/// endpoint URLs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreviewAccess {
     pub endpoint: Url,
