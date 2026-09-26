@@ -849,6 +849,7 @@ mod tests {
                 listen_address: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
                 public_endpoint: Url::parse("rist://recording.example.test").unwrap(),
                 available_ports: vec![port],
+                encryption_pepper: "test-pepper-with-at-least-32-bytes".into(),
                 recovery_buffer: Duration::from_secs(5),
                 reorder_buffer: Duration::from_millis(200),
                 statistics_interval: Duration::from_secs(5),

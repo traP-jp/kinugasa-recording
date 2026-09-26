@@ -7,13 +7,16 @@ version.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+hmac.workspace = true
 kinugasa-core = { path = "../kinugasa-core" }
 moq-mux.workspace = true
 moq-net.workspace = true
 moq-tokio.workspace = true
 rist-rs = { git = "https://github.com/comavius/rist-rs.git", rev = "28b670e428438e96c88d5a91cf5d18623452c875" }
+sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
 tracing.workspace = true

@@ -19,6 +19,7 @@ use crate::ConfigError;
 const DEFAULT_DATABASE_CONNECTIONS: u32 = 16;
 const DEFAULT_MOQ_LISTEN_ADDRESS: &str = "0.0.0.0:4443";
 const DEFAULT_RECORDING_ROOT: &str = "/recordings";
+const MINIMUM_RIST_ENCRYPTION_PEPPER_LENGTH: usize = 32;
 
 #[derive(Clone)]
 pub struct DatabaseConfig {
@@ -118,6 +119,13 @@ impl AppConfig {
             )?,
         };
 
+        let rist_encryption_pepper = required(&mut get, "KINUGASA_RIST_ENCRYPTION_PEPPER")?;
+        if rist_encryption_pepper.len() < MINIMUM_RIST_ENCRYPTION_PEPPER_LENGTH {
+            return Err(ConfigError::invalid(
+                "KINUGASA_RIST_ENCRYPTION_PEPPER",
+                format!("must contain at least {MINIMUM_RIST_ENCRYPTION_PEPPER_LENGTH} bytes"),
+            ));
+        }
         let rist = RistConfig {
             listen_address: parse_or(
                 &mut get,
@@ -129,6 +137,7 @@ impl AppConfig {
                 required(&mut get, "KINUGASA_RIST_PUBLIC_ENDPOINT")?,
             )?,
             available_ports: parse_ports(required(&mut get, "KINUGASA_RIST_PORTS")?)?,
+            encryption_pepper: rist_encryption_pepper,
             recovery_buffer: duration_or(
                 &mut get,
                 "KINUGASA_RIST_RECOVERY_BUFFER",
@@ -357,6 +366,10 @@ mod tests {
             ),
             ("KINUGASA_RIST_PORTS".into(), "9200-9202,9300".into()),
             (
+                "KINUGASA_RIST_ENCRYPTION_PEPPER".into(),
+                "test-pepper-with-at-least-32-bytes".into(),
+            ),
+            (
                 "KINUGASA_MOQ_SELF_SIGNED_HOSTNAMES".into(),
                 "localhost,127.0.0.1".into(),
             ),
@@ -377,6 +390,10 @@ mod tests {
 
         assert_eq!(config.database.max_connections, 16);
         assert_eq!(config.rist.available_ports, vec![9200, 9201, 9202, 9300]);
+        assert_eq!(
+            config.rist.encryption_pepper,
+            "test-pepper-with-at-least-32-bytes"
+        );
         assert_eq!(config.preview_token_lifetime, Duration::from_secs(90));
         assert_eq!(config.runtime.upload_batch_size.get(), 64);
         assert_eq!(config.recording_layout.file_name(), "video.ts");
@@ -411,5 +428,18 @@ mod tests {
         values.insert("KINUGASA_UPLOAD_RECONCILE_INTERVAL".into(), "0s".into());
 
         assert!(from(values).is_err());
+    }
+
+    #[test]
+    fn short_rist_encryption_pepper_is_rejected() {
+        let mut values = required_values();
+        values.insert("KINUGASA_RIST_ENCRYPTION_PEPPER".into(), "too-short".into());
+
+        let error = from(values).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("KINUGASA_RIST_ENCRYPTION_PEPPER")
+        );
     }
 }

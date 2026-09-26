@@ -2340,14 +2340,17 @@ name = "kinugasa-media"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "bytes",
  "chrono",
+ "hmac 0.12.1",
  "kinugasa-core",
  "moq-mux",
  "moq-net",
  "moq-tokio",
  "mpeg2ts",
  "rist-rs",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

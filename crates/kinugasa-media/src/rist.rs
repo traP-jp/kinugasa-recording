@@ -6,18 +6,23 @@ use std::{
     time::Duration,
 };
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
+use hmac::{Hmac, Mac};
 use kinugasa_core::domain::{AccessToken, ErrorReason, SessionId};
 use rist_rs::{
     AuthenticationRequest, ConnectionStatus, DataBlock, Driver, DriverBuilder, EncryptionKeySize,
     LogHandler, LogLevel, PeerConfig, PeerInfo, Profile, ReceiverConfig, ReceiverHandle,
     ReceiverHandler, ReceiverHandlers, ReceiverStatistics,
 };
+use sha2::Sha256;
 use thiserror::Error;
 use url::Url;
-use uuid::Uuid;
 
 use crate::{IngressError, MediaIngress, TransportStatistics, service::SessionIngressPacket};
+
+const MINIMUM_ENCRYPTION_PEPPER_LENGTH: usize = 32;
+const SESSION_SECRET_CONTEXT: &[u8] = b"kinugasa-recording/rist-session/v1";
 
 #[derive(Clone)]
 pub struct RistConfig {
@@ -29,6 +34,9 @@ pub struct RistConfig {
     /// Exclusive pool of physical UDP ports. One port is leased per active
     /// session and returned when its last camera is revoked.
     pub available_ports: Vec<u16>,
+    /// Deployment-wide secret used to deterministically derive a credential
+    /// for each session. It must remain stable across process restarts.
+    pub encryption_pepper: String,
     pub recovery_buffer: Duration,
     pub reorder_buffer: Duration,
     pub statistics_interval: Duration,
@@ -41,6 +49,7 @@ impl std::fmt::Debug for RistConfig {
             .field("listen_address", &self.listen_address)
             .field("public_endpoint", &self.public_endpoint)
             .field("available_ports", &self.available_ports)
+            .field("encryption_pepper", &"[REDACTED]")
             .field("recovery_buffer", &self.recovery_buffer)
             .field("reorder_buffer", &self.reorder_buffer)
             .field("statistics_interval", &self.statistics_interval)
@@ -68,6 +77,11 @@ impl RistConfig {
             return Err(RistError::InvalidConfiguration(
                 "available_ports must contain at least one nonzero port".into(),
             ));
+        }
+        if self.encryption_pepper.len() < MINIMUM_ENCRYPTION_PEPPER_LENGTH {
+            return Err(RistError::InvalidConfiguration(format!(
+                "encryption_pepper must contain at least {MINIMUM_ENCRYPTION_PEPPER_LENGTH} bytes"
+            )));
         }
         let unique = self
             .available_ports
@@ -118,6 +132,16 @@ impl RistConfig {
             .append_pair("aes-type", "256")
             .append_pair("secret", secret.expose_secret());
         Ok(endpoint)
+    }
+
+    fn session_secret(&self, session_id: SessionId) -> AccessToken {
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.encryption_pepper.as_bytes())
+            .expect("HMAC accepts keys of every length");
+        mac.update(SESSION_SECRET_CONTEXT);
+        mac.update(&[0]);
+        mac.update(session_id.to_string().as_bytes());
+        AccessToken::new(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
+            .expect("an HMAC-derived credential is never empty")
     }
 }
 
@@ -275,12 +299,7 @@ impl SessionTransport for RistServer {
             .first()
             .copied()
             .ok_or(RistError::PortPoolExhausted)?;
-        let secret = AccessToken::new(format!(
-            "{}{}",
-            Uuid::new_v4().simple(),
-            Uuid::new_v4().simple()
-        ))
-        .expect("a UUID-derived credential is never empty");
+        let secret = self.config.session_secret(session_id);
         let endpoint = self.config.camera_endpoint(port, &secret)?;
         let receiver = self.create_session_receiver(session_id, port, &secret)?;
 
@@ -621,6 +640,7 @@ mod tests {
             listen_address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             public_endpoint: Url::parse("rist://recording.example.test").unwrap(),
             available_ports: vec![9_200, 9_201],
+            encryption_pepper: "test-pepper-with-at-least-32-bytes".into(),
             recovery_buffer: Duration::from_secs(5),
             reorder_buffer: Duration::from_millis(200),
             statistics_interval: Duration::from_secs(5),
@@ -654,6 +674,30 @@ mod tests {
             config.available_ports = ports;
             assert!(config.validate().is_err());
         }
+    }
+
+    #[test]
+    fn derives_a_stable_session_secret_like_v2() {
+        let config = config();
+        let session_id = SessionId::from_str("019c240d-a6de-7de0-a826-0f26e8803fc0").unwrap();
+
+        assert_eq!(
+            config.session_secret(session_id).expose_secret(),
+            "SiRUeJ8S7Pm3al4p5suRq-dsrlHD0l02unseAzrkbWY"
+        );
+        assert_eq!(
+            config.session_secret(session_id),
+            config.session_secret(session_id)
+        );
+        assert!(!format!("{config:?}").contains("test-pepper"));
+    }
+
+    #[test]
+    fn rejects_a_short_encryption_pepper() {
+        let mut config = config();
+        config.encryption_pepper = "too-short".into();
+
+        assert!(config.validate().is_err());
     }
 
     #[test]
