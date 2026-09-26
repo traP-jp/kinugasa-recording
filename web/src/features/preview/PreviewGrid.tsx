@@ -1,12 +1,13 @@
-import { LiveKitRoom, VideoTrack, useTracks, type TrackReference } from "@livekit/components-react";
-import { SignalZero, VideoOff } from "lucide-react";
-import { Track } from "livekit-client";
+import type * as Watch from "@moq/watch";
+import { VideoOff } from "lucide-react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
-import type { CameraConnection, PreviewAccess } from "../../api/types";
+import type { PreviewAccess } from "../../api/types";
 import { previewGridColumnCount } from "../../lib/previewGrid";
 import type { CameraDisplayState } from "../cameras/cameraDisplayState";
 import { AudioLevelMeter } from "./AudioLevelMeter";
+import { MoqCameraPreview } from "./MoqCameraPreview";
 import { VideoPreviewModal } from "./VideoPreviewModal";
+import { useMoqConnection } from "./useMoqConnection";
 
 interface PreviewGridProps {
   cameras: CameraDisplayState[];
@@ -15,29 +16,30 @@ interface PreviewGridProps {
 
 export function PreviewGrid({ cameras, access }: PreviewGridProps) {
   if (!access) {
-    return <PreviewPlaceholders cameras={cameras} message="LiveKitへ接続しています" />;
+    return <PreviewPlaceholders cameras={cameras} message="プレビュー接続情報を取得しています" />;
   }
-  return (
-    <LiveKitRoom
-      token={access.accessToken}
-      serverUrl={access.url}
-      connect
-      audio={false}
-      video={false}
-      className="livekit-room"
-    >
-      <ConnectedPreviewGrid cameras={cameras} />
-    </LiveKitRoom>
-  );
+  return <MoqPreviewSession cameras={cameras} access={access} />;
 }
 
-function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
+function MoqPreviewSession({ cameras, access }: PreviewGridProps & { access: PreviewAccess }) {
+  const { connection, status, failed } = useMoqConnection(access);
+  if (status === "unsupported") {
+    return <PreviewPlaceholders cameras={cameras} message="このブラウザはMedia over QUICに対応していません" />;
+  }
+  if (status === "invalid" || failed) {
+    return <PreviewPlaceholders cameras={cameras} message="Media over QUICへ接続できません" />;
+  }
+  return <ConnectedPreviewGrid cameras={cameras} connection={connection} />;
+}
+
+function ConnectedPreviewGrid({
+  cameras,
+  connection,
+}: {
+  cameras: CameraDisplayState[];
+  connection?: Watch.Net.Connection;
+}) {
   const [expandedCameraName, setExpandedCameraName] = useState<string | null>(null);
-  const videoTracks = useTracks([Track.Source.Camera], { onlySubscribed: false });
-  const audioTracks = useTracks([Track.Source.Microphone, Track.Source.Unknown], { onlySubscribed: false })
-    .filter((track) => track.publication.kind === Track.Kind.Audio);
-  const videoTracksByIdentity = new Map(videoTracks.map((track) => [track.participant.identity, track]));
-  const audioTracksByIdentity = new Map(audioTracks.map((track) => [track.participant.identity, track]));
   if (cameras.length === 0) return <PreviewPlaceholders cameras={[]} message="Cameraを追加すると映像が表示されます" />;
   const expandedCamera = cameras.find((camera) => camera.camera.name === expandedCameraName);
   return (
@@ -45,13 +47,10 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
       <PreviewTileGrid itemCount={cameras.length}>
         {cameras.map((cameraDisplay) => {
           const camera = cameraDisplay.camera;
-          const videoTrack = videoTracksByIdentity.get(camera.name);
-          const audioTrack = audioTracksByIdentity.get(camera.name);
           return (
             <PreviewTile key={camera.name} cameraName={camera.name} onOpen={() => setExpandedCameraName(camera.name)}>
-              <CameraPreviewContent camera={camera} track={videoTrack} />
+              <MoqCameraPreview camera={camera} connection={connection} />
               <PreviewLabel cameraDisplay={cameraDisplay} />
-              <AudioLevelMeter cameraName={camera.name} track={audioTrack} />
             </PreviewTile>
           );
         })}
@@ -59,8 +58,7 @@ function ConnectedPreviewGrid({ cameras }: { cameras: CameraDisplayState[] }) {
       {expandedCamera && (
         <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
           <div className="video-preview-expanded">
-            <CameraPreviewContent camera={expandedCamera.camera} track={videoTracksByIdentity.get(expandedCamera.camera.name)} />
-            <AudioLevelMeter cameraName={expandedCamera.camera.name} track={audioTracksByIdentity.get(expandedCamera.camera.name)} />
+            <MoqCameraPreview camera={expandedCamera.camera} connection={connection} visible="always" />
           </div>
         </VideoPreviewModal>
       )}
@@ -101,16 +99,6 @@ function PreviewLabel({ cameraDisplay }: { cameraDisplay: CameraDisplayState }) 
     <div className="preview-label">
       <span className={`signal-dot signal-${cameraDisplay.status}`} />
       {cameraDisplay.camera.name}
-    </div>
-  );
-}
-
-function CameraPreviewContent({ camera, track }: { camera: CameraConnection; track?: TrackReference }) {
-  if (track) return <VideoTrack trackRef={track} />;
-  return (
-    <div className="preview-waiting">
-      {camera.status === "connected" ? <SignalZero size={28} /> : <VideoOff size={28} />}
-      <span>{camera.status === "connected" ? "LiveKit trackを待機中" : "映像信号なし"}</span>
     </div>
   );
 }

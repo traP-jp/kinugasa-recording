@@ -1,14 +1,17 @@
-import type { TrackReference } from "@livekit/components-react";
 import { audioLevelToPercentage } from "../../lib/audioLevel";
-import { useReceivedAudioLevel } from "./useReceivedAudioLevel";
+import type { ReceivedAudioLevel } from "./useReceivedAudioLevel";
 
 interface AudioLevelMeterProps {
   cameraName: string;
-  track?: TrackReference;
+  measurement?: ReceivedAudioLevel;
 }
 
-export function AudioLevelMeter({ cameraName, track }: AudioLevelMeterProps) {
-  const { hasTrack, receiving, level } = useReceivedAudioLevel(track);
+export function AudioLevelMeter({ cameraName, measurement }: AudioLevelMeterProps) {
+  const { hasTrack, receiving, level } = measurement ?? {
+    hasTrack: false,
+    receiving: false,
+    level: 0,
+  };
   const percentage = receiving ? audioLevelToPercentage(level) : 0;
   const label = receiving ? "AUDIO" : hasTrack ? "WAITING" : "NO AUDIO";
   const levelText = receiving ? `${percentage}%` : hasTrack ? "音声データ待機中" : "音声トラックなし";
