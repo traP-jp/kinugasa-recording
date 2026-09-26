@@ -31,6 +31,7 @@ pub struct ProvisionCameraRequest {
     pub session_id: SessionId,
     pub session_name: SessionName,
     pub camera_identity_id: CameraIdentityId,
+    pub camera_name: CameraName,
 }
 
 /// Publishing information returned to the camera-facing API. The transport is
@@ -109,8 +110,13 @@ pub struct RistStatisticsSnapshot {
     pub stale: bool,
 }
 
-/// Provisions camera publishers. Implementations may use MoQ directly or hide
-/// a different camera-side ingest protocol behind the returned endpoint.
+/// Provisions camera publishers. Implementations may share one physical
+/// listener and credential among cameras in the same session while using
+/// transport-level stream identifiers to multiplex them. Different sessions
+/// must remain isolated from one another.
+///
+/// Implementations may use MoQ directly or hide a different camera-side
+/// ingest protocol behind the returned endpoint.
 /// Provision and revoke operations must be idempotent because database-driven
 /// camera reconciliation may repeat them after an interrupted attempt.
 #[async_trait]

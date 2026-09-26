@@ -139,6 +139,7 @@ where
                 session_id: resource.camera.identity().session_id(),
                 session_name: resource.session_name,
                 camera_identity_id: camera_id,
+                camera_name: resource.camera.identity().name().clone(),
             };
             let unit_of_work_factory = Arc::clone(&self.unit_of_work_factory);
             let repository = Arc::clone(&self.repository);
