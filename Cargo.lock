@@ -2305,6 +2305,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinugasa-app"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "humantime",
+ "kinugasa-core",
+ "kinugasa-media",
+ "kinugasa-mysql",
+ "kinugasa-s3",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "kinugasa-core"
 version = "0.1.0"
 dependencies = [
