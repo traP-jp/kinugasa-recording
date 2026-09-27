@@ -27,6 +27,7 @@ moq-mux = "0.10.6"
 moq-net = "0.3.5"
 moq-tokio = { version = "0.19.17", default-features = false, features = ["noq", "ring"] }
 regex = "1.11.2"
+rist-rs = { git = "https://github.com/comavius/rist-rs.git", rev = "28b670e428438e96c88d5a91cf5d18623452c875" }
 serde = "1.0.228"
 serde_json = "1.0.145"
 sha2 = "0.10.9"
