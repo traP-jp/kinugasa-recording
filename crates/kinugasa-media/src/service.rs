@@ -237,6 +237,9 @@ impl MediaIngress {
             .disconnected()
     }
 
+    // Retained for the flow-collision error path that will be restored with
+    // virt-dst-port multiplexing.
+    #[allow(dead_code)]
     pub(crate) fn error_session_route(
         &self,
         session_id: SessionId,
