@@ -38,6 +38,9 @@ pub(crate) struct CameraMetadata {
 pub(crate) struct CameraHandle {
     pub(crate) metadata: CameraMetadata,
     commands: mpsc::Sender<Command>,
+    // Retained for the flow-collision error path that will be restored with
+    // virt-dst-port multiplexing.
+    #[allow(dead_code)]
     input_errors: mpsc::UnboundedSender<ErrorReason>,
     preview: broadcast::Sender<PreviewPacket>,
     overflowed: Arc<AtomicBool>,
@@ -105,6 +108,7 @@ impl CameraHandle {
             })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn input_error(&self, reason: ErrorReason) -> Result<(), crate::IngressError> {
         self.input_errors
             .send(reason)

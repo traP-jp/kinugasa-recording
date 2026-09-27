@@ -9,7 +9,7 @@ use std::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 use hmac::{Hmac, Mac};
-use kinugasa_core::domain::{AccessToken, CameraIdentityId, ErrorReason, SessionId};
+use kinugasa_core::domain::{AccessToken, CameraIdentityId, SessionId};
 use rist_rs::{
     AuthenticationRequest, ConnectionStatus, DataBlock, Driver, DriverBuilder, EncryptionKeySize,
     LogHandler, LogLevel, PeerConfig, PeerInfo, Profile, ReceiverConfig, ReceiverHandle,
@@ -501,12 +501,14 @@ impl ReceiverHandler for RistReceiver {
     fn handle_data(&self, data: DataBlock) {
         let virtual_port = data.virtual_destination_port();
         let flow_id = data.flow_id();
-        let decision = self
+        let _decision = self
             .routes
             .lock()
             .unwrap_or_else(|value| value.into_inner())
             .observe(flow_id, virtual_port);
-        match decision {
+        // TODO: Re-enable this error handling when multiplexing multiple cameras
+        // on one UDP port with virt-dst-port is restored.
+        /* match _decision {
             RouteDecision::Accepted => {}
             RouteDecision::Rejected => return,
             RouteDecision::Collision {
@@ -523,7 +525,7 @@ impl ReceiverHandler for RistReceiver {
                     "RIST flow ID and virtual port collision"
                 );
                 for port in affected_ports {
-                    let reason = ErrorReason::new(format!(
+                    let reason = kinugasa_core::domain::ErrorReason::new(format!(
                         "RIST flow ID {flow_id} conflicts with another camera in the session"
                     ))
                     .expect("the RIST collision reason is non-empty");
@@ -543,7 +545,7 @@ impl ReceiverHandler for RistReceiver {
                 }
                 return;
             }
-        }
+        } */
         let result = self.ingress.push_for_session_route(SessionIngressPacket {
             session_id: self.session_id,
             virtual_port,
