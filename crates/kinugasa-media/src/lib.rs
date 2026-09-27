@@ -12,7 +12,6 @@ mod moq;
 mod recording;
 mod rist;
 mod service;
-mod transport_stream;
 
 pub use config::MediaConfig;
 pub use error::{IngressError, MediaBuildError, MediaShutdownError};

@@ -166,7 +166,7 @@ impl AppConfig {
         };
 
         let recording_layout = RecordingLayout::new(
-            get("KINUGASA_RECORDING_FILE_NAME").unwrap_or_else(|| "video.ts".to_owned()),
+            get("KINUGASA_RECORDING_FILE_NAME").unwrap_or_else(|| "video.mp4".to_owned()),
         )
         .map_err(|error| ConfigError::invalid("KINUGASA_RECORDING_FILE_NAME", error))?;
         let lockfile = LockfileConfig::new(
@@ -402,7 +402,7 @@ mod tests {
         );
         assert_eq!(config.preview_token_lifetime, Duration::from_secs(90));
         assert_eq!(config.runtime.upload_batch_size.get(), 64);
-        assert_eq!(config.recording_layout.file_name(), "video.ts");
+        assert_eq!(config.recording_layout.file_name(), "video.mp4");
         assert_eq!(config.lockfile.schema_version(), "1.0");
         assert!(matches!(config.moq.tls, MoqTlsIdentity::SelfSigned { .. }));
     }

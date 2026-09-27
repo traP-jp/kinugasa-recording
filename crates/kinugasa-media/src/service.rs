@@ -739,6 +739,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn synthetic_h264_stream_resolves_a_recordable_track() {
+        let mut demux = transmux::ts_demux::StreamingTsDemux::new();
+        demux.feed(&stream_payloads().0);
+        let events: Vec<_> = std::iter::from_fn(|| demux.poll_event()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, transmux::ts_demux::DemuxEvent::TrackAdded(_))),
+            "events: {events:#?}"
+        );
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                transmux::ts_demux::DemuxEvent::TracksResolved { .. }
+            )),
+            "events: {events:#?}"
+        );
+    }
+
     #[tokio::test]
     async fn provisioning_is_idempotent_and_allocates_one_udp_port_per_camera() {
         let root = tempfile::tempdir().unwrap();
@@ -823,7 +843,7 @@ mod tests {
                 sequence: 1,
                 ntp_timestamp: 1,
                 discontinuity: false,
-                payload: stream_payload(0, &[7, 8, 1]),
+                payload: stream_payloads().0,
             })
             .unwrap();
         let event = service.next_event().await.unwrap();
@@ -954,7 +974,7 @@ mod tests {
                 sequence: 1,
                 ntp_timestamp: 1,
                 discontinuity: true,
-                payload: stream_payload(0, &[7, 8, 1]),
+                payload: stream_payloads().0,
             })
             .unwrap();
         let _connected = service.next_event().await.unwrap();
@@ -964,7 +984,7 @@ mod tests {
             take_id,
             session_id,
             camera_identity_id: camera_id,
-            relative_path: RelativePath::new("studio/take/front/video.ts").unwrap(),
+            relative_path: RelativePath::new("studio/take/front/video.mp4").unwrap(),
         };
         let start = service.start_recording(&request);
         let feed_idr = async {
@@ -976,7 +996,7 @@ mod tests {
                     sequence: 2,
                     ntp_timestamp: 2,
                     discontinuity: false,
-                    payload: stream_payload(1, &[5]),
+                    payload: stream_payloads().1,
                 })
                 .unwrap();
         };
@@ -985,19 +1005,23 @@ mod tests {
 
         let finalized = service.finish_recording(take_id, camera_id).await.unwrap();
         assert_eq!(finalized.take_id(), take_id);
-        let path = root.path().join("studio/take/front/video.ts");
+        assert_eq!(finalized.media_type().as_str(), "video/mp4");
+        let path = root.path().join("studio/take/front/video.mp4");
         let contents = std::fs::read(path).unwrap();
         assert!(!contents.is_empty());
-        assert_eq!(contents.len() % crate::transport_stream::TS_PACKET_SIZE, 0);
-        assert!(
-            contents
-                .chunks_exact(crate::transport_stream::TS_PACKET_SIZE)
-                .all(|packet| packet[0] == 0x47)
-        );
+        assert_eq!(&contents[4..8], b"ftyp");
+        assert!(contents.windows(4).any(|window| window == b"moov"));
+        assert!(contents.windows(4).any(|window| window == b"moof"));
+        assert!(contents.windows(4).any(|window| window == b"mdat"));
+        let remuxed = {
+            use broadcast_common::Unpackage;
+            transmux::Fmp4Demux::new().unpackage(&contents).unwrap()
+        };
+        assert!(remuxed.tracks[0].samples[0].flags.is_sync);
         assert!(
             !root
                 .path()
-                .join("studio/take/front/video.ts.partial")
+                .join("studio/take/front/video.mp4.partial")
                 .exists()
         );
     }
@@ -1026,7 +1050,7 @@ mod tests {
                 sequence: 1,
                 ntp_timestamp: 1,
                 discontinuity: false,
-                payload: stream_payload(0, &[7, 8, 1]),
+                payload: stream_payloads().0,
             })
             .unwrap();
         let _connected = service.next_event().await.unwrap();
@@ -1036,7 +1060,7 @@ mod tests {
             take_id,
             session_id,
             camera_identity_id: camera_id,
-            relative_path: RelativePath::new("studio/take/front/video.ts").unwrap(),
+            relative_path: RelativePath::new("studio/take/front/video.mp4").unwrap(),
         };
         let start = service.start_recording(&request);
         let feed_idr = async {
@@ -1048,7 +1072,7 @@ mod tests {
                     sequence: 2,
                     ntp_timestamp: 2,
                     discontinuity: false,
-                    payload: stream_payload(1, &[5]),
+                    payload: stream_payloads().1,
                 })
                 .unwrap();
         };
@@ -1056,7 +1080,7 @@ mod tests {
         started.unwrap();
         assert!(
             root.path()
-                .join("studio/take/front/video.ts.partial")
+                .join("studio/take/front/video.mp4.partial")
                 .exists()
         );
 
@@ -1072,7 +1096,7 @@ mod tests {
         assert!(
             !root
                 .path()
-                .join("studio/take/front/video.ts.partial")
+                .join("studio/take/front/video.mp4.partial")
                 .exists()
         );
         assert!(service.finish_recording(take_id, camera_id).await.is_err());
@@ -1137,7 +1161,7 @@ mod tests {
                 sequence: 1,
                 ntp_timestamp: 1,
                 discontinuity: false,
-                payload: stream_payload(0, &[7, 8, 1]),
+                payload: stream_payloads().0,
             })
             .unwrap();
         assert!(
@@ -1159,17 +1183,60 @@ mod tests {
         ));
     }
 
-    fn stream_payload(continuity: u8, nal_types: &[u8]) -> Bytes {
-        let packets = [
-            pat_packet(0x100, continuity),
-            pmt_packet(0x100, 0x101, continuity),
-            video_packet(0x101, continuity, nal_types),
-        ];
-        Bytes::from(
-            packets
-                .into_iter()
-                .flat_map(|packet| packet.into_iter())
-                .collect::<Vec<_>>(),
+    fn stream_payloads() -> (Bytes, Bytes) {
+        use broadcast_common::Package;
+        use transmux::{
+            AVCConfigurationBox, AVCDecoderConfigurationRecord, AvcPps, AvcSps, CodecConfig, Media,
+            Sample, Track, TrackSpec, TsMux,
+        };
+
+        let config = AVCDecoderConfigurationRecord {
+            configuration_version: 1,
+            profile_indication: 66,
+            profile_compatibility: 0xc0,
+            level_indication: 10,
+            length_size_minus_one: 3,
+            sps: vec![AvcSps(vec![
+                0x67, 0x42, 0xc0, 0x0a, 0xdd, 0xec, 0x04, 0x40, 0x00, 0x00, 0x03, 0x00, 0x40, 0x00,
+                0x00, 0x0f, 0x03, 0xc4, 0x89, 0xe0,
+            ])],
+            pps: vec![AvcPps(vec![0x68, 0xce, 0x0f, 0x2c, 0x80])],
+            chroma_format: None,
+            bit_depth_luma_minus8: None,
+            bit_depth_chroma_minus8: None,
+            sps_ext: vec![],
+        };
+        let spec = TrackSpec::new(
+            1,
+            90_000,
+            CodecConfig::Avc {
+                config: AVCConfigurationBox::new(config),
+                width: 16,
+                height: 16,
+            },
+        );
+        let samples = [true, false, false, true, false, false]
+            .into_iter()
+            .enumerate()
+            .map(|(index, is_sync)| {
+                let nal = if is_sync { 0x65 } else { 0x41 };
+                let dts = 90_000 + i64::try_from(index).unwrap() * 3_000;
+                Sample::new(
+                    vec![0, 0, 0, 4, nal, 0x88, 0x84, 0x21],
+                    Some(dts),
+                    Some(dts),
+                    Some(3_000),
+                    is_sync,
+                )
+            })
+            .collect();
+        let media = Media::new(vec![Track::new(spec, samples)], 90_000);
+        let stream = TsMux::new().package(&media).unwrap();
+        let split = 5 * 188;
+        assert_eq!(stream.len(), 8 * 188);
+        (
+            Bytes::copy_from_slice(&stream[..split]),
+            Bytes::copy_from_slice(&stream[split..]),
         )
     }
 
@@ -1178,81 +1245,5 @@ mod tests {
             .query_pairs()
             .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
             .unwrap()
-    }
-
-    fn pat_packet(pmt_pid: u16, continuity: u8) -> [u8; 188] {
-        let mut packet = payload_packet(0, continuity);
-        let section = [
-            0x00,
-            0xb0,
-            0x0d,
-            0x00,
-            0x01,
-            0xc1,
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-            0xe0 | ((pmt_pid >> 8) as u8 & 0x1f),
-            pmt_pid as u8,
-            0,
-            0,
-            0,
-            0,
-        ];
-        packet[4] = 0;
-        packet[5..5 + section.len()].copy_from_slice(&section);
-        packet
-    }
-
-    fn pmt_packet(pmt_pid: u16, video_pid: u16, continuity: u8) -> [u8; 188] {
-        let mut packet = payload_packet(pmt_pid, continuity);
-        let section = [
-            0x02,
-            0xb0,
-            0x12,
-            0x00,
-            0x01,
-            0xc1,
-            0x00,
-            0x00,
-            0xe0 | ((video_pid >> 8) as u8 & 0x1f),
-            video_pid as u8,
-            0xf0,
-            0x00,
-            0x1b,
-            0xe0 | ((video_pid >> 8) as u8 & 0x1f),
-            video_pid as u8,
-            0xf0,
-            0x00,
-            0,
-            0,
-            0,
-            0,
-        ];
-        packet[4] = 0;
-        packet[5..5 + section.len()].copy_from_slice(&section);
-        packet
-    }
-
-    fn video_packet(video_pid: u16, continuity: u8, nal_types: &[u8]) -> [u8; 188] {
-        let mut packet = payload_packet(video_pid, continuity);
-        let mut offset = 4;
-        packet[offset..offset + 9].copy_from_slice(&[0, 0, 1, 0xe0, 0, 0, 0x80, 0, 0]);
-        offset += 9;
-        for nal_type in nal_types {
-            packet[offset..offset + 4].copy_from_slice(&[0, 0, 1, *nal_type]);
-            offset += 4;
-        }
-        packet
-    }
-
-    fn payload_packet(pid: u16, continuity: u8) -> [u8; 188] {
-        let mut packet = [0xff; 188];
-        packet[0] = 0x47;
-        packet[1] = ((pid >> 8) as u8 & 0x1f) | 0x40;
-        packet[2] = pid as u8;
-        packet[3] = 0x10 | (continuity & 0x0f);
-        packet
     }
 }

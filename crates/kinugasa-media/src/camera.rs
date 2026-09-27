@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -18,13 +19,14 @@ use kinugasa_core::{
     },
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
+use transmux::{
+    CodecConfig, TrackSpec,
+    ts_demux::{DemuxEvent, StreamingTsDemux},
+};
 use url::Url;
 
 use crate::recording::RecordingFile;
-use crate::{
-    service::{IngressPacket, PreviewPacket, TransportStatistics},
-    transport_stream::Inspector,
-};
+use crate::service::{IngressPacket, PreviewPacket, TransportStatistics};
 
 pub(crate) struct CameraMetadata {
     pub(crate) session_id: SessionId,
@@ -218,7 +220,7 @@ enum RecordingState {
 }
 
 struct WorkerState {
-    inspector: Inspector,
+    media: MediaState,
     recording: RecordingState,
     sequence: SequenceState,
     connected: bool,
@@ -235,7 +237,7 @@ async fn run_camera(
     config: CameraWorkerConfig,
 ) {
     let mut state = WorkerState {
-        inspector: Inspector::default(),
+        media: MediaState::default(),
         recording: RecordingState::Idle,
         sequence: SequenceState::default(),
         connected: false,
@@ -252,7 +254,7 @@ async fn run_camera(
                 if let Some(reason) = input_error {
                     fail_recording(&mut state.recording, reason.as_str()).await;
                     state.sequence = SequenceState::default();
-                    state.inspector = Inspector::default();
+                    state.media = MediaState::default();
                     if !state.errored {
                         emit_state(&config, CameraInputState::Errored(reason));
                     }
@@ -279,7 +281,7 @@ async fn run_camera(
                             state.connected = false;
                             state.errored = true;
                             state.sequence = SequenceState::default();
-                            state.inspector = Inspector::default();
+                            state.media = MediaState::default();
                         }
                         if let Err(error) = handle_packet(
                             packet,
@@ -296,13 +298,13 @@ async fn run_camera(
                             state.connected = false;
                             state.errored = true;
                             state.sequence = SequenceState::default();
-                            state.inspector = Inspector::default();
+                            state.media = MediaState::default();
                         }
                     }
                     Command::Disconnected => {
                         fail_recording(&mut state.recording, "camera input disconnected").await;
                         state.sequence = SequenceState::default();
-                        state.inspector = Inspector::default();
+                        state.media = MediaState::default();
                         if state.connected || state.errored {
                             emit_state(&config, CameraInputState::Waiting);
                         }
@@ -371,7 +373,6 @@ async fn handle_packet(
     statistics: &Statistics,
     config: &CameraWorkerConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    Inspector::validate_payload(&packet.payload)?;
     match state
         .sequence
         .observe(packet.sequence, packet.ntp_timestamp, packet.discontinuity)
@@ -387,48 +388,9 @@ async fn handle_packet(
         }
         PacketOrder::Continuous => {}
     }
-    for ts_packet in packet
-        .payload
-        .chunks_exact(crate::transport_stream::TS_PACKET_SIZE)
-    {
-        let start_prefix = state.inspector.observe(ts_packet)?;
-        if let RecordingState::Recording(file) = &mut state.recording {
-            file.write_packet(ts_packet).await?;
-            continue;
-        }
-        if start_prefix.is_some() && matches!(state.recording, RecordingState::Arming { .. }) {
-            let RecordingState::Arming { request, reply, .. } =
-                std::mem::replace(&mut state.recording, RecordingState::Idle)
-            else {
-                unreachable!()
-            };
-            let started_at = Utc::now();
-            match RecordingFile::create(
-                &config.recording_root,
-                request.clone(),
-                started_at,
-                start_prefix.as_deref().expect("checked above"),
-            )
-            .await
-            {
-                Ok(file) => {
-                    state.recording = RecordingState::Recording(file);
-                    let _ = reply.send(Ok(RecordingStarted {
-                        take_id: request.take_id,
-                        camera_identity_id: request.camera_identity_id,
-                        started_at,
-                    }));
-                }
-                Err(error) => {
-                    let _ = reply.send(Err(unexpected(error)));
-                }
-            }
-        }
-    }
-    if !state.connected {
-        emit_state(config, CameraInputState::Connected);
-        state.connected = true;
-        state.errored = false;
+    state.media.demux.feed(&packet.payload);
+    while let Some(event) = state.media.demux.poll_event() {
+        handle_demux_event(event, state, config).await?;
     }
     let _ = preview.send(PreviewPacket {
         camera_identity_id: config.camera_id,
@@ -436,6 +398,132 @@ async fn handle_packet(
         payload: packet.payload,
     });
     Ok(())
+}
+
+async fn handle_demux_event(
+    event: DemuxEvent,
+    state: &mut WorkerState,
+    config: &CameraWorkerConfig,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match event {
+        DemuxEvent::TrackAdded(spec) | DemuxEvent::TrackUpdated(spec) => {
+            state.media.tracks.insert(spec.track_id, spec);
+        }
+        DemuxEvent::TrackRemoved { track_id, .. } => {
+            state.media.tracks.remove(&track_id);
+            if state.media.video_track_id == Some(track_id) {
+                return Err("active H.264 track was removed from the transport stream".into());
+            }
+        }
+        DemuxEvent::TracksResolved { .. } => {
+            state.media.video_track_id = state.media.primary_video_track_id();
+            if state.media.video_track_id.is_some() {
+                if !state.connected {
+                    emit_state(config, CameraInputState::Connected);
+                }
+                state.connected = true;
+                state.errored = false;
+            } else if state.connected {
+                emit_state(config, CameraInputState::Waiting);
+                state.connected = false;
+            }
+        }
+        DemuxEvent::Sample {
+            track_id, sample, ..
+        } => {
+            if let RecordingState::Recording(file) = &mut state.recording {
+                file.write_sample(track_id, sample).await?;
+            } else if matches!(&state.recording, RecordingState::Arming { .. })
+                && state.media.video_track_id == Some(track_id)
+                && sample.flags.is_sync
+            {
+                let RecordingState::Arming { request, reply, .. } =
+                    std::mem::replace(&mut state.recording, RecordingState::Idle)
+                else {
+                    unreachable!()
+                };
+                let started_at = Utc::now();
+                match RecordingFile::create(
+                    &config.recording_root,
+                    request.clone(),
+                    started_at,
+                    state.media.recording_tracks(),
+                )
+                .await
+                {
+                    Ok(mut file) => match file.write_sample(track_id, sample).await {
+                        Ok(()) => {
+                            state.recording = RecordingState::Recording(file);
+                            let _ = reply.send(Ok(RecordingStarted {
+                                take_id: request.take_id,
+                                camera_identity_id: request.camera_identity_id,
+                                started_at,
+                            }));
+                        }
+                        Err(error) => {
+                            if let Err(abort_error) = file.abort().await {
+                                tracing::warn!(%abort_error, "failed to remove partial recording");
+                            }
+                            let _ = reply.send(Err(unexpected(error)));
+                        }
+                    },
+                    Err(error) => {
+                        let _ = reply.send(Err(unexpected(error)));
+                    }
+                }
+            }
+        }
+        DemuxEvent::Discontinuity { kind, .. } => {
+            return Err(format!("MPEG-TS discontinuity: {}", kind.name()).into());
+        }
+        DemuxEvent::InputDegraded { kind, .. } => {
+            return Err(format!("degraded MPEG-TS input: {}", kind.name()).into());
+        }
+        DemuxEvent::ClockReference { .. } | DemuxEvent::TrackAbandoned { .. } => {}
+        _ => {}
+    }
+    Ok(())
+}
+
+struct MediaState {
+    demux: StreamingTsDemux,
+    tracks: BTreeMap<u32, TrackSpec>,
+    video_track_id: Option<u32>,
+}
+
+impl Default for MediaState {
+    fn default() -> Self {
+        Self {
+            demux: StreamingTsDemux::new(),
+            tracks: BTreeMap::new(),
+            video_track_id: None,
+        }
+    }
+}
+
+impl MediaState {
+    fn primary_video_track_id(&self) -> Option<u32> {
+        self.tracks.values().find_map(|track| {
+            matches!(&track.config, CodecConfig::Avc { .. }).then_some(track.track_id)
+        })
+    }
+
+    fn recording_tracks(&self) -> Vec<TrackSpec> {
+        let program_number = self.video_track_id.and_then(|video_track_id| {
+            self.tracks
+                .get(&video_track_id)
+                .and_then(|track| track.program_number)
+        });
+        self.tracks
+            .values()
+            .filter(|track| {
+                Some(track.track_id) == self.video_track_id
+                    || (matches!(&track.config, CodecConfig::Aac { .. })
+                        && program_number.is_none_or(|number| track.program_number == Some(number)))
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 async fn fail_recording(recording: &mut RecordingState, message: &str) {

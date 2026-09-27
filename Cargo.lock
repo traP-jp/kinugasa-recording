@@ -777,6 +777,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "broadcast-common"
+version = "9.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efe6c1fb25508fc1d004ff39882afdfe626fcb294af74cc89378c3613e41db00"
+dependencies = [
+ "chrono",
+ "libm",
+]
+
+[[package]]
+name = "broadcast-hls"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f877d1a97df67c36b18d58e688ac2c1fe0141610dcfb80b15e2e8d077fb60da"
+dependencies = [
+ "broadcast-common",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2398,6 +2419,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "broadcast-common",
  "bytes",
  "chrono",
  "hmac 0.12.1",
@@ -2412,6 +2434,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "transmux",
  "url",
  "uuid",
 ]
@@ -2926,6 +2949,49 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "mp4-emsg"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "138b87f1ec4f563225517347af8714e9b5a630d6bbc8bfe3f8270b65be19140f"
+dependencies = [
+ "broadcast-common",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "mpeg-pes"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7b0a14b2fccfe1185e9ac1445c6cc4b03817dc86cb0b5aae77e749f2b85a3f9"
+dependencies = [
+ "broadcast-common",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "mpeg-ps"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "512cb7deb70d98f550ffa3e79cf21e1b9d5a5246ecc5cbaedf496f604230789b"
+dependencies = [
+ "broadcast-common",
+ "mpeg-pes",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "mpeg-ts"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "111a8b4b152d0140d2dbc7a7f21367b27cc862853220c17476874a4c4da0dbf0"
+dependencies = [
+ "broadcast-common",
+ "bytes",
+ "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3581,6 +3647,26 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
+]
+
+[[package]]
+name = "rtcp-packet"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d15f8ed86bb42723fc757106758ac613e05fb3271853ae47c67c3c29bb0f347a"
+dependencies = [
+ "broadcast-common",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rtp-packet"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e90bb0dff7dd49086be03f6c6b90b87c6a8a0457e66b4470a4853e0b2fb7d8a"
+dependencies = [
+ "broadcast-common",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -4815,6 +4901,25 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "transmux"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b69a01ac3a5e8c20a9b79215a6201f9fee6e44c1908541e5a838f5d5721ab5d6"
+dependencies = [
+ "broadcast-common",
+ "broadcast-hls",
+ "bytes",
+ "mp4-emsg",
+ "mpeg-pes",
+ "mpeg-ps",
+ "mpeg-ts",
+ "rtcp-packet",
+ "rtp-packet",
+ "serde",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

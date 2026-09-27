@@ -1,5 +1,8 @@
 # Rust single binary化に向けた録画保存機能の移植調査
 
+> **2026-09-28 更新:** 実装方針はraw MPEG-TS直接保存から、`transmux`
+> 0.24.1によるH.264/AACのfMP4 transmuxへ変更した。MPEG-TSは接続時から継続解析し、録画開始要求後の最初のH.264 sync sampleから保存する。以下には当初のraw TS案の調査経緯も残す。
+
 ## 概要
 
 kinugasa-recordingをRustのsingle binaryへ再構成するにあたり、現在MediaMTXに依存している録画保存機能を移植できるか調査した。
@@ -260,7 +263,7 @@ FFmpegで次の10秒streamを生成した。
 - timestamp discontinuity、B-frame、audioなし、packet lossおよび長時間streamを追加試験する。
 - 必要ならforkを維持できる体制を取る。
 
-raw TS直接保存が成立しない場合の第二候補とする。
+実装では再生可能性と既存contractとの互換性を優先し、この方式を採用した。0.x crateのためversionは完全固定する。
 
 ### `mp4e`
 
@@ -289,8 +292,8 @@ GStreamerのRust製ISOBMFF pluginはCMAF/fMP4 muxerを提供し、機能と実�
 
 | 方式 | CPU負荷 | 実装量 | 耐異常終了 | 容量 | dependency risk | 評価 |
 | --- | ---: | ---: | --- | --- | --- | --- |
-| raw MPEG-TS直接保存 | 最小 | 小 | 高い | 大きい | 小 | 第一候補 |
-| `transmux`でfMP4 | 低い | 中 | fragment単位 | 小さい | crate成熟度を要確認 | 第二候補 |
+| raw MPEG-TS直接保存 | 最小 | 小 | 高い | 大きい | 小 | 旧提案・不採用 |
+| `transmux`でfMP4 | 低い | 中 | fragment単位 | 小さい | 0.xのためversion固定 | **採用** |
 | FFmpeg libraryでfMP4 | 低い | 中 | fragment単位 | 小さい | native build/license | fallback |
 | GStreamer | 低い | 中 | 高い | 選択可能 | runtime/plugin | single binary方針と不一致 |
 | `mp4e` | 低い | 中〜大 | 未確認 | 小さい | test不足 | 不採用 |
@@ -301,6 +304,8 @@ GStreamerのRust製ISOBMFF pluginはCMAF/fMP4 muxerを提供し、機能と実�
 
 - [`contracts/lockfile/lockfile.schema.json`](../../contracts/lockfile/lockfile.schema.json)
 - [外部インターフェース要求](../requirements-v2/14-specified-requirements/01-external-interfaces/external-interfaces.md)
+
+採用方式はfMP4を生成し、論理パスとobject keyの`video.mp4`を維持する。そのため、次に記すraw MPEG-TS採用時のcontract変更は行わない。
 
 MPEG-TSを正式形式にする場合、少なくとも次を変更する。
 
