@@ -179,10 +179,10 @@ pub struct RistStatisticsSnapshot {
     pub stale: bool,
 }
 
-/// Provisions camera publishers. Implementations may share one physical
-/// listener and credential among cameras in the same session while using
-/// transport-level stream identifiers to multiplex them. Different sessions
-/// must remain isolated from one another.
+/// Provisions camera publishers. Each active camera receives its own physical
+/// UDP listener while transport-level stream identifiers remain part of the
+/// route so a future implementation can multiplex cameras again. Different
+/// sessions must remain isolated from one another.
 ///
 /// Implementations may use MoQ directly or hide a different camera-side
 /// ingest protocol behind the returned endpoint.

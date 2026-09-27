@@ -18,6 +18,7 @@ use kinugasa_core::{
     },
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
+use url::Url;
 
 use crate::recording::RecordingFile;
 use crate::{
@@ -31,6 +32,7 @@ pub(crate) struct CameraMetadata {
     pub(crate) camera_id: CameraIdentityId,
     pub(crate) camera_name: CameraName,
     pub(crate) virtual_port: u16,
+    pub(crate) publish_endpoint: Url,
 }
 
 pub(crate) struct CameraHandle {

@@ -21,7 +21,7 @@ use crate::{
     IngressError, MediaBuildError, MediaConfig, MediaShutdownError, MoqConfig, MoqError,
     camera::{CameraHandle, CameraMetadata},
     moq::{MoqServer, PreviewAuthorizer, PreviewTransport},
-    rist::{RistConfig, RistServer, SessionTransport},
+    rist::{CameraTransport, RistConfig, RistServer},
 };
 
 const FIRST_VIRTUAL_PORT: u16 = 1_024;
@@ -89,7 +89,7 @@ impl PreviewSubscription {
 pub struct MediaService {
     inner: Arc<Inner>,
     events: tokio::sync::Mutex<mpsc::UnboundedReceiver<MediaEvent>>,
-    rist: Box<dyn SessionTransport>,
+    rist: Box<dyn CameraTransport>,
     moq: Box<dyn PreviewTransport>,
 }
 
@@ -113,7 +113,6 @@ struct CameraRegistry {
 
 struct SessionRoutes {
     session_name: SessionName,
-    endpoint: Url,
     by_virtual_port: HashMap<u16, CameraIdentityId>,
     next_virtual_port: u16,
 }
@@ -355,12 +354,8 @@ impl CameraIngress for MediaService {
                     PreviewSubscription::new(camera.subscribe()),
                 )
                 .map_err(media_moq_error)?;
-            let session = cameras
-                .sessions
-                .get(&request.session_id)
-                .expect("a provisioned camera always has a session route");
             return Ok(CameraPublishAccess {
-                endpoint: publish_endpoint(&session.endpoint, camera.metadata.virtual_port),
+                endpoint: camera.metadata.publish_endpoint.clone(),
                 access_token: None,
                 expires_at: None,
             });
@@ -375,27 +370,41 @@ impl CameraIngress for MediaService {
         if let std::collections::hash_map::Entry::Vacant(entry) =
             cameras.sessions.entry(request.session_id)
         {
-            let access = self
-                .rist
-                .provision_session(request.session_id)
-                .map_err(|error| MediaError::Unavailable(Box::new(error)))?;
             entry.insert(SessionRoutes {
                 session_name: request.session_name.clone(),
-                endpoint: access.endpoint,
                 by_virtual_port: HashMap::new(),
                 next_virtual_port: FIRST_VIRTUAL_PORT,
             });
             new_session = true;
         }
-        let session = cameras
-            .sessions
-            .get_mut(&request.session_id)
-            .expect("the session route was inserted above");
-        let virtual_port = allocate_virtual_port(session).ok_or_else(|| {
-            MediaError::Unavailable(Box::new(std::io::Error::other(
+        let virtual_port = {
+            let session = cameras
+                .sessions
+                .get_mut(&request.session_id)
+                .expect("the session route was inserted above");
+            allocate_virtual_port(session)
+        };
+        let Some(virtual_port) = virtual_port else {
+            if new_session {
+                cameras.sessions.remove(&request.session_id);
+            }
+            return Err(MediaError::Unavailable(Box::new(std::io::Error::other(
                 "RIST virtual port space is exhausted",
-            )))
-        })?;
+            ))));
+        };
+        let rist_access = match self
+            .rist
+            .provision_camera(request.session_id, request.camera_identity_id)
+        {
+            Ok(access) => access,
+            Err(error) => {
+                if new_session {
+                    cameras.sessions.remove(&request.session_id);
+                }
+                return Err(MediaError::Unavailable(Box::new(error)));
+            }
+        };
+        let endpoint = publish_endpoint(&rist_access.endpoint, virtual_port);
         let handle = Arc::new(CameraHandle::spawn(
             CameraMetadata {
                 session_id: request.session_id,
@@ -403,6 +412,7 @@ impl CameraIngress for MediaService {
                 camera_id: request.camera_identity_id,
                 camera_name: request.camera_name.clone(),
                 virtual_port,
+                publish_endpoint: endpoint.clone(),
             },
             self.inner.config.recording_root.clone(),
             self.inner.config.ingress_queue_capacity,
@@ -418,20 +428,23 @@ impl CameraIngress for MediaService {
         ) {
             if new_session {
                 cameras.sessions.remove(&request.session_id);
-                if let Err(revoke_error) = self.rist.revoke_session(request.session_id) {
-                    tracing::warn!(
-                        %revoke_error,
-                        session_id = %request.session_id,
-                        "failed to roll back RIST session after MoQ publication failure"
-                    );
-                }
+            }
+            if let Err(revoke_error) = self.rist.revoke_camera(request.camera_identity_id) {
+                tracing::warn!(
+                    %revoke_error,
+                    camera_identity_id = %request.camera_identity_id,
+                    "failed to roll back RIST camera after MoQ publication failure"
+                );
             }
             return Err(media_moq_error(error));
         }
+        let session = cameras
+            .sessions
+            .get_mut(&request.session_id)
+            .expect("the session route was inserted above");
         session
             .by_virtual_port
             .insert(virtual_port, request.camera_identity_id);
-        let endpoint = publish_endpoint(&session.endpoint, virtual_port);
         cameras.by_id.insert(request.camera_identity_id, handle);
         Ok(CameraPublishAccess {
             endpoint,
@@ -441,35 +454,29 @@ impl CameraIngress for MediaService {
     }
 
     async fn revoke_camera(&self, camera_id: CameraIdentityId) -> Result<(), MediaError> {
-        let empty_session = {
-            let mut cameras = self
-                .inner
-                .cameras
-                .write()
-                .unwrap_or_else(|value| value.into_inner());
-            let Some(camera) = cameras.by_id.remove(&camera_id) else {
-                return Ok(());
-            };
-            self.moq.revoke_camera(camera_id);
-            let session_id = camera.metadata.session_id;
-            let session = cameras
-                .sessions
-                .get_mut(&session_id)
-                .expect("a provisioned camera always has a session route");
-            session
-                .by_virtual_port
-                .remove(&camera.metadata.virtual_port);
-            if session.by_virtual_port.is_empty() {
-                cameras.sessions.remove(&session_id);
-                Some(session_id)
-            } else {
-                None
-            }
+        let mut cameras = self
+            .inner
+            .cameras
+            .write()
+            .unwrap_or_else(|value| value.into_inner());
+        let Some(camera) = cameras.by_id.get(&camera_id).cloned() else {
+            return Ok(());
         };
-        if let Some(session_id) = empty_session {
-            self.rist
-                .revoke_session(session_id)
-                .map_err(|error| MediaError::Unavailable(Box::new(error)))?;
+        self.rist
+            .revoke_camera(camera_id)
+            .map_err(|error| MediaError::Unavailable(Box::new(error)))?;
+        cameras.by_id.remove(&camera_id);
+        self.moq.revoke_camera(camera_id);
+        let session_id = camera.metadata.session_id;
+        let session = cameras
+            .sessions
+            .get_mut(&session_id)
+            .expect("a provisioned camera always has a session route");
+        session
+            .by_virtual_port
+            .remove(&camera.metadata.virtual_port);
+        if session.by_virtual_port.is_empty() {
+            cameras.sessions.remove(&session_id);
         }
         Ok(())
     }
@@ -624,7 +631,7 @@ mod tests {
 
     struct TestTransportState {
         available_ports: BTreeSet<u16>,
-        sessions: HashMap<SessionId, (u16, Url)>,
+        cameras: HashMap<CameraIdentityId, (SessionId, u16, Url)>,
     }
 
     struct TestPreviewTransport;
@@ -634,20 +641,22 @@ mod tests {
             Self {
                 state: Mutex::new(TestTransportState {
                     available_ports: [9_200, 9_201].into_iter().collect(),
-                    sessions: HashMap::new(),
+                    cameras: HashMap::new(),
                 }),
             }
         }
     }
 
-    impl SessionTransport for TestTransport {
-        fn provision_session(
+    impl CameraTransport for TestTransport {
+        fn provision_camera(
             &self,
             session_id: SessionId,
-        ) -> Result<crate::rist::SessionPublishAccess, crate::RistError> {
+            camera_id: CameraIdentityId,
+        ) -> Result<crate::rist::RistCameraPublishAccess, crate::RistError> {
             let mut state = self.state.lock().unwrap();
-            if let Some((_, endpoint)) = state.sessions.get(&session_id) {
-                return Ok(crate::rist::SessionPublishAccess {
+            if let Some((existing_session_id, _, endpoint)) = state.cameras.get(&camera_id) {
+                assert_eq!(*existing_session_id, session_id);
+                return Ok(crate::rist::RistCameraPublishAccess {
                     endpoint: endpoint.clone(),
                 });
             }
@@ -661,13 +670,15 @@ mod tests {
                 .query_pairs_mut()
                 .append_pair("aes-type", "256")
                 .append_pair("secret", &session_id.to_string());
-            state.sessions.insert(session_id, (port, endpoint.clone()));
-            Ok(crate::rist::SessionPublishAccess { endpoint })
+            state
+                .cameras
+                .insert(camera_id, (session_id, port, endpoint.clone()));
+            Ok(crate::rist::RistCameraPublishAccess { endpoint })
         }
 
-        fn revoke_session(&self, session_id: SessionId) -> Result<(), crate::RistError> {
+        fn revoke_camera(&self, camera_id: CameraIdentityId) -> Result<(), crate::RistError> {
             let mut state = self.state.lock().unwrap();
-            if let Some((port, _)) = state.sessions.remove(&session_id) {
+            if let Some((_, port, _)) = state.cameras.remove(&camera_id) {
                 state.available_ports.insert(port);
             }
             Ok(())
@@ -726,7 +737,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn provisioning_is_idempotent_and_allocates_distinct_virtual_ports() {
+    async fn provisioning_is_idempotent_and_allocates_one_udp_port_per_camera() {
         let root = tempfile::tempdir().unwrap();
         let service = service(root.path()).await;
         let session_id = SessionId::new_v7();
@@ -749,7 +760,7 @@ mod tests {
         );
         let second_access = service.provision_camera(&second).await.unwrap();
         assert_ne!(first_access.endpoint, second_access.endpoint);
-        assert_eq!(first_access.endpoint.port(), second_access.endpoint.port());
+        assert_ne!(first_access.endpoint.port(), second_access.endpoint.port());
         assert_eq!(
             query_value(&first_access.endpoint, "secret"),
             query_value(&second_access.endpoint, "secret")
@@ -768,7 +779,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn physical_ports_and_credentials_are_isolated_and_reused_by_session() {
+    async fn physical_ports_and_credentials_are_isolated_and_reused_by_camera() {
         let root = tempfile::tempdir().unwrap();
         let service = service(root.path()).await;
         let first_session = SessionId::new_v7();
@@ -843,7 +854,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_transport_uses_the_configured_session_port_pool() {
+    async fn production_transport_uses_the_configured_camera_port_pool() {
         let root = tempfile::tempdir().unwrap();
         let socket = std::net::UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = socket.local_addr().unwrap().port();
@@ -875,10 +886,9 @@ mod tests {
             camera_name: CameraName::new("front").unwrap(),
         };
         let second = ProvisionCameraRequest {
-            session_id: SessionId::new_v7(),
-            session_name: SessionName::new("second").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
-            camera_name: CameraName::new("front").unwrap(),
+            camera_name: CameraName::new("side").unwrap(),
+            ..first.clone()
         };
 
         let access = service.provision_camera(&first).await.unwrap();

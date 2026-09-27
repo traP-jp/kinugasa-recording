@@ -9,7 +9,7 @@ use std::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use bytes::Bytes;
 use hmac::{Hmac, Mac};
-use kinugasa_core::domain::{AccessToken, ErrorReason, SessionId};
+use kinugasa_core::domain::{AccessToken, CameraIdentityId, ErrorReason, SessionId};
 use rist_rs::{
     AuthenticationRequest, ConnectionStatus, DataBlock, Driver, DriverBuilder, EncryptionKeySize,
     LogHandler, LogLevel, PeerConfig, PeerInfo, Profile, ReceiverConfig, ReceiverHandle,
@@ -26,13 +26,13 @@ const SESSION_SECRET_CONTEXT: &[u8] = b"kinugasa-recording/rist-session/v1";
 
 #[derive(Clone)]
 pub struct RistConfig {
-    /// Local address on which every configured session port is opened.
+    /// Local address on which every configured camera port is opened.
     pub listen_address: IpAddr,
-    /// Camera-facing base URL. Its port is replaced by the allocated session
+    /// Camera-facing base URL. Its port is replaced by the allocated camera
     /// port and its query is extended with the session credential.
     pub public_endpoint: Url,
     /// Exclusive pool of physical UDP ports. One port is leased per active
-    /// session and returned when its last camera is revoked.
+    /// camera and returned when that camera is revoked.
     pub available_ports: Vec<u16>,
     /// Deployment-wide secret used to deterministically derive a credential
     /// for each session. It must remain stable across process restarts.
@@ -149,7 +149,7 @@ impl RistConfig {
 pub enum RistError {
     #[error("invalid RIST configuration: {0}")]
     InvalidConfiguration(String),
-    #[error("no RIST session port is available")]
+    #[error("no RIST camera port is available")]
     PortPoolExhausted,
     #[error("failed to start RIST driver thread: {0}")]
     DriverThread(#[source] std::io::Error),
@@ -162,19 +162,24 @@ pub enum RistError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SessionPublishAccess {
+pub(crate) struct RistCameraPublishAccess {
     pub(crate) endpoint: Url,
 }
 
-pub(crate) trait SessionTransport: Send + Sync {
-    fn provision_session(&self, session_id: SessionId) -> Result<SessionPublishAccess, RistError>;
+pub(crate) trait CameraTransport: Send + Sync {
+    fn provision_camera(
+        &self,
+        session_id: SessionId,
+        camera_id: CameraIdentityId,
+    ) -> Result<RistCameraPublishAccess, RistError>;
 
-    fn revoke_session(&self, session_id: SessionId) -> Result<(), RistError>;
+    fn revoke_camera(&self, camera_id: CameraIdentityId) -> Result<(), RistError>;
 
     fn shutdown(self: Box<Self>) -> Result<(), RistError>;
 }
 
-struct SessionReceiver {
+struct CameraReceiver {
+    session_id: SessionId,
     port: u16,
     endpoint: Url,
     receiver: ReceiverHandle,
@@ -182,7 +187,7 @@ struct SessionReceiver {
 
 struct RistState {
     available_ports: BTreeSet<u16>,
-    sessions: HashMap<SessionId, SessionReceiver>,
+    cameras: HashMap<CameraIdentityId, CameraReceiver>,
 }
 
 pub struct RistServer {
@@ -212,7 +217,7 @@ impl RistServer {
             ingress,
             state: Mutex::new(RistState {
                 available_ports,
-                sessions: HashMap::new(),
+                cameras: HashMap::new(),
             }),
             driver: Some(driver),
             driver_thread: Some(driver_thread),
@@ -226,9 +231,9 @@ impl RistServer {
                 .get_mut()
                 .unwrap_or_else(|value| value.into_inner());
             state
-                .sessions
+                .cameras
                 .drain()
-                .map(|(_, session)| session.receiver)
+                .map(|(_, camera)| camera.receiver)
                 .collect::<Vec<_>>()
         };
         let mut first_error = None;
@@ -259,7 +264,7 @@ impl RistServer {
         first_error.map_or(Ok(()), Err)
     }
 
-    fn create_session_receiver(
+    fn create_camera_receiver(
         &self,
         session_id: SessionId,
         port: u16,
@@ -285,12 +290,21 @@ impl RistServer {
     }
 }
 
-impl SessionTransport for RistServer {
-    fn provision_session(&self, session_id: SessionId) -> Result<SessionPublishAccess, RistError> {
+impl CameraTransport for RistServer {
+    fn provision_camera(
+        &self,
+        session_id: SessionId,
+        camera_id: CameraIdentityId,
+    ) -> Result<RistCameraPublishAccess, RistError> {
         let mut state = self.state.lock().unwrap_or_else(|value| value.into_inner());
-        if let Some(session) = state.sessions.get(&session_id) {
-            return Ok(SessionPublishAccess {
-                endpoint: session.endpoint.clone(),
+        if let Some(camera) = state.cameras.get(&camera_id) {
+            if camera.session_id != session_id {
+                return Err(RistError::InvalidConfiguration(
+                    "camera is already provisioned for another session".into(),
+                ));
+            }
+            return Ok(RistCameraPublishAccess {
+                endpoint: camera.endpoint.clone(),
             });
         }
 
@@ -301,39 +315,40 @@ impl SessionTransport for RistServer {
             .ok_or(RistError::PortPoolExhausted)?;
         let secret = self.config.session_secret(session_id);
         let endpoint = self.config.camera_endpoint(port, &secret)?;
-        let receiver = self.create_session_receiver(session_id, port, &secret)?;
+        let receiver = self.create_camera_receiver(session_id, port, &secret)?;
 
         state.available_ports.remove(&port);
-        state.sessions.insert(
-            session_id,
-            SessionReceiver {
+        state.cameras.insert(
+            camera_id,
+            CameraReceiver {
+                session_id,
                 port,
                 endpoint: endpoint.clone(),
                 receiver,
             },
         );
-        Ok(SessionPublishAccess { endpoint })
+        Ok(RistCameraPublishAccess { endpoint })
     }
 
-    fn revoke_session(&self, session_id: SessionId) -> Result<(), RistError> {
-        let session = {
+    fn revoke_camera(&self, camera_id: CameraIdentityId) -> Result<(), RistError> {
+        let camera = {
             let mut state = self.state.lock().unwrap_or_else(|value| value.into_inner());
-            let Some(session) = state.sessions.remove(&session_id) else {
+            let Some(camera) = state.cameras.remove(&camera_id) else {
                 return Ok(());
             };
-            session
+            camera
         };
-        let port = session.port;
-        session
+        let port = camera.port;
+        let close_result = camera
             .receiver
             .close()
-            .map_err(|error| RistError::Librist(error.to_string()))?;
+            .map_err(|error| RistError::Librist(error.to_string()));
         self.state
             .lock()
             .unwrap_or_else(|value| value.into_inner())
             .available_ports
             .insert(port);
-        Ok(())
+        close_result
     }
 
     fn shutdown(self: Box<Self>) -> Result<(), RistError> {
@@ -346,7 +361,7 @@ impl Drop for RistServer {
         self.state
             .get_mut()
             .unwrap_or_else(|value| value.into_inner())
-            .sessions
+            .cameras
             .clear();
         self.driver.take();
         // Dropping Driver requests shutdown. Do not block in Drop; deliberate
