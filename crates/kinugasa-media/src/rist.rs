@@ -64,13 +64,14 @@ impl RistConfig {
                 "public_endpoint must be a rist:// URL with a host".into(),
             ));
         }
-        if self
-            .public_endpoint
-            .query_pairs()
-            .any(|(key, _)| matches!(key.as_ref(), "secret" | "aes-type" | "virt-dst-port"))
-        {
+        if self.public_endpoint.query_pairs().any(|(key, _)| {
+            matches!(
+                key.as_ref(),
+                "secret" | "aes-type" | "virt-dst-port" | "buffer"
+            )
+        }) {
             return Err(RistError::InvalidConfiguration(
-                "public_endpoint must not contain encryption or virtual-port parameters".into(),
+                "public_endpoint must not contain managed RIST parameters".into(),
             ));
         }
         if self.available_ports.is_empty() || self.available_ports.contains(&0) {
@@ -130,7 +131,8 @@ impl RistConfig {
         endpoint
             .query_pairs_mut()
             .append_pair("aes-type", "256")
-            .append_pair("secret", secret.expose_secret());
+            .append_pair("secret", secret.expose_secret())
+            .append_pair("buffer", &self.recovery_buffer.as_millis().to_string());
         Ok(endpoint)
     }
 
@@ -679,6 +681,7 @@ mod tests {
             HashMap::from([
                 ("aes-type".to_owned(), "256".to_owned()),
                 ("secret".to_owned(), "do-not-log".to_owned()),
+                ("buffer".to_owned(), "5000".to_owned()),
             ])
         );
         assert!(!format!("{config:?}").contains("do-not-log"));

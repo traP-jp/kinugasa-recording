@@ -346,6 +346,9 @@ impl CameraIngress for MediaService {
             if camera.metadata.session_id != request.session_id
                 || camera.metadata.session_name != request.session_name
                 || camera.metadata.camera_name != request.camera_name
+                || request
+                    .virtual_port
+                    .is_some_and(|port| port != camera.metadata.virtual_port)
             {
                 return Err(MediaError::Conflict);
             }
@@ -359,6 +362,7 @@ impl CameraIngress for MediaService {
                 .map_err(media_moq_error)?;
             return Ok(CameraPublishAccess {
                 endpoint: camera.metadata.publish_endpoint.clone(),
+                virtual_port: camera.metadata.virtual_port,
                 access_token: None,
                 expires_at: None,
             });
@@ -385,7 +389,19 @@ impl CameraIngress for MediaService {
                 .sessions
                 .get_mut(&request.session_id)
                 .expect("the session route was inserted above");
-            allocate_virtual_port(session)
+            if let Some(port) = request.virtual_port {
+                if !(FIRST_VIRTUAL_PORT..=LAST_VIRTUAL_PORT).contains(&port)
+                    || session.by_virtual_port.contains_key(&port)
+                {
+                    if new_session {
+                        cameras.sessions.remove(&request.session_id);
+                    }
+                    return Err(MediaError::Conflict);
+                }
+                Some(port)
+            } else {
+                allocate_virtual_port(session)
+            }
         };
         let Some(virtual_port) = virtual_port else {
             if new_session {
@@ -451,6 +467,7 @@ impl CameraIngress for MediaService {
         cameras.by_id.insert(request.camera_identity_id, handle);
         Ok(CameraPublishAccess {
             endpoint,
+            virtual_port,
             access_token: None,
             expires_at: None,
         })
@@ -769,6 +786,7 @@ mod tests {
             session_name: SessionName::new("studio").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         let second = ProvisionCameraRequest {
             camera_identity_id: CameraIdentityId::new_v7(),
@@ -802,6 +820,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn provisioning_restores_a_persisted_virtual_port() {
+        let root = tempfile::tempdir().unwrap();
+        let service = service(root.path()).await;
+        let session_id = SessionId::new_v7();
+        let request = ProvisionCameraRequest {
+            session_id,
+            session_name: SessionName::new("studio").unwrap(),
+            camera_identity_id: CameraIdentityId::new_v7(),
+            camera_name: CameraName::new("front").unwrap(),
+            virtual_port: Some(12_345),
+        };
+
+        let access = service.provision_camera(&request).await.unwrap();
+
+        assert_eq!(access.virtual_port, 12_345);
+        assert_eq!(query_value(&access.endpoint, "virt-dst-port"), "12345");
+
+        let duplicate = ProvisionCameraRequest {
+            camera_identity_id: CameraIdentityId::new_v7(),
+            camera_name: CameraName::new("side").unwrap(),
+            ..request
+        };
+        assert!(matches!(
+            service.provision_camera(&duplicate).await,
+            Err(MediaError::Conflict)
+        ));
+    }
+
+    #[tokio::test]
     async fn physical_ports_and_credentials_are_isolated_and_reused_by_camera() {
         let root = tempfile::tempdir().unwrap();
         let service = service(root.path()).await;
@@ -812,12 +859,14 @@ mod tests {
             session_name: SessionName::new("first").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         let second = ProvisionCameraRequest {
             session_id: second_session,
             session_name: SessionName::new("second").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
 
         let first_access = service.provision_camera(&first).await.unwrap();
@@ -864,6 +913,7 @@ mod tests {
             session_name: SessionName::new("replacement").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         let replacement_access = service.provision_camera(&replacement).await.unwrap();
         assert_eq!(
@@ -907,6 +957,7 @@ mod tests {
             session_name: SessionName::new("first").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         let second = ProvisionCameraRequest {
             camera_identity_id: CameraIdentityId::new_v7(),
@@ -933,6 +984,7 @@ mod tests {
             session_name: SessionName::new("studio").unwrap(),
             camera_identity_id: CameraIdentityId::new_v7(),
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         service.provision_camera(&request).await.unwrap();
         let access = service
@@ -964,6 +1016,7 @@ mod tests {
             session_name: SessionName::new("studio").unwrap(),
             camera_identity_id: camera_id,
             camera_name: CameraName::new("front").unwrap(),
+            virtual_port: None,
         };
         service.provision_camera(&provision).await.unwrap();
         let ingress = service.ingress();
@@ -1039,6 +1092,7 @@ mod tests {
                 session_name: session_name.clone(),
                 camera_identity_id: camera_id,
                 camera_name: CameraName::new("front").unwrap(),
+                virtual_port: None,
             })
             .await
             .unwrap();
@@ -1129,6 +1183,7 @@ mod tests {
                 session_name: SessionName::new("studio").unwrap(),
                 camera_identity_id: camera_id,
                 camera_name: CameraName::new("front").unwrap(),
+                virtual_port: None,
             })
             .await
             .unwrap();

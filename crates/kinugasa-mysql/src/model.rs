@@ -51,6 +51,7 @@ pub(crate) struct CameraRow {
     pub name: String,
     pub created_at: NaiveDateTime,
     pub url: Option<String>,
+    pub virtual_port: Option<u16>,
     pub status: String,
     pub error: Option<String>,
     pub media_process_id: Option<Uuid>,
@@ -71,6 +72,7 @@ impl CameraRow {
             id,
             parse_camera_connection_state(&self.status, self.url, self.error)?,
         );
+        connection.set_virtual_port(self.virtual_port);
         connection.set_media_process_id(
             self.media_process_id
                 .map(MediaProcessId::from_uuid)

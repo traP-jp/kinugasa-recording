@@ -14,6 +14,7 @@ use crate::{
 
 const CAMERA_COLUMNS: &str = r#"
     ci.id, ci.session_id, CAST(ci.name AS CHAR) AS name, ci.created_at, cc.url,
+    cc.virtual_port,
     CAST(cc.status AS CHAR) AS status, cc.error, cc.media_process_id,
     cc.deletion_requested_at
 "#;
@@ -43,12 +44,14 @@ impl CameraRepository<MySqlUnitOfWork> for MySqlRepository {
         sqlx::query(
             r#"
             INSERT INTO camera_connections
-                (camera_identity_id, url, status, error, media_process_id, deletion_requested_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (camera_identity_id, url, virtual_port, status, error, media_process_id,
+                 deletion_requested_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(identity.id().into_uuid())
         .bind(url)
+        .bind(connection.virtual_port())
         .bind(status)
         .bind(error)
         .bind(connection.media_process_id().map(|id| id.into_uuid()))
@@ -173,11 +176,13 @@ impl CameraRepository<MySqlUnitOfWork> for MySqlRepository {
         sqlx::query(
             r#"
             UPDATE camera_connections
-            SET url = ?, status = ?, error = ?, media_process_id = ?, deletion_requested_at = ?
+            SET url = ?, virtual_port = ?, status = ?, error = ?, media_process_id = ?,
+                deletion_requested_at = ?
             WHERE camera_identity_id = ?
             "#,
         )
         .bind(url)
+        .bind(connection.virtual_port())
         .bind(status)
         .bind(error)
         .bind(connection.media_process_id().map(|id| id.into_uuid()))

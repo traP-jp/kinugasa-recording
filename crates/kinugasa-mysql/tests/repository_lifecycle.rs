@@ -127,14 +127,16 @@ async fn seed(repository: &MySqlRepository) -> Seed {
         SessionName::new(format!("s-{}", session_id_text.rsplit('-').next().unwrap())).unwrap();
     let camera_name = CameraName::new("camera-a").unwrap();
     let take_name = TakeName::new("take-a").unwrap();
+    let mut connection = CameraConnection::new(
+        camera_id,
+        CameraConnectionState::Connected {
+            endpoint: Url::parse("rist://127.0.0.1:9000?virt-dst-port=12345&buffer=5000").unwrap(),
+        },
+    );
+    connection.set_virtual_port(Some(12_345));
     let camera = Camera::new(
         CameraIdentity::new(camera_id, session_id, camera_name.clone(), now),
-        CameraConnection::new(
-            camera_id,
-            CameraConnectionState::Connected {
-                endpoint: Url::parse("rist://127.0.0.1:9000").unwrap(),
-            },
-        ),
+        connection,
     )
     .unwrap();
     let take = OngoingTake::new(

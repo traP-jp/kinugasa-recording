@@ -32,6 +32,9 @@ pub struct ProvisionCameraRequest {
     pub session_name: SessionName,
     pub camera_identity_id: CameraIdentityId,
     pub camera_name: CameraName,
+    /// Previously assigned RIST virtual destination port, when restoring a
+    /// camera from durable state after a process restart.
+    pub virtual_port: Option<u16>,
 }
 
 /// Publishing information returned to the camera-facing API. The transport is
@@ -40,6 +43,7 @@ pub struct ProvisionCameraRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CameraPublishAccess {
     pub endpoint: Url,
+    pub virtual_port: u16,
     pub access_token: Option<AccessToken>,
     pub expires_at: Option<DateTime<Utc>>,
 }

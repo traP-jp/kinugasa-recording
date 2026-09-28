@@ -140,6 +140,7 @@ where
                 session_name: resource.session_name,
                 camera_identity_id: camera_id,
                 camera_name: resource.camera.identity().name().clone(),
+                virtual_port: resource.camera.connection().virtual_port(),
             };
             let unit_of_work_factory = Arc::clone(&self.unit_of_work_factory);
             let repository = Arc::clone(&self.repository);
@@ -156,6 +157,7 @@ where
                             .await?;
                         let (_, mut connection) = camera.into_parts();
                         connection.set_state(state);
+                        connection.set_virtual_port(Some(access.virtual_port));
                         repository
                             .save_camera_connection(&mut unit_of_work, &connection)
                             .await?;

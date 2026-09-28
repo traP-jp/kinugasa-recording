@@ -38,6 +38,7 @@
 | --- | --- | --- |
 | cameraIdentityId | CameraIdentityId | 対応するCameraIdentityへの参照。CameraConnection間で一意とする。 |
 | url | Option\<Url\> | Kubernetes Serviceの割り当て結果から生成したcameraクライアントの接続先URL。 |
+| virtualPort | Option\<u16\> | RISTのvirt-dst-port。再起動後の再プロビジョニングでも同じ値を利用する。 |
 | status | CameraConnectionStatus | activating、waiting、connected、errorのいずれか。 |
 | error | Option\<ErrorReason\> | 接続を拒否した事由。 |
 | videoWorkerId | Option\<VideoWorkerId\> | 対応するcameraを現在処理しているvideo worker processが起動時に生成したUUID。 |

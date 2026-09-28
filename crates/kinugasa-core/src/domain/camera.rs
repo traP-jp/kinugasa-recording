@@ -111,6 +111,7 @@ pub enum CameraInputState {
 pub struct CameraConnection {
     camera_identity_id: CameraIdentityId,
     state: CameraConnectionState,
+    virtual_port: Option<u16>,
     media_process_id: Option<MediaProcessId>,
     deletion_requested_at: Option<DateTime<Utc>>,
 }
@@ -121,6 +122,7 @@ impl CameraConnection {
         Self {
             camera_identity_id,
             state,
+            virtual_port: None,
             media_process_id: None,
             deletion_requested_at: None,
         }
@@ -139,6 +141,11 @@ impl CameraConnection {
     #[must_use]
     pub const fn media_process_id(&self) -> Option<MediaProcessId> {
         self.media_process_id
+    }
+
+    #[must_use]
+    pub const fn virtual_port(&self) -> Option<u16> {
+        self.virtual_port
     }
 
     #[must_use]
@@ -169,6 +176,10 @@ impl CameraConnection {
 
     pub fn set_media_process_id(&mut self, id: Option<MediaProcessId>) {
         self.media_process_id = id;
+    }
+
+    pub fn set_virtual_port(&mut self, virtual_port: Option<u16>) {
+        self.virtual_port = virtual_port;
     }
 
     pub fn request_deletion(&mut self, at: DateTime<Utc>) {
