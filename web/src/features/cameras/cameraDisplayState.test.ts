@@ -16,7 +16,6 @@ function statistics(cameraName: string, lostPackets: number, stale = false): RIS
     outputPackets: 100,
     lostPackets,
     recoveredPackets: 0,
-    discontinuities: 0,
     stale,
   };
 }

@@ -248,7 +248,6 @@ struct RistStatisticsResponse {
     output_packets: u64,
     lost_packets: u64,
     recovered_packets: u64,
-    discontinuities: u64,
     stale: bool,
 }
 
@@ -588,7 +587,6 @@ fn statistics_response(value: &RistStatisticsSnapshot) -> RistStatisticsResponse
         output_packets: statistics.output_packets,
         lost_packets: statistics.lost_packets,
         recovered_packets: statistics.recovered_packets,
-        discontinuities: statistics.discontinuities,
         stale: value.stale,
     }
 }

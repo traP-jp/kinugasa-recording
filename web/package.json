@@ -9,8 +9,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@moq/watch": "0.6.1",
+    "@moq/net": "0.4.1",
     "lucide-react": "1.37.0",
+    "mpegts.js": "1.8.0",
     "qrcode.react": "4.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",

@@ -1,11 +1,10 @@
 use std::{
-    collections::BTreeMap,
     path::PathBuf,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
@@ -19,10 +18,6 @@ use kinugasa_core::{
     },
 };
 use tokio::sync::{broadcast, mpsc, oneshot};
-use transmux::{
-    CodecConfig, TrackSpec,
-    ts_demux::{DemuxEvent, StreamingTsDemux},
-};
 use url::Url;
 
 use crate::recording::RecordingFile;
@@ -55,7 +50,6 @@ impl CameraHandle {
         recording_root: PathBuf,
         queue_capacity: usize,
         preview_capacity: usize,
-        recording_start_timeout: Duration,
         events: mpsc::UnboundedSender<MediaEvent>,
     ) -> Self {
         let (commands, receiver) = mpsc::channel(queue_capacity);
@@ -68,11 +62,9 @@ impl CameraHandle {
             error_receiver,
             preview.clone(),
             Arc::clone(&overflowed),
-            Arc::clone(&statistics),
             CameraWorkerConfig {
                 camera_id: metadata.camera_id,
                 recording_root,
-                recording_start_timeout,
                 events,
             },
         ));
@@ -205,24 +197,16 @@ enum Command {
 struct CameraWorkerConfig {
     camera_id: CameraIdentityId,
     recording_root: PathBuf,
-    recording_start_timeout: Duration,
     events: mpsc::UnboundedSender<MediaEvent>,
 }
 
 enum RecordingState {
     Idle,
-    Arming {
-        request: StartRecordingRequest,
-        deadline: Instant,
-        reply: oneshot::Sender<Result<RecordingStarted, MediaError>>,
-    },
-    Recording(RecordingFile),
+    Recording(Box<RecordingFile>),
 }
 
 struct WorkerState {
-    media: MediaState,
     recording: RecordingState,
-    sequence: SequenceState,
     connected: bool,
     errored: bool,
     input_blocked: bool,
@@ -233,28 +217,21 @@ async fn run_camera(
     mut input_errors: mpsc::UnboundedReceiver<ErrorReason>,
     preview: broadcast::Sender<PreviewPacket>,
     overflowed: Arc<AtomicBool>,
-    statistics: Arc<Statistics>,
     config: CameraWorkerConfig,
 ) {
     let mut state = WorkerState {
-        media: MediaState::default(),
         recording: RecordingState::Idle,
-        sequence: SequenceState::default(),
         connected: false,
         errored: false,
         input_blocked: false,
     };
-    let mut tick = tokio::time::interval(Duration::from_millis(100));
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut input_errors_closed = false;
 
     loop {
         tokio::select! {
             input_error = input_errors.recv(), if !input_errors_closed => {
                 if let Some(reason) = input_error {
-                    fail_recording(&mut state.recording, reason.as_str()).await;
-                    state.sequence = SequenceState::default();
-                    state.media = MediaState::default();
+                    fail_recording(&mut state.recording).await;
                     if !state.errored {
                         emit_state(&config, CameraInputState::Errored(reason));
                     }
@@ -273,38 +250,30 @@ async fn run_camera(
                             continue;
                         }
                         if overflowed.swap(false, Ordering::AcqRel) {
-                            statistics.discontinuities.fetch_add(1, Ordering::Relaxed);
-                            fail_recording(&mut state.recording, "media ingress queue overflow").await;
+                            fail_recording(&mut state.recording).await;
                             if !state.errored {
                                 emit_state(&config, CameraInputState::Errored(reason("media ingress queue overflow")));
                             }
                             state.connected = false;
                             state.errored = true;
-                            state.sequence = SequenceState::default();
-                            state.media = MediaState::default();
                         }
                         if let Err(error) = handle_packet(
                             packet,
                             &mut state,
                             &preview,
-                            &statistics,
                             &config,
                         ).await {
                             let message = error.to_string();
-                            fail_recording(&mut state.recording, &message).await;
+                            fail_recording(&mut state.recording).await;
                             if !state.errored {
                                 emit_state(&config, CameraInputState::Errored(reason(message)));
                             }
                             state.connected = false;
                             state.errored = true;
-                            state.sequence = SequenceState::default();
-                            state.media = MediaState::default();
                         }
                     }
                     Command::Disconnected => {
-                        fail_recording(&mut state.recording, "camera input disconnected").await;
-                        state.sequence = SequenceState::default();
-                        state.media = MediaState::default();
+                        fail_recording(&mut state.recording).await;
                         if state.connected || state.errored {
                             emit_state(&config, CameraInputState::Waiting);
                         }
@@ -316,18 +285,37 @@ async fn run_camera(
                         if !state.connected || !matches!(state.recording, RecordingState::Idle) {
                             let _ = reply.send(Err(MediaError::Conflict));
                         } else {
-                            state.recording = RecordingState::Arming {
-                                request,
-                                deadline: Instant::now() + config.recording_start_timeout,
-                                reply,
-                            };
+                            let started_at = Utc::now();
+                            match RecordingFile::create(&config.recording_root, request.clone(), started_at).await {
+                                Ok(file) => {
+                                    state.recording = RecordingState::Recording(Box::new(file));
+                                    let _ = reply.send(Ok(RecordingStarted {
+                                        take_id: request.take_id,
+                                        camera_identity_id: request.camera_identity_id,
+                                        started_at,
+                                    }));
+                                }
+                                Err(error) => {
+                                    let _ = reply.send(Err(unexpected(error)));
+                                }
+                            }
                         }
                     }
                     Command::FinishRecording { take_id, reply } => {
+                        if overflowed.swap(false, Ordering::AcqRel) {
+                            fail_recording(&mut state.recording).await;
+                            if !state.errored {
+                                emit_state(&config, CameraInputState::Errored(reason("media ingress queue overflow")));
+                            }
+                            state.connected = false;
+                            state.errored = true;
+                            let _ = reply.send(Err(unavailable("media ingress queue overflow")));
+                            continue;
+                        }
                         let recording = std::mem::replace(&mut state.recording, RecordingState::Idle);
                         match recording {
                             RecordingState::Recording(file) if file_take_id(&file) == take_id => {
-                                let _ = reply.send(file.finish().await.map_err(unexpected));
+                                let _ = reply.send((*file).finish().await.map_err(unexpected));
                             }
                             other => {
                                 state.recording = other;
@@ -339,12 +327,7 @@ async fn run_camera(
                         let recording = std::mem::replace(&mut state.recording, RecordingState::Idle);
                         match recording {
                             RecordingState::Recording(file) if file_take_id(&file) == take_id => {
-                                let _ = reply.send(file.abort().await.map_err(unexpected));
-                            }
-                            RecordingState::Arming { request, reply: start_reply, .. }
-                                if request.take_id == take_id => {
-                                    let _ = start_reply.send(Err(MediaError::Conflict));
-                                    let _ = reply.send(Ok(()));
+                                let _ = reply.send((*file).abort().await.map_err(unexpected));
                             }
                             other => {
                                 state.recording = other;
@@ -355,42 +338,24 @@ async fn run_camera(
                     Command::Shutdown => break,
                 }
             }
-            _ = tick.tick() => {
-                if matches!(&state.recording, RecordingState::Arming { deadline, .. } if Instant::now() >= *deadline)
-                    && let RecordingState::Arming { reply, .. } = std::mem::replace(&mut state.recording, RecordingState::Idle) {
-                        let _ = reply.send(Err(MediaError::Timeout));
-                }
-            }
         }
     }
-    fail_recording(&mut state.recording, "camera media task stopped").await;
+    fail_recording(&mut state.recording).await;
 }
 
 async fn handle_packet(
     packet: IngressPacket,
     state: &mut WorkerState,
     preview: &broadcast::Sender<PreviewPacket>,
-    statistics: &Statistics,
     config: &CameraWorkerConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    match state
-        .sequence
-        .observe(packet.sequence, packet.ntp_timestamp, packet.discontinuity)
-    {
-        PacketOrder::DuplicateOrLate => return Ok(()),
-        PacketOrder::Gap(count) => {
-            statistics.lost.fetch_add(count, Ordering::Relaxed);
-            return Err(format!("RIST sequence gap of {count} packets").into());
-        }
-        PacketOrder::Discontinuity => {
-            statistics.discontinuities.fetch_add(1, Ordering::Relaxed);
-            return Err("RIST stream discontinuity".into());
-        }
-        PacketOrder::Continuous => {}
+    if !state.connected {
+        emit_state(config, CameraInputState::Connected);
+        state.connected = true;
+        state.errored = false;
     }
-    state.media.demux.feed(&packet.payload);
-    while let Some(event) = state.media.demux.poll_event() {
-        handle_demux_event(event, state, config).await?;
+    if let RecordingState::Recording(file) = &mut state.recording {
+        file.write_packet(&packet.payload).await?;
     }
     let _ = preview.send(PreviewPacket {
         camera_identity_id: config.camera_id,
@@ -400,140 +365,11 @@ async fn handle_packet(
     Ok(())
 }
 
-async fn handle_demux_event(
-    event: DemuxEvent,
-    state: &mut WorkerState,
-    config: &CameraWorkerConfig,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    match event {
-        DemuxEvent::TrackAdded(spec) | DemuxEvent::TrackUpdated(spec) => {
-            state.media.tracks.insert(spec.track_id, spec);
-        }
-        DemuxEvent::TrackRemoved { track_id, .. } => {
-            state.media.tracks.remove(&track_id);
-            if state.media.video_track_id == Some(track_id) {
-                return Err("active H.264 track was removed from the transport stream".into());
-            }
-        }
-        DemuxEvent::TracksResolved { .. } => {
-            state.media.video_track_id = state.media.primary_video_track_id();
-            if state.media.video_track_id.is_some() {
-                if !state.connected {
-                    emit_state(config, CameraInputState::Connected);
-                }
-                state.connected = true;
-                state.errored = false;
-            } else if state.connected {
-                emit_state(config, CameraInputState::Waiting);
-                state.connected = false;
-            }
-        }
-        DemuxEvent::Sample {
-            track_id, sample, ..
-        } => {
-            if let RecordingState::Recording(file) = &mut state.recording {
-                file.write_sample(track_id, sample).await?;
-            } else if matches!(&state.recording, RecordingState::Arming { .. })
-                && state.media.video_track_id == Some(track_id)
-                && sample.flags.is_sync
-            {
-                let RecordingState::Arming { request, reply, .. } =
-                    std::mem::replace(&mut state.recording, RecordingState::Idle)
-                else {
-                    unreachable!()
-                };
-                let started_at = Utc::now();
-                match RecordingFile::create(
-                    &config.recording_root,
-                    request.clone(),
-                    started_at,
-                    state.media.recording_tracks(),
-                )
-                .await
-                {
-                    Ok(mut file) => match file.write_sample(track_id, sample).await {
-                        Ok(()) => {
-                            state.recording = RecordingState::Recording(file);
-                            let _ = reply.send(Ok(RecordingStarted {
-                                take_id: request.take_id,
-                                camera_identity_id: request.camera_identity_id,
-                                started_at,
-                            }));
-                        }
-                        Err(error) => {
-                            if let Err(abort_error) = file.abort().await {
-                                tracing::warn!(%abort_error, "failed to remove partial recording");
-                            }
-                            let _ = reply.send(Err(unexpected(error)));
-                        }
-                    },
-                    Err(error) => {
-                        let _ = reply.send(Err(unexpected(error)));
-                    }
-                }
-            }
-        }
-        DemuxEvent::Discontinuity { kind, .. } => {
-            return Err(format!("MPEG-TS discontinuity: {}", kind.name()).into());
-        }
-        DemuxEvent::InputDegraded { kind, .. } => {
-            return Err(format!("degraded MPEG-TS input: {}", kind.name()).into());
-        }
-        DemuxEvent::ClockReference { .. } | DemuxEvent::TrackAbandoned { .. } => {}
-        _ => {}
-    }
-    Ok(())
-}
-
-struct MediaState {
-    demux: StreamingTsDemux,
-    tracks: BTreeMap<u32, TrackSpec>,
-    video_track_id: Option<u32>,
-}
-
-impl Default for MediaState {
-    fn default() -> Self {
-        Self {
-            demux: StreamingTsDemux::new(),
-            tracks: BTreeMap::new(),
-            video_track_id: None,
-        }
-    }
-}
-
-impl MediaState {
-    fn primary_video_track_id(&self) -> Option<u32> {
-        self.tracks.values().find_map(|track| {
-            matches!(&track.config, CodecConfig::Avc { .. }).then_some(track.track_id)
-        })
-    }
-
-    fn recording_tracks(&self) -> Vec<TrackSpec> {
-        let program_number = self.video_track_id.and_then(|video_track_id| {
-            self.tracks
-                .get(&video_track_id)
-                .and_then(|track| track.program_number)
-        });
-        self.tracks
-            .values()
-            .filter(|track| {
-                Some(track.track_id) == self.video_track_id
-                    || (matches!(&track.config, CodecConfig::Aac { .. })
-                        && program_number.is_none_or(|number| track.program_number == Some(number)))
-            })
-            .cloned()
-            .collect()
-    }
-}
-
-async fn fail_recording(recording: &mut RecordingState, message: &str) {
+async fn fail_recording(recording: &mut RecordingState) {
     match std::mem::replace(recording, RecordingState::Idle) {
         RecordingState::Idle => {}
-        RecordingState::Arming { reply, .. } => {
-            let _ = reply.send(Err(unavailable(message)));
-        }
         RecordingState::Recording(file) => {
-            if let Err(error) = file.abort().await {
+            if let Err(error) = (*file).abort().await {
                 tracing::warn!(%error, "failed to remove partial recording");
             }
         }
@@ -566,51 +402,6 @@ fn unavailable(message: impl Into<String>) -> MediaError {
     MediaError::Unavailable(Box::new(std::io::Error::other(message.into())))
 }
 
-#[derive(Default)]
-struct SequenceState {
-    previous_sequence: Option<u64>,
-    previous_timestamp: Option<u64>,
-}
-
-enum PacketOrder {
-    Continuous,
-    Gap(u64),
-    DuplicateOrLate,
-    Discontinuity,
-}
-
-impl SequenceState {
-    fn observe(&mut self, sequence: u64, timestamp: u64, discontinuity: bool) -> PacketOrder {
-        let Some(previous) = self.previous_sequence else {
-            self.previous_sequence = Some(sequence);
-            self.previous_timestamp = Some(timestamp);
-            // librist marks the first delivered block as flow-buffer start.
-            // With no previous baseline this is startup, not a broken stream.
-            return PacketOrder::Continuous;
-        };
-        if discontinuity
-            || self
-                .previous_timestamp
-                .is_some_and(|old| sequence > previous && timestamp < old)
-        {
-            self.previous_sequence = Some(sequence);
-            self.previous_timestamp = Some(timestamp);
-            return PacketOrder::Discontinuity;
-        }
-        if sequence <= previous {
-            return PacketOrder::DuplicateOrLate;
-        }
-        self.previous_sequence = Some(sequence);
-        self.previous_timestamp = Some(timestamp);
-        let gap = sequence - previous - 1;
-        if gap == 0 {
-            PacketOrder::Continuous
-        } else {
-            PacketOrder::Gap(gap)
-        }
-    }
-}
-
 struct Statistics {
     interval_start: Mutex<DateTime<Utc>>,
     latest: Mutex<Option<StatisticsInterval>>,
@@ -618,7 +409,6 @@ struct Statistics {
     output: AtomicU64,
     lost: AtomicU64,
     recovered: AtomicU64,
-    discontinuities: AtomicU64,
 }
 
 #[derive(Clone, Copy)]
@@ -629,7 +419,6 @@ struct StatisticsInterval {
     output_packets: u64,
     lost_packets: u64,
     recovered_packets: u64,
-    discontinuities: u64,
 }
 
 impl Statistics {
@@ -641,7 +430,6 @@ impl Statistics {
             output: AtomicU64::new(0),
             lost: AtomicU64::new(0),
             recovered: AtomicU64::new(0),
-            discontinuities: AtomicU64::new(0),
         }
     }
 
@@ -669,7 +457,6 @@ impl Statistics {
             output_packets: self.output.swap(0, Ordering::Relaxed),
             lost_packets: self.lost.swap(0, Ordering::Relaxed),
             recovered_packets: self.recovered.swap(0, Ordering::Relaxed),
-            discontinuities: self.discontinuities.swap(0, Ordering::Relaxed),
         });
     }
 
@@ -700,7 +487,6 @@ impl Statistics {
                 output_packets: interval.output_packets,
                 lost_packets: interval.lost_packets,
                 recovered_packets: interval.recovered_packets,
-                discontinuities: interval.discontinuities,
             },
             stale,
         })
@@ -710,6 +496,76 @@ impl Statistics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ingress_overflow_never_finalizes_an_incomplete_capture() {
+        let root = tempfile::tempdir().unwrap();
+        let camera_id = CameraIdentityId::new_v7();
+        let session_id = SessionId::new_v7();
+        let (events, mut received_events) = mpsc::unbounded_channel();
+        let camera = CameraHandle::spawn(
+            CameraMetadata {
+                session_id,
+                session_name: SessionName::new("studio").unwrap(),
+                camera_id,
+                camera_name: CameraName::new("front").unwrap(),
+                virtual_port: 1_024,
+                publish_endpoint: Url::parse("rist://localhost:9200").unwrap(),
+            },
+            root.path().to_owned(),
+            1,
+            1,
+            events,
+        );
+        camera
+            .ingest(IngressPacket {
+                camera_identity_id: camera_id,
+                flow_id: 42,
+                ntp_timestamp: 1,
+                payload: bytes::Bytes::from_static(b"initial"),
+            })
+            .unwrap();
+        assert!(matches!(
+            received_events.recv().await.unwrap().kind,
+            MediaEventKind::CameraInputChanged {
+                state: CameraInputState::Connected,
+                ..
+            }
+        ));
+
+        let take_id = TakeId::new_v7();
+        camera
+            .start_recording(StartRecordingRequest {
+                take_id,
+                session_id,
+                camera_identity_id: camera_id,
+                relative_path: kinugasa_core::domain::RelativePath::new(
+                    "studio/take/front/video.ts",
+                )
+                .unwrap(),
+            })
+            .await
+            .unwrap();
+        let packet = IngressPacket {
+            camera_identity_id: camera_id,
+            flow_id: 42,
+            ntp_timestamp: 2,
+            payload: bytes::Bytes::from_static(b"captured"),
+        };
+        camera.ingest(packet.clone()).unwrap();
+        assert!(matches!(
+            camera.ingest(packet),
+            Err(crate::IngressError::QueueFull)
+        ));
+        assert!(camera.finish_recording(take_id).await.is_err());
+        assert!(!root.path().join("studio/take/front/video.ts").exists());
+        assert!(
+            !root
+                .path()
+                .join("studio/take/front/video.ts.partial")
+                .exists()
+        );
+    }
 
     #[test]
     fn rist_statistics_rotate_as_delta_intervals() {

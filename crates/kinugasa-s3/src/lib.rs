@@ -487,7 +487,7 @@ mod tests {
             started_at,
             started_at,
             RelativePath::new(relative_path).unwrap(),
-            MediaType::new("video/mp4").unwrap(),
+            MediaType::new("video/mp2t").unwrap(),
         )
         .unwrap()
     }
@@ -522,7 +522,7 @@ mod tests {
             .unwrap()
             .block_on(async {
                 let directory = TestDirectory::new();
-                let relative = "recording/session/take/camera/video.mp4";
+                let relative = "recording/session/take/camera/video.ts";
                 let path = directory.0.join(relative);
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, b"video").unwrap();
@@ -535,12 +535,12 @@ mod tests {
                 assert_eq!(stored.size().bytes(), 5);
                 assert_eq!(
                     stored.object_key().as_str(),
-                    format!("recording/session/take/camera/{hash}-video.mp4")
+                    format!("recording/session/take/camera/{hash}-video.ts")
                 );
                 let puts = client.puts.lock().unwrap();
                 assert_eq!(puts.len(), 1);
                 assert_eq!(puts[0].hash_hex, hash);
-                assert_eq!(puts[0].media_type, "video/mp4");
+                assert_eq!(puts[0].media_type, "video/mp2t");
             });
     }
 
@@ -551,7 +551,7 @@ mod tests {
             .unwrap()
             .block_on(async {
                 let directory = TestDirectory::new();
-                let relative = "recording/session/take/camera/video.mp4";
+                let relative = "recording/session/take/camera/video.ts";
                 let path = directory.0.join(relative);
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, b"video").unwrap();
@@ -581,7 +581,7 @@ mod tests {
             .unwrap()
             .block_on(async {
                 let directory = TestDirectory::new();
-                let relative = "recording/session/take/camera/video.mp4";
+                let relative = "recording/session/take/camera/video.ts";
                 let path = directory.0.join(relative);
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, b"video").unwrap();
@@ -610,7 +610,7 @@ mod tests {
             .unwrap()
             .block_on(async {
                 let directory = TestDirectory::new();
-                let relative = "recording/session/take/camera/video.mp4";
+                let relative = "recording/session/take/camera/video.ts";
                 let path = directory.0.join(relative);
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, b"video").unwrap();

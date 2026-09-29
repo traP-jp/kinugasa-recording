@@ -12,7 +12,6 @@ function statistics(outputPackets: number, lostPackets: number): RISTStatistics 
     outputPackets,
     lostPackets,
     recoveredPackets: 0,
-    discontinuities: 0,
     stale: false,
   };
 }

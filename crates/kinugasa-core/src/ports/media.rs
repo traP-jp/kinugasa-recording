@@ -174,7 +174,6 @@ pub struct RistStatistics {
     pub output_packets: u64,
     pub lost_packets: u64,
     pub recovered_packets: u64,
-    pub discontinuities: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

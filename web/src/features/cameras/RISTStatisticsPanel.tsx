@@ -35,7 +35,6 @@ export function RISTStatisticsPanel({ statistics }: RISTStatisticsPanelProps) {
               <div><dt>output</dt><dd>{item.outputPackets.toLocaleString()}</dd></div>
               <div><dt>lost</dt><dd>{item.lostPackets.toLocaleString()}</dd></div>
               <div><dt>recovered</dt><dd>{item.recoveredPackets.toLocaleString()}</dd></div>
-              <div><dt>discontinuity</dt><dd>{item.discontinuities.toLocaleString()}</dd></div>
             </dl>
             <footer>
               <span>flow {item.flowId}</span>

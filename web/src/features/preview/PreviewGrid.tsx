@@ -1,4 +1,4 @@
-import type * as Watch from "@moq/watch";
+import type * as Moq from "@moq/net";
 import { VideoOff } from "lucide-react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import type { PreviewAccess } from "../../api/types";
@@ -37,7 +37,7 @@ function ConnectedPreviewGrid({
   connection,
 }: {
   cameras: CameraDisplayState[];
-  connection?: Watch.Net.Connection;
+  connection?: Moq.Connection;
 }) {
   const [expandedCameraName, setExpandedCameraName] = useState<string | null>(null);
   if (cameras.length === 0) return <PreviewPlaceholders cameras={[]} message="Cameraを追加すると映像が表示されます" />;
@@ -58,7 +58,7 @@ function ConnectedPreviewGrid({
       {expandedCamera && (
         <VideoPreviewModal cameraName={expandedCamera.camera.name} onClose={() => setExpandedCameraName(null)}>
           <div className="video-preview-expanded">
-            <MoqCameraPreview camera={expandedCamera.camera} connection={connection} visible="always" />
+            <MoqCameraPreview camera={expandedCamera.camera} connection={connection} />
           </div>
         </VideoPreviewModal>
       )}

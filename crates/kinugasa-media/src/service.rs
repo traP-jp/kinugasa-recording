@@ -31,9 +31,7 @@ const LAST_VIRTUAL_PORT: u16 = u16::MAX - 1;
 pub struct IngressPacket {
     pub camera_identity_id: CameraIdentityId,
     pub flow_id: u32,
-    pub sequence: u64,
     pub ntp_timestamp: u64,
-    pub discontinuity: bool,
     pub payload: Bytes,
 }
 
@@ -41,9 +39,7 @@ pub(crate) struct SessionIngressPacket {
     pub(crate) session_id: SessionId,
     pub(crate) virtual_port: u16,
     pub(crate) flow_id: u32,
-    pub(crate) sequence: u64,
     pub(crate) ntp_timestamp: u64,
-    pub(crate) discontinuity: bool,
     pub(crate) payload: Bytes,
 }
 
@@ -216,9 +212,7 @@ impl MediaIngress {
         camera.ingest(IngressPacket {
             camera_identity_id: camera.metadata.camera_id,
             flow_id: packet.flow_id,
-            sequence: packet.sequence,
             ntp_timestamp: packet.ntp_timestamp,
-            discontinuity: packet.discontinuity,
             payload: packet.payload,
         })
     }
@@ -436,7 +430,6 @@ impl CameraIngress for MediaService {
             self.inner.config.recording_root.clone(),
             self.inner.config.ingress_queue_capacity,
             self.inner.config.preview_queue_capacity,
-            self.inner.config.recording_start_timeout,
             self.inner.event_sender.clone(),
         ));
         if let Err(error) = self.moq.provision_camera(
@@ -741,7 +734,6 @@ mod tests {
             gateway_instance: GatewayInstance::new("test-instance").unwrap(),
             ingress_queue_capacity: 8,
             preview_queue_capacity: 8,
-            recording_start_timeout: Duration::from_secs(1),
             statistics_stale_after: Duration::from_secs(10),
         }
     }
@@ -754,26 +746,6 @@ mod tests {
             rist: Box::new(TestTransport::new()),
             moq: Box::new(TestPreviewTransport),
         }
-    }
-
-    #[test]
-    fn synthetic_h264_stream_resolves_a_recordable_track() {
-        let mut demux = transmux::ts_demux::StreamingTsDemux::new();
-        demux.feed(&stream_payloads().0);
-        let events: Vec<_> = std::iter::from_fn(|| demux.poll_event()).collect();
-        assert!(
-            events
-                .iter()
-                .any(|event| matches!(event, transmux::ts_demux::DemuxEvent::TrackAdded(_))),
-            "events: {events:#?}"
-        );
-        assert!(
-            events.iter().any(|event| matches!(
-                event,
-                transmux::ts_demux::DemuxEvent::TracksResolved { .. }
-            )),
-            "events: {events:#?}"
-        );
     }
 
     #[tokio::test]
@@ -889,9 +861,7 @@ mod tests {
                     .parse()
                     .unwrap(),
                 flow_id: 42,
-                sequence: 1,
                 ntp_timestamp: 1,
-                discontinuity: false,
                 payload: stream_payloads().0,
             })
             .unwrap();
@@ -1006,7 +976,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recording_waits_for_random_access_gate_and_atomically_finalizes() {
+    async fn recording_captures_only_packets_after_start_and_atomically_finalizes() {
         let root = tempfile::tempdir().unwrap();
         let service = service(root.path()).await;
         let session_id = SessionId::new_v7();
@@ -1024,57 +994,48 @@ mod tests {
             .push(IngressPacket {
                 camera_identity_id: camera_id,
                 flow_id: 42,
-                sequence: 1,
                 ntp_timestamp: 1,
-                discontinuity: true,
-                payload: stream_payloads().0,
+                payload: Bytes::from_static(b"not-an-mpeg-ts-packet"),
             })
             .unwrap();
-        let _connected = service.next_event().await.unwrap();
+        let connected = service.next_event().await.unwrap();
+        assert!(matches!(
+            connected.kind,
+            kinugasa_core::ports::MediaEventKind::CameraInputChanged {
+                camera_identity_id,
+                state: kinugasa_core::domain::CameraInputState::Connected,
+            } if camera_identity_id == camera_id
+        ));
 
         let take_id = TakeId::new_v7();
         let request = StartRecordingRequest {
             take_id,
             session_id,
             camera_identity_id: camera_id,
-            relative_path: RelativePath::new("studio/take/front/video.mp4").unwrap(),
+            relative_path: RelativePath::new("studio/take/front/video.ts").unwrap(),
         };
-        let start = service.start_recording(&request);
-        let feed_idr = async {
-            tokio::task::yield_now().await;
-            ingress
-                .push(IngressPacket {
-                    camera_identity_id: camera_id,
-                    flow_id: 42,
-                    sequence: 2,
-                    ntp_timestamp: 2,
-                    discontinuity: false,
-                    payload: stream_payloads().1,
-                })
-                .unwrap();
-        };
-        let (started, ()) = tokio::join!(start, feed_idr);
-        assert_eq!(started.unwrap().take_id, take_id);
+        let started = service.start_recording(&request).await.unwrap();
+        assert_eq!(started.take_id, take_id);
+        let captured = stream_payloads().1;
+        ingress
+            .push(IngressPacket {
+                camera_identity_id: camera_id,
+                flow_id: 42,
+                ntp_timestamp: 2,
+                payload: captured.clone(),
+            })
+            .unwrap();
 
         let finalized = service.finish_recording(take_id, camera_id).await.unwrap();
         assert_eq!(finalized.take_id(), take_id);
-        assert_eq!(finalized.media_type().as_str(), "video/mp4");
-        let path = root.path().join("studio/take/front/video.mp4");
+        assert_eq!(finalized.media_type().as_str(), "video/mp2t");
+        let path = root.path().join("studio/take/front/video.ts");
         let contents = std::fs::read(path).unwrap();
-        assert!(!contents.is_empty());
-        assert_eq!(&contents[4..8], b"ftyp");
-        assert!(contents.windows(4).any(|window| window == b"moov"));
-        assert!(contents.windows(4).any(|window| window == b"moof"));
-        assert!(contents.windows(4).any(|window| window == b"mdat"));
-        let remuxed = {
-            use broadcast_common::Unpackage;
-            transmux::Fmp4Demux::new().unpackage(&contents).unwrap()
-        };
-        assert!(remuxed.tracks[0].samples[0].flags.is_sync);
+        assert_eq!(contents, captured.as_ref());
         assert!(
             !root
                 .path()
-                .join("studio/take/front/video.mp4.partial")
+                .join("studio/take/front/video.ts.partial")
                 .exists()
         );
     }
@@ -1101,9 +1062,7 @@ mod tests {
             .push(IngressPacket {
                 camera_identity_id: camera_id,
                 flow_id: 42,
-                sequence: 1,
                 ntp_timestamp: 1,
-                discontinuity: false,
                 payload: stream_payloads().0,
             })
             .unwrap();
@@ -1114,27 +1073,20 @@ mod tests {
             take_id,
             session_id,
             camera_identity_id: camera_id,
-            relative_path: RelativePath::new("studio/take/front/video.mp4").unwrap(),
+            relative_path: RelativePath::new("studio/take/front/video.ts").unwrap(),
         };
-        let start = service.start_recording(&request);
-        let feed_idr = async {
-            tokio::task::yield_now().await;
-            ingress
-                .push(IngressPacket {
-                    camera_identity_id: camera_id,
-                    flow_id: 42,
-                    sequence: 2,
-                    ntp_timestamp: 2,
-                    discontinuity: false,
-                    payload: stream_payloads().1,
-                })
-                .unwrap();
-        };
-        let (started, ()) = tokio::join!(start, feed_idr);
-        started.unwrap();
+        service.start_recording(&request).await.unwrap();
+        ingress
+            .push(IngressPacket {
+                camera_identity_id: camera_id,
+                flow_id: 42,
+                ntp_timestamp: 2,
+                payload: stream_payloads().1,
+            })
+            .unwrap();
         assert!(
             root.path()
-                .join("studio/take/front/video.mp4.partial")
+                .join("studio/take/front/video.ts.partial")
                 .exists()
         );
 
@@ -1150,7 +1102,7 @@ mod tests {
         assert!(
             !root
                 .path()
-                .join("studio/take/front/video.mp4.partial")
+                .join("studio/take/front/video.ts.partial")
                 .exists()
         );
         assert!(service.finish_recording(take_id, camera_id).await.is_err());
@@ -1213,9 +1165,7 @@ mod tests {
                 session_id,
                 virtual_port,
                 flow_id: 42,
-                sequence: 1,
                 ntp_timestamp: 1,
-                discontinuity: false,
                 payload: stream_payloads().0,
             })
             .unwrap();

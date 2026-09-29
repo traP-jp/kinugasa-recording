@@ -79,8 +79,8 @@ impl RecordingService for TestMedia {
             self.session_id,
             self.started_at,
             self.finished_at,
-            RelativePath::new("recording/session/take/camera/video.mp4").unwrap(),
-            MediaType::new("video/mp4").unwrap(),
+            RelativePath::new("recording/session/take/camera/video.ts").unwrap(),
+            MediaType::new("video/mp2t").unwrap(),
         )
         .unwrap())
     }
@@ -262,8 +262,8 @@ async fn repository_lifecycle() {
         seed.session_id,
         started_at,
         finished_at,
-        RelativePath::new("session/take/camera.mp4").unwrap(),
-        MediaType::new("video/mp4").unwrap(),
+        RelativePath::new("session/take/camera.ts").unwrap(),
+        MediaType::new("video/mp2t").unwrap(),
     )
     .unwrap();
     repository
@@ -282,7 +282,7 @@ async fn repository_lifecycle() {
         1
     );
     let stored = StoredObject::new(
-        ObjectKey::new("recordings/camera.mp4").unwrap(),
+        ObjectKey::new("recordings/camera.ts").unwrap(),
         ContentHash::from_bytes([42; 32]),
         FileSize::from_bytes(1234),
     );
@@ -491,7 +491,7 @@ async fn take_and_upload_use_cases_own_the_state_transitions() {
             camera_id,
             take_id,
         }),
-        RecordingLayout::new("video.mp4").unwrap(),
+        RecordingLayout::new("video.ts").unwrap(),
     );
     take_use_cases
         .start_take(
@@ -508,7 +508,7 @@ async fn take_and_upload_use_cases_own_the_state_transitions() {
     assert!(matches!(finished.state(), FinishedTakeState::Uploading));
 
     let stored = StoredObject::new(
-        ObjectKey::new("recordings/use-case.mp4").unwrap(),
+        ObjectKey::new("recordings/use-case.ts").unwrap(),
         ContentHash::from_bytes([7; 32]),
         FileSize::from_bytes(777),
     );

@@ -108,11 +108,6 @@ impl AppConfig {
             gateway_instance,
             ingress_queue_capacity: parse_or(&mut get, "KINUGASA_INGRESS_QUEUE_CAPACITY", 4_096)?,
             preview_queue_capacity: parse_or(&mut get, "KINUGASA_PREVIEW_QUEUE_CAPACITY", 1_024)?,
-            recording_start_timeout: duration_or(
-                &mut get,
-                "KINUGASA_RECORDING_START_TIMEOUT",
-                Duration::from_secs(10),
-            )?,
             statistics_stale_after: duration_or(
                 &mut get,
                 "KINUGASA_STATISTICS_STALE_AFTER",
@@ -165,15 +160,26 @@ impl AppConfig {
             tls: tls_identity(&mut get)?,
         };
 
-        let recording_layout = RecordingLayout::new(
-            get("KINUGASA_RECORDING_FILE_NAME").unwrap_or_else(|| "video.mp4".to_owned()),
-        )
-        .map_err(|error| ConfigError::invalid("KINUGASA_RECORDING_FILE_NAME", error))?;
-        let lockfile = LockfileConfig::new(
-            bucket,
-            get("KINUGASA_LOCKFILE_SCHEMA_VERSION").unwrap_or_else(|| "1.0".to_owned()),
-        )
-        .map_err(|error| ConfigError::invalid("KINUGASA_LOCKFILE_SCHEMA_VERSION", error))?;
+        let recording_file_name =
+            get("KINUGASA_RECORDING_FILE_NAME").unwrap_or_else(|| "video.ts".to_owned());
+        if recording_file_name != "video.ts" {
+            return Err(ConfigError::invalid(
+                "KINUGASA_RECORDING_FILE_NAME",
+                "must be video.ts",
+            ));
+        }
+        let schema_version =
+            get("KINUGASA_LOCKFILE_SCHEMA_VERSION").unwrap_or_else(|| "2.0".to_owned());
+        if schema_version != "2.0" {
+            return Err(ConfigError::invalid(
+                "KINUGASA_LOCKFILE_SCHEMA_VERSION",
+                "must be 2.0 for MPEG-TS recordings",
+            ));
+        }
+        let recording_layout = RecordingLayout::new(recording_file_name)
+            .expect("standard recording file name is valid");
+        let lockfile = LockfileConfig::new(bucket, schema_version)
+            .expect("standard lockfile schema version is valid");
 
         Ok(Self {
             http_listen_address: parse_or(
@@ -402,9 +408,20 @@ mod tests {
         );
         assert_eq!(config.preview_token_lifetime, Duration::from_secs(90));
         assert_eq!(config.runtime.upload_batch_size.get(), 64);
-        assert_eq!(config.recording_layout.file_name(), "video.mp4");
-        assert_eq!(config.lockfile.schema_version(), "1.0");
+        assert_eq!(config.recording_layout.file_name(), "video.ts");
+        assert_eq!(config.lockfile.schema_version(), "2.0");
         assert!(matches!(config.moq.tls, MoqTlsIdentity::SelfSigned { .. }));
+    }
+
+    #[test]
+    fn legacy_mp4_recording_configuration_is_rejected() {
+        let mut values = required_values();
+        values.insert("KINUGASA_RECORDING_FILE_NAME".into(), "video.mp4".into());
+        assert!(from(values).is_err());
+
+        let mut values = required_values();
+        values.insert("KINUGASA_LOCKFILE_SCHEMA_VERSION".into(), "1.0".into());
+        assert!(from(values).is_err());
     }
 
     #[test]

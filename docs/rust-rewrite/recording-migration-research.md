@@ -1,5 +1,7 @@
 # Rust single binary化に向けた録画保存機能の移植調査
 
+> **2026-09-29 更新:** 現行実装は録画開始要求以降のRIST payloadを、そのまま単一の`video.ts`へ保存する方式に変更した。録画経路では開始位置の解析やTS内部のdiscontinuity検査をしない。以下は過去の方式選定を記録した文書であり、現在の仕様は[外部インターフェース](../requirements-v2/14-specified-requirements/01-external-interfaces/external-interfaces.md)を参照。
+
 > **2026-09-28 更新:** 実装方針はraw MPEG-TS直接保存から、`transmux`
 > 0.24.1によるH.264/AACのfMP4 transmuxへ変更した。MPEG-TSは接続時から継続解析し、録画開始要求後の最初のH.264 sync sampleから保存する。以下には当初のraw TS案の調査経緯も残す。
 
@@ -299,6 +301,8 @@ GStreamerのRust製ISOBMFF pluginはCMAF/fMP4 muxerを提供し、機能と実�
 | `mp4e` | 低い | 中〜大 | 未確認 | 小さい | test不足 | 不採用 |
 
 ## contractおよび仕様への影響
+
+> 以下はfMP4採用時点の検討記録。現行方針はraw MPEG-TSの直接保存であり、lockfileは`video.ts`・schema version `2.0`に変更済み。TS構造とdiscontinuityのオンライン検査は行わない。
 
 現在のlockfile schemaと要求仕様は、論理パスとobject keyを`video.mp4`に固定している。
 

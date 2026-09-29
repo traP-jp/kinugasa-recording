@@ -44,7 +44,7 @@ function VideoFileCard({ file }: { file: VideoFile }) {
   }
   return (
     <article className="file-card">
-      <header><div className="file-icon"><FileVideo2 size={20} /></div><div><h2>{file.cameraName}</h2><span>video.mp4</span></div><StatusBadge status={file.state} /></header>
+      <header><div className="file-icon"><FileVideo2 size={20} /></div><div><h2>{file.cameraName}</h2><span>video.ts</span></div><StatusBadge status={file.state} /></header>
       {file.error && <p className="inline-error">{file.error}</p>}
       <dl>
         <div><dt><HardDrive size={14} />Object key</dt><dd title={file.objectKey ?? undefined}>{file.objectKey ?? "未確定"}<button disabled={!file.objectKey} onClick={() => void copy("key", file.objectKey)} aria-label="Object keyをコピー">{copied === "key" ? <Check size={14} /> : <Clipboard size={14} />}</button></dd></div>

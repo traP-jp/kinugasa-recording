@@ -1,4 +1,4 @@
-import * as Watch from "@moq/watch";
+import * as Moq from "@moq/net";
 import { useEffect, useMemo, useState } from "react";
 import type { PreviewAccess } from "../../api/types";
 import {
@@ -6,10 +6,10 @@ import {
   createMoqServerCertificateHashes,
 } from "../../lib/moq";
 
-type ConnectionStatus = Watch.Net.Connection.Status | "unsupported" | "invalid";
+type ConnectionStatus = Moq.Connection.Status | "unsupported" | "invalid";
 
 interface MoqConnectionState {
-  connection?: Watch.Net.Connection;
+  connection?: Moq.Connection;
   status: ConnectionStatus;
   failed: boolean;
 }
@@ -35,12 +35,12 @@ export function useMoqConnection(access: PreviewAccess): MoqConnectionState {
       setState({ status: "invalid", failed: true });
       return;
     }
-    if (!Watch.Net.Connection.isWebTransportSupported()) {
+    if (!Moq.Connection.isWebTransportSupported()) {
       setState({ status: "unsupported", failed: true });
       return;
     }
 
-    const connection = new Watch.Net.Connection({
+    const connection = new Moq.Connection({
       url: connectionOptions.url,
       discovery: true,
       webtransport: {

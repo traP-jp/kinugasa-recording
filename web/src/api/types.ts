@@ -40,7 +40,6 @@ export interface RISTStatistics {
   outputPackets: number;
   lostPackets: number;
   recoveredPackets: number;
-  discontinuities: number;
   stale: boolean;
 }
 

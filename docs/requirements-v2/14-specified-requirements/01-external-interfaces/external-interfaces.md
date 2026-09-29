@@ -2,10 +2,16 @@
 
 ## cameraクライアント
 
-- video gatewayは、Kubernetes Serviceによる接続先の割り当てが完了した後、そのポートを開いてRIST Main Profileの接続を待ち受ける。
-- cameraクライアントは、H.264形式かつ30 fpsの映像を送信しなければならない。音声を映像とともに送信してもよい。
-- video workerは映像形式およびframe rateを検証する。要求を満たさないmedia streamの処理は拒否し、CameraConnectionをerrorとして再接続を待ち受ける。
+- 受信器は、cameraクライアントに払い出したポートでRIST Main Profileの接続を待ち受ける。cameraクライアントはMPEG-TSをRISTのpayloadとして送信する。
+- cameraクライアントは、H.264形式かつ30 fpsの映像をMPEG-TSに含める。音声を映像とともに送信してもよい。
+- 受信処理は最初のRISTデータ受信でCameraConnectionをconnectedとする。オンライン録画処理は録画開始要求以降のpayloadを順に単一の`video.ts`へ書き込み、開始位置の解析、映像形式・frame rateの検証、TS内部のdiscontinuity検査は行わない。これらの検証が必要な場合は後段パイプラインで行う。ライブプレビューでは同じpayloadをMoQのcamera broadcast内の`mpegts`トラックへ無変換で送る。サーバー側ではTSをdemuxせず、ブラウザ側でTSを再生用に変換する。
+- 受信キューの溢れやファイル書き込み失敗など、実行パス上でデータを保存できなかった場合は録画を失敗させる。
 - 接続の切断を検出した場合、CameraConnectionを削除せずwaitingとして再接続を待ち受ける。対応するRecordingCameraが存在する場合は、そのRecordingCameraだけをerroredとし、OngoingTakeおよび他のRecordingCameraを継続する。
+
+## ライブプレビュー
+
+- MoQではcamera名のbroadcastに`mpegts`トラックを1本公開する。各frameのpayloadはlibristから受け取ったMPEG-TS payloadと同一のバイト列であり、配信されたframeを順に連結するとTSバイトストリームになる。グループ境界はメディア境界を表さない。プレビュー経路で遅延によりframeが捨てられた場合は、この連続性は保証しない。
+- ブラウザはグループをシーケンス順に読み、MPEG-TSのdemuxと再生用の変換を行う。途中参加時の表示にはcamera側からPAT/PMT、映像のparameter set、IDRなどが再送される必要がある。再生可能なcodecはブラウザのMedia Source Extensionsの対応範囲にも依存する。
 
 ## 後段パイプライン
 
@@ -21,7 +27,7 @@ lock fileは、Sessionに属する録画ファイルの論理パスと、オブ�
 
 | JSON path | 型 | 値 |
 | --- | --- | --- |
-| `schemaVersion` | string | `"1.0"` |
+| `schemaVersion` | string | `"2.0"` |
 | `bucket` | string | objectを格納しているオブジェクトストレージのバケット名 |
 | `objects` | object | 論理パスをkey、objectの情報をvalueとするmap |
 | `objects.*.key` | string | オブジェクトストレージ上のobject key |
@@ -31,19 +37,19 @@ lock fileは、Sessionに属する録画ファイルの論理パスと、オブ�
 各objectの論理パスとobject keyは次の形式とする。
 
 ```text
-論理パス:  recording/{sessionName}/{takeName}/{cameraName}/video.mp4
-object key: recording/{sessionName}/{takeName}/{cameraName}/{sha256}-video.mp4
+論理パス:  recording/{sessionName}/{takeName}/{cameraName}/video.ts
+object key: recording/{sessionName}/{takeName}/{cameraName}/{sha256}-video.ts
 ```
 
 `objects`のkeyには論理パスを、対応するvalueの`key`にはobject keyを設定する。例を次に示す。
 
 ```json
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "bucket": "recording-production",
   "objects": {
-    "recording/session-1/take-1/camera-1/video.mp4": {
-      "key": "recording/session-1/take-1/camera-1/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-video.mp4",
+    "recording/session-1/take-1/camera-1/video.ts": {
+      "key": "recording/session-1/take-1/camera-1/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef-video.ts",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "size": 1048576
     }

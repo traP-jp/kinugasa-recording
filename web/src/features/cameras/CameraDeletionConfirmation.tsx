@@ -40,7 +40,7 @@ export function CameraDeletionConfirmation({
           </div>
           <div className="affected-video-files">
             <span>影響を受ける VideoFile</span>
-            <ul>{uploadingTakeNames.map((name) => <li key={name}>{name} / {cameraName} / video.mp4</li>)}</ul>
+            <ul>{uploadingTakeNames.map((name) => <li key={name}>{name} / {cameraName} / video.ts</li>)}</ul>
           </div>
           <label className="danger-confirmation">
             <span>続行するには次の文字列を入力してください</span>

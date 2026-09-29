@@ -347,16 +347,16 @@ impl PreviewTransport for MoqServer {
             return Err(MoqError::Conflict);
         }
 
-        let mut broadcast = session.origin.create_broadcast(camera_name.as_str())?;
-        let catalog =
-            moq_mux::catalog::Producer::new(&mut broadcast, moq_mux::catalog::Config::default())?;
-        let importer =
-            moq_mux::container::ts::Import::new(broadcast.clone(), catalog.reserve()).live();
+        let broadcast = session.origin.create_broadcast(camera_name.as_str())?;
+        let mut track = broadcast.create_track(
+            "mpegts",
+            moq_net::track::Info::default().with_max_age(std::time::Duration::from_secs(5)),
+        )?;
         broadcast.announce(Default::default())?;
         let (stop, stop_receiver) = oneshot::channel();
         let task = tokio::spawn(async move {
             if let Err(error) =
-                publish_camera(&mut subscription, importer, broadcast, stop_receiver).await
+                publish_camera(&mut subscription, &mut track, broadcast, stop_receiver).await
             {
                 tracing::warn!(%camera_id, %error, "Media over QUIC camera publication stopped");
             }
@@ -399,16 +399,45 @@ impl Drop for MoqServer {
 
 async fn publish_camera(
     subscription: &mut PreviewSubscription,
-    mut importer: moq_mux::container::ts::Import,
+    track: &mut moq_net::track::Producer,
     broadcast: moq_net::broadcast::Producer,
     mut stop: oneshot::Receiver<()>,
 ) -> Result<(), String> {
+    let mut group: Option<moq_net::group::Producer> = None;
+    let mut group_bytes = 0usize;
+    let mut group_frames = 0usize;
+    let mut rotation = tokio::time::interval(std::time::Duration::from_millis(100));
+    rotation.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
             _ = &mut stop => break,
+            _ = rotation.tick() => {
+                if let Some(group) = group.take() {
+                    group.finish().map_err(|error| error.to_string())?;
+                }
+                group_bytes = 0;
+                group_frames = 0;
+            }
             packet = subscription.recv() => {
                 match packet {
-                    Ok(packet) => importer.decode(&packet.payload).map_err(|error| error.to_string())?,
+                    Ok(packet) => {
+                        let payload_len = packet.payload.len();
+                        if group.is_some() && (group_bytes.saturating_add(payload_len) > 1024 * 1024 || group_frames >= 256) {
+                            if let Some(previous) = group.take() {
+                                previous.finish().map_err(|error| error.to_string())?;
+                            }
+                            group_bytes = 0;
+                            group_frames = 0;
+                        }
+                        let group = match group.as_mut() {
+                            Some(group) => group,
+                            None => group.insert(track.append_group().map_err(|error| error.to_string())?),
+                        };
+                        group.write_frame(moq_net::Timestamp::now(), packet.payload)
+                            .map_err(|error| error.to_string())?;
+                        group_bytes += payload_len;
+                        group_frames += 1;
+                    }
                     Err(crate::PreviewReceiveError::Lagged(count)) => {
                         tracing::warn!(count, "Media over QUIC publisher skipped lagged ingress packets");
                     }
@@ -417,7 +446,10 @@ async fn publish_camera(
             }
         }
     }
-    importer.finish().map_err(|error| error.to_string())?;
+    if let Some(group) = group {
+        group.finish().map_err(|error| error.to_string())?;
+    }
+    track.finish().map_err(|error| error.to_string())?;
     broadcast.finish();
     Ok(())
 }
@@ -686,131 +718,55 @@ mod tests {
         .await
         .expect("broadcast request timed out")
         .expect("camera broadcast did not resolve");
+        let payload = bytes::Bytes::from_static(b"raw transport-stream payload (not parsed)");
+        let next_payload = bytes::Bytes::from_static(b"second raw payload");
         packets
             .send(crate::PreviewPacket {
                 camera_identity_id: camera_id,
                 ntp_timestamp: 90_000,
-                payload: synth_h264_transport_stream(),
+                payload: payload.clone(),
             })
             .unwrap();
-        let mut catalog = broadcast
-            .track("catalog.json")
+        packets
+            .send(crate::PreviewPacket {
+                camera_identity_id: camera_id,
+                ntp_timestamp: 93_000,
+                payload: next_payload.clone(),
+            })
+            .unwrap();
+        let mut stream = broadcast
+            .track("mpegts")
             .unwrap()
             .subscribe(None)
             .await
             .unwrap();
-        let mut group = tokio::time::timeout(Duration::from_secs(5), catalog.recv_group())
+        let mut group = tokio::time::timeout(Duration::from_secs(5), stream.recv_group())
             .await
-            .expect("catalog group timed out")
-            .expect("catalog track failed")
-            .expect("catalog track ended");
+            .expect("MPEG-TS group timed out")
+            .expect("MPEG-TS track failed")
+            .expect("MPEG-TS track ended");
         let frame = tokio::time::timeout(Duration::from_secs(5), group.read_frame())
             .await
-            .expect("catalog frame timed out")
-            .expect("catalog group failed")
-            .expect("catalog group ended");
-        let catalog = std::str::from_utf8(&frame.payload).unwrap();
-        assert!(catalog.contains("video"), "unexpected catalog: {catalog}");
+            .expect("MPEG-TS frame timed out")
+            .expect("MPEG-TS group failed")
+            .expect("MPEG-TS group ended");
+        assert_eq!(frame.payload, payload);
+        let second = tokio::time::timeout(Duration::from_secs(5), async {
+            match group.read_frame().await? {
+                Some(frame) => Ok(Some(frame)),
+                None => {
+                    let mut next_group = stream.recv_group().await?.expect("MPEG-TS track ended");
+                    next_group.read_frame().await
+                }
+            }
+        })
+        .await
+        .expect("second MPEG-TS frame timed out")
+        .expect("second MPEG-TS group failed")
+        .expect("second MPEG-TS frame missing");
+        assert_eq!(second.payload, next_payload);
 
         drop(connection);
         server.shutdown().await.unwrap();
-    }
-
-    fn synth_h264_transport_stream() -> bytes::Bytes {
-        use mpeg2ts::es::StreamType;
-        use mpeg2ts::ts::payload::{Pat, Pmt};
-        use mpeg2ts::ts::{
-            ContinuityCounter, EsInfo, Pid, ProgramAssociation, TransportScramblingControl,
-            TsHeader, TsPacket, TsPacketWriter, TsPayload, VersionNumber, WriteTsPacket,
-        };
-
-        const PMT_PID: u16 = 0x100;
-        const VIDEO_PID: u16 = 0x101;
-        let pat = Pat {
-            transport_stream_id: 1,
-            version_number: VersionNumber::default(),
-            table: vec![ProgramAssociation {
-                program_num: 1,
-                program_map_pid: Pid::new(PMT_PID).unwrap(),
-            }],
-        };
-        let pmt = Pmt {
-            program_num: 1,
-            pcr_pid: Some(Pid::new(VIDEO_PID).unwrap()),
-            version_number: VersionNumber::default(),
-            program_info: Vec::new(),
-            es_info: vec![EsInfo {
-                stream_type: StreamType::H264,
-                elementary_pid: Pid::new(VIDEO_PID).unwrap(),
-                descriptors: Vec::new(),
-            }],
-        };
-        let mut output = Vec::new();
-        for (pid, payload) in [
-            (Pid::PAT, TsPayload::Pat(pat)),
-            (PMT_PID, TsPayload::Pmt(pmt)),
-        ] {
-            TsPacketWriter::new(&mut output)
-                .write_ts_packet(&TsPacket {
-                    header: TsHeader {
-                        transport_error_indicator: false,
-                        transport_priority: false,
-                        pid: Pid::new(pid).unwrap(),
-                        transport_scrambling_control: TransportScramblingControl::NotScrambled,
-                        continuity_counter: ContinuityCounter::default(),
-                    },
-                    adaptation_field: None,
-                    payload: Some(payload),
-                })
-                .unwrap();
-        }
-        let mut keyframe = Vec::new();
-        for nal in [
-            &[0x67, 0x42, 0xc0, 0x1f, 0xde, 0xad, 0xbe, 0xef][..],
-            &[0x68, 0xce, 0x3c, 0x80][..],
-            &[0x65, 0x88, 0x84, 0x21, 0x00, 0x11, 0x22, 0x33][..],
-        ] {
-            keyframe.extend_from_slice(&[0, 0, 0, 1]);
-            keyframe.extend_from_slice(nal);
-        }
-        output.extend_from_slice(&video_pes_packet(VIDEO_PID, 0, 90_000, &keyframe));
-        output.extend_from_slice(&video_pes_packet(
-            VIDEO_PID,
-            1,
-            93_000,
-            &[0, 0, 0, 1, 0x41, 0x9a, 0x00, 0x01],
-        ));
-        bytes::Bytes::from(output)
-    }
-
-    fn video_pes_packet(pid: u16, continuity: u8, pts: u64, payload: &[u8]) -> Vec<u8> {
-        let pts_field = [
-            0x21 | (((pts >> 30) & 0x07) << 1) as u8,
-            ((pts >> 22) & 0xff) as u8,
-            0x01 | (((pts >> 15) & 0x7f) << 1) as u8,
-            ((pts >> 7) & 0xff) as u8,
-            0x01 | ((pts & 0x7f) << 1) as u8,
-        ];
-        let mut pes = vec![0, 0, 1, 0xe0];
-        let pes_len = 3 + pts_field.len() + payload.len();
-        pes.extend_from_slice(&[(pes_len >> 8) as u8, pes_len as u8, 0x80, 0x80, 0x05]);
-        pes.extend_from_slice(&pts_field);
-        pes.extend_from_slice(payload);
-
-        let adaptation_length = 184 - 1 - pes.len();
-        let mut packet = vec![
-            0x47,
-            0x40 | ((pid >> 8) as u8 & 0x1f),
-            pid as u8,
-            0x30 | (continuity & 0x0f),
-            adaptation_length as u8,
-        ];
-        if adaptation_length > 0 {
-            packet.push(0);
-            packet.extend(std::iter::repeat_n(0xff, adaptation_length - 1));
-        }
-        packet.extend_from_slice(&pes);
-        assert_eq!(packet.len(), 188);
-        packet
     }
 }

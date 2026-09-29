@@ -552,11 +552,7 @@ impl ReceiverHandler for RistReceiver {
             session_id: self.session_id,
             virtual_port,
             flow_id,
-            sequence: data.sequence(),
             ntp_timestamp: data.ntp_timestamp(),
-            discontinuity: data.is_discontinuity()
-                || data.is_flow_buffer_start()
-                || data.is_overflow(),
             payload: Bytes::from(data.into_payload()),
         });
         match result {

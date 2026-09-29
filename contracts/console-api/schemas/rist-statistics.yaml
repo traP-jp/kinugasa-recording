@@ -9,7 +9,6 @@ RISTStatistics:
     - outputPackets
     - lostPackets
     - recoveredPackets
-    - discontinuities
     - stale
   properties:
     cameraName:
@@ -36,10 +35,6 @@ RISTStatistics:
       format: int64
       minimum: 0
     recoveredPackets:
-      type: integer
-      format: int64
-      minimum: 0
-    discontinuities:
       type: integer
       format: int64
       minimum: 0

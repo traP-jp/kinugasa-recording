@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn recording_layout_builds_v2_compatible_paths() {
-        let layout = RecordingLayout::new("video.mp4").unwrap();
+        let layout = RecordingLayout::new("video.ts").unwrap();
         let path = layout.path(
             &SessionName::new("session-1").unwrap(),
             &TakeName::new("take-1").unwrap(),
@@ -91,7 +91,7 @@ mod tests {
         );
         assert_eq!(
             path.as_str(),
-            "recording/session-1/take-1/camera-1/video.mp4"
+            "recording/session-1/take-1/camera-1/video.ts"
         );
     }
 }

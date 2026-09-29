@@ -23,7 +23,6 @@ bytes = "1.10.1"
 chrono = "0.4.42"
 humantime = "2.3.0"
 hmac = "0.12.1"
-moq-mux = "0.10.6"
 moq-net = "0.3.5"
 moq-tokio = { version = "0.19.17", default-features = false, features = ["noq", "ring"] }
 regex = "1.11.2"

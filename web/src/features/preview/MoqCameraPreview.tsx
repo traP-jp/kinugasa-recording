@@ -1,70 +1,29 @@
-import * as Watch from "@moq/watch";
+import type * as Moq from "@moq/net";
 import { SignalZero, VideoOff } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { CameraConnection } from "../../api/types";
 import { AudioLevelMeter } from "./AudioLevelMeter";
+import { useMoqTsPlayer } from "./useMoqTsPlayer";
 import { useReceivedAudioLevel } from "./useReceivedAudioLevel";
 
 interface MoqCameraPreviewProps {
   camera: CameraConnection;
-  connection?: Watch.Net.Connection;
-  visible?: Watch.Video.Visible;
+  connection?: Moq.Connection;
 }
 
-type BroadcastStatus = "offline" | "loading" | "live";
-
-export function MoqCameraPreview({
-  camera,
-  connection,
-  visible = "20%",
-}: MoqCameraPreviewProps) {
-  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [player, setPlayer] = useState<Watch.Player>();
-  const [broadcastStatus, setBroadcastStatus] = useState<BroadcastStatus>("offline");
-  const [hasVideo, setHasVideo] = useState(false);
-  const audioLevel = useReceivedAudioLevel(player);
+export function MoqCameraPreview({ camera, connection }: MoqCameraPreviewProps) {
+  const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const active = camera.status === "connected";
-
-  useEffect(() => {
-    setPlayer(undefined);
-    setBroadcastStatus("offline");
-    setHasVideo(false);
-    if (!connection || !canvas || !active) return;
-
-    const nextPlayer = new Watch.Player({
-      origin: connection.origin,
-      probe: connection.probe,
-      name: Watch.Net.Path.from(camera.name),
-      canvas,
-      announced: true,
-      catalogFormat: "hang",
-      visible,
-      // `muted` disables audio download; zero gain keeps decoding active for the meter.
-      muted: false,
-      volume: 0,
-    });
-    setBroadcastStatus(nextPlayer.broadcast.out.status.peek());
-    setHasVideo((nextPlayer.video.out.stats.peek()?.frameCount ?? 0) > 0);
-    const unsubscribeStatus = nextPlayer.broadcast.out.status.subscribe(setBroadcastStatus);
-    const unsubscribeVideo = nextPlayer.video.out.stats.subscribe((stats) => {
-      setHasVideo((current) => current || (stats?.frameCount ?? 0) > 0);
-    });
-    setPlayer(nextPlayer);
-
-    return () => {
-      unsubscribeStatus();
-      unsubscribeVideo();
-      nextPlayer.close();
-    };
-  }, [active, camera.name, canvas, connection, visible]);
+  const { status, hasVideo, hasAudio } = useMoqTsPlayer(video, active ? connection : undefined, camera.name);
+  const audioLevel = useReceivedAudioLevel(video, hasAudio);
 
   return (
     <div className="moq-camera-preview">
-      <canvas ref={setCanvas} aria-label={`${camera.name}のライブ映像`} />
+      <video ref={setVideo} aria-label={`${camera.name}のライブ映像`} muted playsInline />
       {!hasVideo && (
         <div className="preview-waiting">
           {active ? <SignalZero size={28} /> : <VideoOff size={28} />}
-          <span>{previewMessage(active, connection !== undefined, broadcastStatus)}</span>
+          <span>{previewMessage(active, connection !== undefined, status)}</span>
         </div>
       )}
       <AudioLevelMeter cameraName={camera.name} measurement={audioLevel} />
@@ -72,14 +31,11 @@ export function MoqCameraPreview({
   );
 }
 
-function previewMessage(
-  active: boolean,
-  hasConnection: boolean,
-  status: BroadcastStatus,
-): string {
+function previewMessage(active: boolean, hasConnection: boolean, status: string): string {
   if (!active) return "映像信号なし";
   if (!hasConnection) return "Media over QUICへ接続しています";
-  if (status === "loading") return "MoQストリームを読み込み中";
-  if (status === "live") return "映像トラックを待機中";
+  if (status === "unsupported") return "このブラウザはMPEG-TS再生に対応していません";
+  if (status === "error") return "映像を再生できません";
+  if (status === "loading") return "MPEG-TSストリームを読み込み中";
   return "MoQストリームを待機中";
 }

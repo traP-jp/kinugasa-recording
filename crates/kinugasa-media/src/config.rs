@@ -12,7 +12,6 @@ pub struct MediaConfig {
     pub gateway_instance: GatewayInstance,
     pub ingress_queue_capacity: usize,
     pub preview_queue_capacity: usize,
-    pub recording_start_timeout: Duration,
     pub statistics_stale_after: Duration,
 }
 
@@ -41,11 +40,6 @@ impl MediaConfig {
         if self.preview_queue_capacity == 0 {
             return Err(MediaBuildError::InvalidConfiguration(
                 "preview_queue_capacity must be positive".into(),
-            ));
-        }
-        if self.recording_start_timeout.is_zero() {
-            return Err(MediaBuildError::InvalidConfiguration(
-                "recording_start_timeout must be positive".into(),
             ));
         }
         if self.statistics_stale_after.is_zero() {
