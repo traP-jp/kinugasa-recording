@@ -19,6 +19,9 @@ kinugasa-core = { path = "../kinugasa-core" }
 kinugasa-media = { path = "../kinugasa-media" }
 kinugasa-mysql = { path = "../kinugasa-mysql" }
 kinugasa-s3 = { path = "../kinugasa-s3" }
+opentelemetry-appender-tracing = "0.31.1"
+opentelemetry-otlp = { version = "0.31.1", default-features = false, features = ["logs", "http-proto", "reqwest-blocking-client", "tls"] }
+opentelemetry_sdk = { version = "0.31", features = ["logs"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sqlx.workspace = true
